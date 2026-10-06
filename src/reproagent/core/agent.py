@@ -26,6 +26,16 @@ def prompt(name):
     return files('reproagent').joinpath('prompts/' + name + '.md').read_text(encoding='utf-8')
 
 
+def require_correctable_output(error):
+    """A truncation, filter or oversized body cannot be corrected by asking again.
+
+    Repeating it would only spend another billed attempt on the same request, so the
+    logical call ends here and only the fixed code is reported.
+    """
+    if not error.retryable:
+        raise ModelProtocolError(f'{error.code}: repeating the same request cannot correct it') from None
+
+
 class ReproAgent:
     def __init__(self, gateway, context, candidate_parent='tests'):
         self.gateway, self.context, self.candidate_parent = gateway, context, candidate_parent
@@ -42,6 +52,7 @@ class ReproAgent:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt('analyze_issue')},
                     {'role':'user','content':canonical_bytes(data).decode()}), 'contract'), self.context)
             except ModelOutputError as exc:
+                require_correctable_output(exc)
                 error = str(exc)
             else:
                 try:
@@ -104,6 +115,7 @@ class ReproAgent:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt('explore')},
                     {'role':'user','content':self._action_payload(data)}), 'action'), self.context)
             except ModelOutputError as exc:
+                require_correctable_output(exc)
                 error = str(exc)
             else:
                 try:

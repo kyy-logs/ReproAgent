@@ -66,14 +66,45 @@ def test_compressed_response_is_rejected_before_decompression(monkeypatch):
     assert encodings==['identity'] and not consumed and closed and not parsed
 
 
-@pytest.mark.parametrize('finish,content', [('length','{}'), ('stop',''), ('tool_calls','{}')])
-def test_original_provider_finish_reason_and_empty_text_are_not_lost(finish, content):
+def test_sdk_and_native_backends_resolve_the_same_limit_and_thinking_switch():
+    calls=[]
+    def handle(request): calls.append(json.loads(request.content)); return reply()
+    def model(**kwargs): return AgentScopeModelGateway(config(**kwargs), transport=httpx.MockTransport(handle))
+    asyncio.run(model(max_output_tokens=8192, thinking_mode='disabled').complete(ModelRequest(({'role':'user','content':'hello'},)), context()))
+    assert calls[-1]['max_tokens'] == 8192 and calls[-1]['thinking'] == {'type':'disabled'}
+    asyncio.run(model(max_output_tokens=8192).complete(ModelRequest(({'role':'user','content':'hello'},), max_output_tokens=1024), context()))
+    assert calls[-1]['max_tokens'] == 1024 and 'thinking' not in calls[-1]
+    asyncio.run(model().complete(ModelRequest(({'role':'user','content':'hello'},)), context()))
+    assert calls[-1]['max_tokens'] == 4096 and 'thinking' not in calls[-1]
+
+
+@pytest.mark.parametrize('finish,content,code,retryable', [('length','{}','OUTPUT_TRUNCATED',False),
+    ('content_filter','{}','OUTPUT_FILTERED',False), ('tool_calls','{}','OUTPUT_FILTERED',False),
+    ('stop','','EMPTY_OUTPUT',True)])
+def test_original_provider_finish_reason_and_empty_text_are_not_lost(finish, content, code, retryable):
     calls = []
     def handle(request): calls.append(request); return reply(content, finish, {'prompt_tokens':10,'completion_tokens':5})
     model = AgentScopeModelGateway(config(input_cost_per_million=1, output_cost_per_million=1), transport=httpx.MockTransport(handle))
     ctx = context()
-    with pytest.raises(ModelOutputError): asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},)), ctx))
+    with pytest.raises(ModelOutputError) as error:
+        asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},)), ctx))
+    assert error.value.code == code and error.value.retryable is retryable
     assert len(calls) == 1 and ctx.budget.cost_spent > 0
+
+
+def test_sdk_attempt_events_record_a_controlled_outcome_without_provider_text():
+    secret='synthetic-reasoning-content'
+    events=[]
+    class Store:
+        def append_event(self, kind, refs, payload): events.append(payload)
+    model=AgentScopeModelGateway(config(), transport=httpx.MockTransport(
+        lambda request: reply(secret, 'length', {'prompt_tokens':10,'completion_tokens':5})))
+    model.attempt_store=Store()
+    with pytest.raises(ModelOutputError):
+        asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},),'verdict'), context()))
+    assert events[0]['outcome']=='OUTPUT_TRUNCATED' and events[0]['backend']=='agentscope'
+    assert events[0]['response_kind']=='verdict' and events[0]['finish_reason']=='length'
+    assert events[0]['content_bytes']==len(secret.encode()) and secret not in json.dumps(events[0])
 
 
 def test_sdk_rate_limit_has_only_three_counted_http_attempts():

@@ -92,6 +92,10 @@ class Verifier:
             try:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt}, {'role':'user','content':text}), 'verdict'), context)
             except ModelOutputError as exc:
+                if not exc.retryable:
+                    # The provider already said why the answer is unusable; a correction
+                    # request would be the same request again, so it ends the call here.
+                    raise
                 error = str(exc)
             else:
                 result = {}

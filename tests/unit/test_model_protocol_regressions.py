@@ -120,7 +120,7 @@ def test_contract_schema_explains_required_text_fields(facts):
     assert result.trigger == 'parse([])' and result.expected == 'return []'
 
 
-@pytest.mark.parametrize('content,finish', [('', 'stop'), ('{"trigger":', 'length')])
+@pytest.mark.parametrize('content,finish', [('', 'stop'), ('{}', 'stop'), ('{"trigger":', 'stop')])
 def test_provider_rejected_output_gets_bounded_contract_correction(content, finish, facts):
     from tests.unit.test_model_gateway import gateway
     calls = []
@@ -133,6 +133,29 @@ def test_provider_rejected_output_gets_bounded_contract_correction(content, fini
     assert result.expected == 'return []' and len(calls) == 2
     assert context.budget.unknown_cost_calls == 2
     assert json.loads(calls[1]['messages'][-1]['content'])['protocol_error']
+
+
+def test_length_is_not_retried_with_identical_request(facts):
+    """A truncation at the configured ceiling cannot be corrected by asking again."""
+    from tests.unit.test_model_gateway import gateway
+    calls, events = [], []
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200,json={'choices':[{'finish_reason':'length','message':{'content':'{"trigger":'}}],
+                                      'usage':{'prompt_tokens':10,'completion_tokens':5}})
+    class Store:
+        def append_event(self, kind, refs, payload): events.append(payload)
+    context = facts.context()
+    agent = ReproAgent(BudgetedGateway(gateway(handler), Store()), context)
+    with pytest.raises(Exception) as error:
+        asyncio.run(agent.analyze(IssueDescription('bug','hash'), EvidenceContext((SourceRef('issue','hash'),),('bug',))))
+    assert type(error.value).__name__ == 'ModelProtocolError'
+    assert 'OUTPUT_TRUNCATED' in str(error.value)
+    assert len(calls) == 1 and calls[0]['max_completion_tokens'] == 4096
+    # The truncated attempt is still billed and timed even though it is not retried.
+    assert events[0]['outcome'] == 'OUTPUT_TRUNCATED' and events[0]['finish_reason'] == 'length'
+    assert events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5}
+    assert context.budget.unknown_cost_calls == 1
 
 
 def test_provider_empty_response_is_failed_not_invalid_user_input(tmp_path, projects, facts):
@@ -206,6 +229,45 @@ def test_verdict_text_check_is_corrected_to_boolean_with_original_evidence(tmp_p
     assert verdict.classification.value == 'REPRODUCED'
     assert len(model.calls) == 2 and context.budget.unknown_cost_calls == 2
     assert json.loads(model.calls[0].messages[-1]['content'])['available_refs'] == json.loads(model.calls[1].messages[-1]['content'])['available_refs']
+
+
+def test_complete_invalid_json_corrects_at_most_three_times(tmp_path,projects,facts):
+    """A complete but structurally wrong verdict is corrected, and only three times."""
+    from tests.unit.test_model_gateway import gateway
+    from tests.unit.test_verifier import prepare
+    contract,candidate,execution,verifier,*_ = prepare(tmp_path,projects,facts)
+    calls = []
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'{}'}}],
+                                      'usage':{'prompt_tokens':10,'completion_tokens':5}})
+    context = facts.context()
+    verifier.gateway = BudgetedGateway(gateway(handler), None)
+    verdict = asyncio.run(verifier.evaluate(contract,candidate,(execution,),context))
+    assert verdict.classification is None and 'MODEL_PROTOCOL_ERROR' in verdict.uncertainties
+    assert len(calls) == 3 and context.budget.unknown_cost_calls == 3
+    assert all(call['max_completion_tokens'] == 4096 for call in calls)
+    assert 'protocol_error' not in json.loads(calls[0]['messages'][-1]['content'])
+    assert json.loads(calls[1]['messages'][-1]['content'])['protocol_error']
+    assert json.loads(calls[2]['messages'][-1]['content'])['protocol_error']
+
+
+def test_negative_semantics_never_promoted(tmp_path,projects,facts):
+    """An explicit negative check cannot be corrected into a success."""
+    from tests.unit.test_model_gateway import gateway
+    from tests.unit.test_verifier import prepare
+    contract,candidate,execution,verifier,*_ = prepare(tmp_path,projects,facts)
+    calls = []
+    def handler(request):
+        data = json.loads(json.loads(request.content)['messages'][-1]['content'])
+        calls.append(data)
+        text = json.dumps({'classification':'REPRODUCED', 'reason':'a later answer would affirm this',
+            'evidence_refs':data['available_refs'] if len(calls)>1 else [{'path':'unknown','content_hash':'bad','start_line':1,'end_line':1}],
+            'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':len(calls)>1})
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':text}}]})
+    verifier.gateway = gateway(handler)
+    verdict = asyncio.run(verifier.evaluate(contract,candidate,(execution,),facts.context()))
+    assert verdict.classification is None and len(calls) == 1
 
 
 def test_invalid_verdict_citations_stop_after_three_accounted_calls(tmp_path,projects,facts):
