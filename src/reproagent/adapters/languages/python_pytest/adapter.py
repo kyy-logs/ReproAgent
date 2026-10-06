@@ -11,9 +11,19 @@ from .collector import read_probe
 ALLOWED_ARGS = {'-q', '-v', '-vv', '-s', '--disable-warnings', '--tb=short', '--tb=long', '--tb=no'}
 
 
+def absolute_python(path):
+    """Make an interpreter path absolute without resolving links.
+
+    Resolving would replace a venv's interpreter with the base interpreter it
+    links to, losing that venv's site-packages; commands run with cwd set to the
+    run copy, so a relative path would otherwise resolve against the wrong root.
+    """
+    return os.path.abspath(path)
+
+
 class PythonPytestAdapter:
     def inspect(self, project, config):
-        python = str(Path(config.python or sys.executable).resolve())
+        python = absolute_python(config.python or sys.executable)
         if not Path(python).is_file():
             raise ValueError('configured Python interpreter does not exist')
         if any(arg not in ALLOWED_ARGS for arg in config.pytest_args):

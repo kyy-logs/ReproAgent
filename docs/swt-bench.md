@@ -4,6 +4,7 @@
 
 ## 本机已准备的资料
 
+- 最新真实评测见 [2026-10-06 评测报告](evaluations/2026-10-06-swt-development.md)：第三轮 20 例中 8 例调用模型、12 例环境阻塞，有效差分交付 0；参考测试可区分版本的 5 例中为 0/5。官方判分未运行。
 - 固定快照与来源：`.local/swt-bench/data/snapshot.json`、`source.json`、`excluded.txt`。
 - 原始 test split 300 条；按官方 24 条排除项得到 276 条。过滤文件是排除项，不是白名单。
 - 生成资料 catalog：`.local/swt-bench/data/catalog.json`，不含 patch、test_patch、hints_text 内容。
@@ -116,7 +117,7 @@ python -m evals.swt_bench official-run \
 
 共 44 次记录的 HTTP 尝试、322531 token，费率未配置，费用 unknown。Flask-4992 的导出在新原版和新修复版都退出 1，故差分独立重跑为 false。测试采用 Issue 提案中的 mode="b"；提供的修复版不接受该候选，不能算有效差分复现。Codex 已技术检查，human_judgement 仍为 null。
 
-首轮有 6 个 Sphinx 绑定因 Git 的 Unicode 文件名输出被误判；该实现问题已通过回归修复。重新预检为 8 ready、12 blocked，保存于独立目录；没有更改首轮模型结果，也没有把旧结果转换成新代码的能力分数。本次未在修复后的 8 个可运行环境上重跑模型，不宣称一般复现率或后端提升。
+首轮有 6 个 Sphinx 绑定因 Git 的 Unicode 文件名输出被误判；该实现问题已通过回归修复。重新预检为 8 ready、12 blocked，保存于独立目录；没有更改首轮模型结果，也没有把旧结果转换成新代码的能力分数。接入阶段未重跑这 8 例；后续已完成第二、第三轮真实模型评测及独立重跑，见上述最新报告。仍不宣称一般复现率或后端提升。
 
 旧项目 20 个历史案例仍用于开发回归。正式评测需另冻结未参与本项目调试的样本，并检查历史重叠；公开数据也可能被模型训练见过。
 

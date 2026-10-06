@@ -48,7 +48,9 @@ def main():
     env.update({'PYTHONPATH': os.pathsep.join([str(root / 'probe'), *[str(args.repo.resolve() if r == '.' else child(args.repo, r)) for r in report['source_roots']]]),
         'PYTEST_ADDOPTS':'', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1', 'PYTHONDONTWRITEBYTECODE':'1', 'REPROAGENT_RUN_ID':'export-replay',
         'REPROAGENT_PROBE_PATH':str(args.output.resolve() / 'probe.jsonl'), 'REPROAGENT_TARGET_MODULES':json.dumps(report['target_modules'])})
-    argv = [str(args.python.resolve()), '-m', 'pytest', *report['pytest_args'], '-p', 'reproagent_pytest_probe', *report['selectors']]
+    # Absolute, but not link-resolved: resolving a venv's interpreter would run
+    # the base interpreter and drop that venv's packages.
+    argv = [os.path.abspath(args.python), '-m', 'pytest', *report['pytest_args'], '-p', 'reproagent_pytest_probe', *report['selectors']]
     return subprocess.call(argv, cwd=args.repo.resolve(), env=env)
 
 

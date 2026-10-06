@@ -18,9 +18,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest tests/unit tests/integration -q
+      # The launcher and the Skill expect the tool environment at .venv, as in
+      # the README; tests read it back through that fixed path.
+      - name: Install tool environment
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
+          echo "REPRO_TOOL_PYTHON=$PY" >> "$GITHUB_ENV"
+          "$PY" -m pip install -e ".[dev,agentscope]"
+      - name: Run offline tests
+        shell: bash
+        run: |
+          "$REPRO_TOOL_PYTHON" -m pytest tests/unit tests/integration -q
         env:
           REPRO_TEST_TARGET_PYTHON: ${{ steps.target.outputs.python-path }}
           REPRO_TEST_PYTEST_VERSION: ${{ matrix.target-pytest }}
-      - run: python -m pip check
+      - name: Check dependencies
+        shell: bash
+        run: |
+          "$REPRO_TOOL_PYTHON" -m pip check

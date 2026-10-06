@@ -34,7 +34,7 @@
 独立 wheel 安装后实际渲染报告，证明模板随发行包提供。
 独立审查发现的问题逐项复现并修复，最终复查无遗留发现。
 没有重新运行历史模型评估；旧案例与原始包保持原样，模板示例来自历史证据的独立副本。
-Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9 仅配置 CI，尚未执行。
+Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9 已首次执行 CI，18 个矩阵任务全部失败于环境耦合，见下文 CI 记录。
 工具自身需要 Python >=3.11。
 
 2026-10-06 AgentScope 接入：模型与 Agent 后端独立可选，四种组合均经过真实 pytest 原版重复失败、隐藏修复版通过及导出包独立重跑。受控策略每次决策仅一次 SDK 模型桥接；无 SDK 业务工具或自主探索循环，继续共享 Controller、BudgetedGateway、Verifier 与导出规则。
@@ -49,9 +49,21 @@ Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9 仅配置 CI，�
 2026-10-06 SWT 接入：固定 SWE-bench Lite revision 和官方 harness commit，实际快照300条、官方排除24条后276条、固定开发子集20条。转换、命令行导入、独立预检和批量汇总已执行。
 真实 native/native 开发首轮为2例在当时可运行、1例 REPEATED_OBSERVATION（无差分确认）、1例 EXHAUSTED、18例 NOT_PREPARED。44次 HTTP 尝试、322531 token，费用 unknown。
 已接受候选独立重跑原版/修复版均退出1，差分复现未成立；human_judgement保持null。原始问题没有改写为研究者提示，固定补丁与官方新增测试不进入生成输入。
-接入中发现 Sphinx Unicode Git 文件名误判，回归修复后独立预检为8 ready、12 blocked；未改写首轮模型结果，也未在修复后的8个可运行环境上重新执行模型。不能把该诊断轮当成正式基准分数或一般能力结论。
+接入中发现 Sphinx Unicode Git 文件名误判，回归修复后独立预检为8 ready、12 blocked；未改写首轮模型结果。接入阶段未重跑修复后的8个环境；后续已完成新轮次，见下述评测记录。不能把该诊断轮当成正式基准分数或一般能力结论。
 独立审查发现的材料隔离、官方源码与预测来源、历史报告混入、执行失败及部分导入状态问题已修复，最终复查关闭发现。本机缺少可用 Linux/Docker，官方 harness实际执行和容器兼容性仍未验证；合成报告测试不等于官方成绩。
 数据解码器在独立工具环境安装，产品 wheel 和目标环境未增加 pyarrow/datasets/Docker SDK。历史20例及旧包未改写。回执为 `.local/swt-integration-verification.json`，首轮报告为 `repro-results/swt-bench/dev20-native-001/report.md`。
+
+2026-10-06 后续真实评测：第二轮 2 例调用模型，6 例 Sphinx 在 Windows 长路径快照阶段阻塞；有效交付 0。第三轮沿用固定20例、模型和预算，以长路径前缀及独立补齐依赖的 Sphinx 环境执行，8 例调用模型，1 DONE/REPEATED_OBSERVATION、7 EXHAUSTED、12 NOT_PREPARED，有效差分交付 0。165 次 HTTP 尝试、1475156 token，费用 unknown，官方判分与人工审查待完成。
+参考测试在独立副本核验，其中5例呈现原版失败/修复版通过；这5例 Agent 有效交付0/5。Sphinx-8801 的两个未接受候选独立执行均为1/0，但语义核验证据超32KB导致任务未交付，只用于诊断，不计成功。详见 [真实评测报告](evaluations/2026-10-06-swt-development.md)。本轮评测新增文档和本地环境，未改写旧任务包；运行期间另有 CI/venv 路径处理的并行变更，评测未覆盖这些变更，正式对比前需冻结实现版本。
+
+2026-10-06 CI 首次执行（Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9，共 18 个矩阵任务）全部失败，合并后为三类环境耦合问题，均已定位到根因。
+其一，dev 依赖未声明 setuptools，而打包测试用 --no-build-isolation 构建 wheel；Python 3.12 的 venv 不再自带 setuptools，本地 .venv 恰有而未暴露。
+其二，目标解释器路径被 Path.resolve 解析；Linux 上 venv 与工具链的 bin/python 是指向 python3.12 的符号链接，解析后字符串与 sys.executable 不一致，且 venv 的链接间接层被替换为链接目标。导出包内的 replay.py 有同样写法。
+其三，CI 装在 runner 全局解释器上，未创建启动器与 Skill 依赖的 <repo>/.venv，5 个启动器测试报缺工具解释器。
+修复为：dev 增加 setuptools>=68；解释器路径改为绝对但不解析链接（适配器与 replay.py）；CI 按 README 创建 .venv 并在其中安装与运行。
+CI 同时改为安装 .[dev,agentscope]：此前不装该可选依赖时，3 个 SDK 集成模块的 module 级 importorskip 使约 22 个用例塌缩为 3 条 skip，CI 全绿也不覆盖 SDK 路径。
+验证：三类失败在本地逐一复现（含用目录 junction 复现链接解析差异；文件符号链接在 Windows 需提权，POSIX 侧的 venv 后果未在本机实测）；克隆出无 .venv 的仓库并按 workflow 步骤安装后，全量离线测试 244 passed、1 skipped，pip check 无冲突。
+CI 重跑结果待确认，通过前上述组合仍不视为已验证。首次执行回执：https://github.com/kyy-logs/ReproAgent/actions/runs/37455797100
 
 独立整体验证审查已完成，提出的 11 项重要问题已修复。
 针对这些问题新增 17 个回归场景，先全部失败后全部通过；另补充触发条件修订的来源约束测试。

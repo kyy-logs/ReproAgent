@@ -79,7 +79,7 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 - xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索暂未支持。
 - 带不可重置外部前置资源的候选不能升级重复复现；运行不起来时报告环境阻塞，缩小运行范围属于后续优化。
 - 语义核对依赖模型，证据引用与硬性检查降低误报，不能替代人的审查。
-- 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1。其他组合见 `docs/compatibility.md`，CI 配置不等于已通过。
+- 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1。CI 已首次执行，18 个矩阵任务全部因环境耦合失败，修复在本地复现验证，重跑结果待确认；重跑通过前不视为已验证。其他组合见 `docs/compatibility.md`。
 
 ## 开发与评估
 
@@ -93,4 +93,5 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 首次打包测试会创建开发测试环境并安装 pytest，不修改用户的目标环境。
 `evals/README.md` 说明历史样本审查、修复信息隔离及分母统计。20 个历史案例的原始累计记录见 `evals/cases/cumulative-historical-results.json`，最终修复整轮见 `evals/cases/expanded-final-results.json` 与 `docs/expanded-case-repairs.md`；原始扩展失败保留于 `docs/expanded-case-validation.md`。原始三例 0/3 基线保留于 `docs/historical-case-validation.md`；代表性大样本、独立人类审查与能力比较尚未完成。合成案例首次冒烟结果见 `docs/deepseek-smoke.md`。
 SWT-Bench Lite 的固定数据导入、20 个开发样本、独立环境预检、批量运行、标准预测和官方报告导入已接通，见 [评测使用说明](docs/swt-bench.md)。官方 Docker 判分尚未执行；开发首轮结果和准备阻塞均保留，不作为全量基准成绩。
+最新 [真实 Bug 评测报告](docs/evaluations/2026-10-06-swt-development.md)：固定20例中8例调用模型、12例环境阻塞，当前配置有效差分交付0；参考测试可区分版本的5例中为0/5。Sphinx-8801 已生成有差分效果的候选，但被核验证据体积限制挡住，未计成功。完整自动交付流程仍需修正。
 设计、架构与实现计划位于 `docs/superpowers`。
