@@ -196,6 +196,11 @@ def test_generated_candidate_cannot_become_expectation_source(tmp_path,projects,
                     return ModelResponse(json.dumps({**VALID_CONTRACT,'expected':'invented behavior','source_indices':[1]}))
             if request.response_kind == 'action':
                 self.actions += 1
+                if self.actions == 1:
+                    # A candidate that passes leaves nothing to replay, so the Controller
+                    # stops forcing after running it and the explorer keeps choosing.
+                    return ModelResponse(json.dumps({'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
+                        'content':'from example.parser import parse\ndef test_nonempty(): assert parse([1]) == [1]\n'}],'hypothesis':'nonempty input'}}))
                 if self.actions == 2:
                     return ModelResponse(json.dumps({'name':'read_file','parameters':{'path':'tests/test_repro.py','start':1,'end':2}}))
                 if self.actions == 3:

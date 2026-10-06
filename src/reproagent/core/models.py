@@ -398,6 +398,8 @@ class AgentContext:
     project: ProjectView
     history: tuple[dict[str, Any], ...] = ()
     feedback: str = ""
+    allowed_actions: tuple[str, ...] = ()
+    blocked_actions: tuple[AgentAction, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

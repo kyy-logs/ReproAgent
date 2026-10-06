@@ -11,6 +11,7 @@ from .models import (AgentContext, CandidateClass, CandidateDraft, DraftFile, Ev
 from .serialization import bytes_hash, canonical_hash
 from .tools import Tools
 from .protocol import ModelOutputError, ModelProtocolError
+from .workflow import WorkflowState, choose_workflow
 from reproagent.store import atomic_write
 
 # Every action ends in one of these codes; none of them carries model or provider text.
@@ -82,6 +83,26 @@ class Controller:
         self.store.append_event('action.completed' if code == 'OK' else 'action.rejected', (),
             {**selected, 'result_code':code, 'duration':time.monotonic() - started})
 
+    def workflow_signature(self, contract, project, executions, verdicts):
+        """What a repeat would have to repeat: contract version, candidates, executions."""
+        runs = tuple(sorted((candidate_id, str(getattr(verdicts.get(candidate_id), 'classification', None)))
+                            for candidate_id in executions))
+        return (contract.version, tuple(candidate.candidate_id for candidate in project.candidates), runs)
+
+    def workflow_state(self, context, contract, project, executions, verdicts, signature, repeated):
+        candidate = project.candidates[-1] if project.candidates else None
+        verdict = verdicts.get(candidate.candidate_id) if candidate else None
+        return WorkflowState(steps_remaining=self.steps_remaining(context),
+            grounded=bool(contract.expected) and not contract.missing_information,
+            candidate_id=candidate.candidate_id if candidate else '',
+            candidate_contract_version=candidate.contract_version if candidate else 0,
+            current_contract_version=contract.version,
+            has_execution=bool(candidate) and candidate.candidate_id in executions,
+            reproduced=verdict is not None and verdict.classification == CandidateClass.REPRODUCED,
+            # A repeat only counts inside the state that produced it: once the contract
+            # or the candidate set changes, the same arguments are legal again.
+            repeated_action=repeated[1] if repeated and repeated[0] == signature else None)
+
     async def run(self, request, context, fixed=None):
         started = time.monotonic()
         result = TaskResult(request.task_id or 'task-' + uuid.uuid4().hex, TaskState.PREPARING)
@@ -107,6 +128,10 @@ class Controller:
             self.store.save_contract(contract)
             tools = Tools(ProjectView(snapshot), self.workspace, context)
             history, feedback, executions, verdicts = [], self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else '', {}, {}
+            # The last (action, result) pair and the state it happened in, so an
+            # action that keeps returning the same result is answered instead of
+            # repeated until the budget runs out.
+            repeated, previous = None, None
             seen_sources = set()
             original_paths = {(snapshot.root / entry.path).relative_to(self.store.root).as_posix():entry.content_hash
                               for entry in snapshot.files}
@@ -116,8 +141,18 @@ class Controller:
                 context.budget.check()
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
                 result = self.state(result, TaskState.GENERATING)
+                signature = self.workflow_signature(contract, tools.project, executions, verdicts)
+                decision = choose_workflow(self.workflow_state(context, contract, tools.project, executions, verdicts, signature, repeated))
                 try:
-                    action = await agent.next_action(AgentContext(contract, tools.project, tuple(history[-4:]), feedback))
+                    if decision.forced_action is not None:
+                        # The lifecycle acts on its own: one existing step is spent,
+                        # no model decision is bought, and the existing checks in
+                        # run_candidate/submit_candidate still decide the outcome.
+                        context.budget.take_step()
+                        action = decision.forced_action
+                    else:
+                        action = await agent.next_action(AgentContext(contract, tools.project, tuple(history[-4:]), feedback,
+                            decision.allowed_actions, decision.blocked_actions))
                 except ActionProtocolError as exc:
                     self.store.append_event('protocol.error', (), {'response_kind':'action', 'result_code':exc.code,
                         'steps_remaining':self.steps_remaining(context)})
@@ -243,6 +278,10 @@ class Controller:
                         # Every selected action gets exactly one terminal event, including
                         # the branches that break, continue or interrupt the loop.
                         self.action_end(selected, started_action, code)
+                        key = (*signature, action.name, canonical_hash(action.parameters))
+                        if (key, code) == previous:
+                            repeated = (signature, action)
+                        previous = (key, code)
         except CleanupFailed as exc:
             result = self.state(result, TaskState.FAILED, stop_reason=exc.reason, uncertainties=(*result.uncertainties, 'Process cleanup failed; directories retained.'))
         except BudgetStopped as exc:

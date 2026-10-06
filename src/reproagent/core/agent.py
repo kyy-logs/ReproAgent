@@ -101,6 +101,10 @@ class ReproAgent:
                 raise BudgetStopped('CANCELLED')
             remaining = self.context.budget.limits.agent_steps - self.context.budget.steps_used
             allowed = [name for name in SCHEMAS if context.project.candidates or name not in ('run_candidate', 'submit_candidate')]
+            # The Controller's deterministic policy narrows this further; an empty
+            # tuple means it left the whole schema to the Explorer.
+            if context.allowed_actions:
+                allowed = [name for name in allowed if name in context.allowed_actions]
             # Reserve first write/run/submit plus one possible correction. This
             # does not invent an expectation when authoritative facts are missing.
             if remaining <= 4 and context.contract.expected and not context.contract.missing_information:
@@ -122,6 +126,10 @@ class ReproAgent:
                     action = validate_action(parse_json(response.text))
                     if action.name not in allowed:
                         raise ValueError('choose an allowed action; reserve the remaining budget for writing, executing and submitting a candidate, or explain missing facts')
+                    if action in context.blocked_actions:
+                        # Only the exact arguments are refused: another file, range or
+                        # candidate stays a legitimate attempt.
+                        raise ValueError('this action with these arguments already produced the same result twice; change the arguments or choose a different action')
                     if action.name == 'write_candidate' and any(not f['path'].startswith(parent + '/') for f in action.parameters['files']):
                         raise ValueError(f'all candidate paths must start with {parent}/; for example {parent}/test_repro.py')
                 except ValueError as exc:
