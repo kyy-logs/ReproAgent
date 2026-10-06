@@ -9,11 +9,15 @@ from pathlib import Path
 
 from .core.models import EvidenceRef, TaskEvent
 from .core.serialization import REGISTRY, bytes_hash, canonical_bytes, decode_record, encode_record, parse_json
+from .paths import is_within, relative_name, shared_path_form, workspace_path
 
 
 def atomic_write(path: Path, content: bytes):
+    path = workspace_path(path)
+    # The temporary is longer than the file it replaces, and both names must use
+    # one representation for the rename to work.
+    path, temporary = shared_path_form(path, path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp"))
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as handle:
             handle.write(content)
@@ -30,16 +34,16 @@ def safe_child(root: Path, relative: str) -> Path:
     parts = relative.split("/")
     if any(part in ("", ".", "..") for part in parts):
         raise ValueError(f"unsafe relative path: {relative!r}")
-    root = root.resolve()
-    path = root.joinpath(*parts)
-    if not path.resolve().is_relative_to(root):
+    root = workspace_path(root)
+    path = workspace_path(root.joinpath(*parts))
+    if not is_within(path, root):
         raise ValueError(f"path escapes workspace: {relative}")
     return path
 
 
 class TaskStore:
     def __init__(self, root: Path):
-        self.root = Path(root).resolve()
+        self.root = workspace_path(Path(root).resolve())
         self._lock = threading.RLock()
 
     def record_path(self, kind: str, key: str) -> Path:
@@ -70,7 +74,7 @@ class TaskStore:
                     raise ValueError(f"immutable {kind} record already exists: {key}")
             else:
                 atomic_write(path, data)
-            return EvidenceRef(path.relative_to(self.root).as_posix(), bytes_hash(data))
+            return EvidenceRef(relative_name(path, self.root), bytes_hash(data))
 
     def load_record(self, kind: str, key: str):
         path = self.record_path(kind, key)
@@ -92,7 +96,7 @@ class TaskStore:
         return contract
 
     def read_events(self):
-        path = self.root / "events.jsonl"
+        path = workspace_path(self.root / "events.jsonl")
         events, errors = [], []
         if not path.exists():
             return events, errors
@@ -116,7 +120,7 @@ class TaskStore:
                 raise ValueError("cannot append to corrupted event stream")
             event = TaskEvent(len(events), kind, refs, payload, time.time())
             self.root.mkdir(parents=True, exist_ok=True)
-            with (self.root / "events.jsonl").open("ab") as handle:
+            with workspace_path(self.root / "events.jsonl").open("ab") as handle:
                 handle.write(canonical_bytes(encode_record(event)) + b"\n")
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -125,7 +129,7 @@ class TaskStore:
     def inspect(self):
         events, errors = self.read_events()
         task = None
-        if (self.root / "task.json").exists():
+        if workspace_path(self.root / "task.json").exists():
             try:
                 task = encode_record(self.load_record("task", "task"))
             except ValueError as exc:
@@ -133,13 +137,13 @@ class TaskStore:
         known = {ref for event in events for ref in event.refs}
         orphans = []
         for kind in ("contracts", "environments", "candidates", "runs", "snapshots", "verdicts"):
-            directory = self.root / kind
+            directory = workspace_path(self.root / kind)
             if directory.exists():
                 pattern = {'runs':'*/execution.json', 'snapshots':'*/snapshot.json', 'candidates':'*/manifest.json'}.get(kind, '*.json')
                 for path in directory.glob(pattern):
                     if path.name.endswith(".tmp"):
                         continue
-                    relative = path.relative_to(self.root).as_posix()
+                    relative = f"{kind}/{path.relative_to(directory).as_posix()}"
                     try:
                         decode_record(kind, parse_json(path.read_text(encoding="utf-8")))
                     except (ValueError, UnicodeError) as exc:

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .core.models import Candidate, CandidateDraft, CodeSnapshot, FileEntry, ProtectionCheck, RunWorkspace
 from .core.serialization import bytes_hash, canonical_hash, encode_record
+from .paths import identity_key, is_within, workspace_path
 from .store import TaskStore, atomic_write, safe_child
 
 EXCLUDED_NAMES = {".git", ".venv", "venv", "__pycache__", ".pytest_cache"}
@@ -18,30 +19,34 @@ def sensitive_path(path: str) -> bool:
 
 
 def inventory(root: Path, exclusions: tuple[Path, ...] = (), context=None) -> dict[str, bytes]:
-    root = root.resolve()
+    root = workspace_path(root)
+    excluded = tuple(Path(excluded).resolve() for excluded in exclusions)
     result = {}
-    def walk(directory, ancestors):
-        resolved = directory.resolve()
-        if not resolved.is_relative_to(root):
+    def walk(directory, prefix, ancestors):
+        key = identity_key(directory)
+        if not is_within(directory, root):
             raise ValueError(f"link escapes outside repository: {directory}")
-        if resolved in ancestors:
+        if key in ancestors:
             raise ValueError(f"cyclic repository link: {directory}")
         for path in sorted(directory.iterdir()):
             if context:
                 context.budget.check()
+            # An entry can be deeper than its root, so each one is represented on
+            # its own before it is stat-ed, read or compared.
+            path = workspace_path(path)
             real = path.resolve()
-            if any(real == excluded or real.is_relative_to(excluded) for excluded in exclusions):
+            if any(is_within(real, item) for item in excluded):
                 continue
-            relative = path.relative_to(root).as_posix()
+            relative = f"{prefix}/{path.name}" if prefix else path.name
             if path.name in EXCLUDED_NAMES or sensitive_path(relative):
                 continue
-            if not real.is_relative_to(root):
+            if not is_within(real, root):
                 raise ValueError(f"link escapes outside repository: {relative}")
             if path.is_dir():
-                walk(path, ancestors | {resolved})
+                walk(path, relative, ancestors | {key})
             elif path.is_file():
                 result[relative] = path.read_bytes()
-    walk(root, set())
+    walk(root, "", set())
     return result
 
 
@@ -54,16 +59,16 @@ def candidate_hash(candidate: Candidate) -> str:
 
 class Workspace:
     def __init__(self, task_root: Path, store: TaskStore):
-        self.root = Path(task_root).resolve()
+        self.root = workspace_path(Path(task_root).resolve())
         self.store = store
         self.mutable_paths = (".pytest_cache", "__pycache__")
         self.candidate_parent = 'tests'
 
     def freeze(self, request, context) -> CodeSnapshot:
-        repo = request.repo.resolve()
+        repo = workspace_path(request.repo.resolve())
         if not repo.is_dir():
             raise ValueError(f"repository directory does not exist: {repo}")
-        output = request.output_dir.resolve()
+        output = workspace_path(request.output_dir.resolve())
         if output == repo or repo.is_relative_to(output):
             raise ValueError("output directory cannot be the repository or its ancestor")
         exclusions = (self.root, output)
@@ -82,7 +87,7 @@ class Workspace:
             if any(name == relative or name.startswith(relative + "/") for name in contents):
                 raise ValueError(f"mutable path overlaps protected files: {relative}")
         snapshot_id = "snapshot-" + uuid.uuid4().hex
-        root = self.root / "snapshots" / snapshot_id / "code"
+        root = workspace_path(self.root / "snapshots" / snapshot_id / "code")
         files = []
         for name, content in contents.items():
             context.budget.check()
@@ -124,7 +129,7 @@ class Workspace:
         for selector in selectors:
             if selector.split("::", 1)[0] not in names:
                 raise ValueError("selector must reference a published candidate file")
-        storage = manifest_path.parent / "files"
+        storage = workspace_path(manifest_path.parent / "files")
         candidate = Candidate(candidate_id, snapshot.snapshot_id, draft.contract_id, draft.contract_version, tuple(entries), storage, "", draft.hypothesis, draft.parent_id, draft.language_id, selectors, draft.run_options, draft.expectation_sources, draft.fixture_refs, draft.preconditions)
         candidate = replace(candidate, manifest_hash=candidate_hash(candidate))
         for draft_file in draft.files:
@@ -145,7 +150,7 @@ class Workspace:
         if candidate:
             self.validate_candidate(candidate)
         run_id = "run-" + uuid.uuid4().hex
-        root = self.root / "runs" / run_id / "code"
+        root = workspace_path(self.root / "runs" / run_id / "code")
         root.mkdir(parents=True)
         for entry in snapshot.files:
             if context: context.budget.check()
@@ -159,7 +164,7 @@ class Workspace:
             if destination.exists():
                 raise ValueError("candidate would overwrite fixed/snapshot file")
             atomic_write(destination, safe_child(candidate.storage_root, entry.path).read_bytes())
-        temp_root = root.parent / "tmp"
+        temp_root = workspace_path(root.parent / "tmp")
         temp_root.mkdir()
         return RunWorkspace(run_id, root, temp_root, snapshot.snapshot_id, candidate.candidate_id if candidate else '')
 

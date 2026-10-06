@@ -8,14 +8,35 @@ import subprocess
 import sys
 from pathlib import Path
 
+MAX_PATH = 260
+
+
+def long_path(path):
+    """Absolute long-path-safe form, mirroring ``reproagent.paths.workspace_path``.
+
+    The reader may unpack this package deeper than the legacy Windows limit, and
+    this file runs standalone: it must not import reproagent.  Interpreter paths
+    do not come through here -- see the argv note in ``main``.
+    """
+    path = Path(path)
+    if os.name != 'nt':
+        return path
+    text = os.path.abspath(path)
+    if text.startswith('\\\\?\\') or len(text) < MAX_PATH:
+        return Path(text)
+    if text.startswith('\\\\'):
+        return Path('\\\\?\\UNC\\' + text[2:])
+    return Path('\\\\?\\' + text)
+
 
 def child(root, relative):
     if not relative or '\\' in relative or ':' in relative or any(p in ('', '.', '..') for p in relative.split('/')):
         raise ValueError('unsafe package path')
-    path = (root / relative).resolve()
-    if not path.is_relative_to(root.resolve()):
+    resolved = Path(os.path.realpath(root))
+    path = resolved.joinpath(*relative.split('/'))
+    if not path.is_relative_to(resolved):
         raise ValueError('package path escapes root')
-    return path
+    return long_path(path)
 
 
 def main():
@@ -25,9 +46,9 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--install', action='store_true')
     args = parser.parse_args()
-    root = Path(__file__).resolve().parent
-    report = json.loads((root / 'report.json').read_text(encoding='utf-8'))
-    manifest = json.loads((root / 'manifest.json').read_text(encoding='utf-8'))
+    root = long_path(Path(__file__).resolve().parent)
+    report = json.loads(long_path(root / 'report.json').read_text(encoding='utf-8'))
+    manifest = json.loads(long_path(root / 'manifest.json').read_text(encoding='utf-8'))
     for entry in manifest['files']:
         if hashlib.sha256(child(root, entry['path']).read_bytes()).hexdigest() != entry['content_hash']:
             raise ValueError('package file changed: ' + entry['path'])
@@ -43,11 +64,12 @@ def main():
             destination.write_bytes(content)
         elif not destination.exists() or destination.read_bytes() != content:
             raise ValueError('candidate not installed; pass --install')
-    args.output.mkdir(parents=True, exist_ok=False)
+    output = long_path(args.output)
+    output.mkdir(parents=True, exist_ok=False)
     env = {key: value for key, value in os.environ.items() if key.upper() in ('SYSTEMROOT', 'WINDIR', 'PATH', 'PATHEXT', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG')}
-    env.update({'PYTHONPATH': os.pathsep.join([str(root / 'probe'), *[str(args.repo.resolve() if r == '.' else child(args.repo, r)) for r in report['source_roots']]]),
+    env.update({'PYTHONPATH': os.pathsep.join([str(long_path(root / 'probe')), *[str(long_path(args.repo.resolve() if r == '.' else child(args.repo, r))) for r in report['source_roots']]]),
         'PYTEST_ADDOPTS':'', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD':'1', 'PYTHONDONTWRITEBYTECODE':'1', 'REPROAGENT_RUN_ID':'export-replay',
-        'REPROAGENT_PROBE_PATH':str(args.output.resolve() / 'probe.jsonl'), 'REPROAGENT_TARGET_MODULES':json.dumps(report['target_modules'])})
+        'REPROAGENT_PROBE_PATH':str(long_path(output / 'probe.jsonl')), 'REPROAGENT_TARGET_MODULES':json.dumps(report['target_modules'])})
     # Absolute, but not link-resolved: resolving a venv's interpreter would run
     # the base interpreter and drop that venv's packages.
     argv = [os.path.abspath(args.python), '-m', 'pytest', *report['pytest_args'], '-p', 'reproagent_pytest_probe', *report['selectors']]
