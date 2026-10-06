@@ -1,14 +1,18 @@
 import json
-from dataclasses import asdict
 from importlib.resources import files
 from pathlib import Path
 
 from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
+from .review_context import ReviewContextTooLarge, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
 from .budget import BudgetStopped
-from .protocol import ModelOutputError, validate_verdict, verdict_schema
+from .protocol import ModelOutputError, validate_verdict
+
+
+class CandidateFileChanged(ValueError):
+    """A stored candidate file no longer matches its published hash."""
 
 
 class Verifier:
@@ -53,30 +57,34 @@ class Verifier:
             return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot')
         if not contract.expected or not contract.sources:
             return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',))
-        candidate_text = []
+        # Every hard check above ran against the complete ExecutionResult. Only a
+        # bounded, citable projection reaches the model, and nothing here may turn a
+        # failed hard check or an unusable projection into a success.
+        def read_file(entry):
+            data = safe_child(candidate.storage_root, entry.path).read_bytes()
+            if bytes_hash(data) != entry.content_hash:
+                raise CandidateFileChanged('candidate file hash changed')
+            return data
+        cap = context.budget.limits.tool_response_bytes
+        def project(protocol_error=''):
+            return build_review_context(contract, candidate, run, read_ref=self.resolve, read_file=read_file,
+                max_bytes=cap, protocol_error=protocol_error)
         try:
-            for entry in candidate.files:
-                data = safe_child(candidate.storage_root, entry.path).read_bytes()
-                if bytes_hash(data) != entry.content_hash:
-                    return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
-                candidate_text.append({'path': entry.path, 'content': data.decode('utf-8')})
-            sources = tuple(EvidenceRef(s.path, s.content_hash, s.start_line, s.end_line) for s in contract.sources)
-            available = (*sources, *run.observation.failure_refs)
-            source_text = [self.resolve(ref) for ref in sources]
-            for ref in run.observation.failure_refs:
-                self.resolve(ref)
+            review = project()
+        except CandidateFileChanged:
+            return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
+        except ReviewContextTooLarge:
+            return verdict(None, 'semantic evidence exceeds bounded context; narrow candidate', uncertainty=('evidence omitted rather than silently truncated',))
         except (ValueError, OSError, UnicodeError):
             return verdict(None, 'evidence source is unavailable or altered')
-        payload = {'contract': asdict(contract), 'source_text': source_text, 'candidate': candidate_text,
-            'observations': asdict(run.observation), 'available_refs': [asdict(ref) for ref in available],
-            'response_schema':verdict_schema()}
-        cap = context.budget.limits.tool_response_bytes
+        sources = tuple(EvidenceRef(s.path, s.content_hash, s.start_line, s.end_line) for s in contract.sources)
         prompt = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
+        error = ''
         for attempt in range(3):
             context.budget.check()
             if context.cancel_event.is_set():
                 raise BudgetStopped('CANCELLED')
-            text = canonical_bytes(payload).decode()
+            text = canonical_bytes(review.payload).decode()
             for secret in self.secrets:
                 text = text.replace(secret, '[REDACTED]')
             if len(text.encode()) > cap:
@@ -92,7 +100,7 @@ class Verifier:
                     validate_verdict(result)
                     classification = CandidateClass(result['classification']) if result['classification'] else None
                     refs = tuple(EvidenceRef(**ref) for ref in result['evidence_refs'])
-                    if any(ref not in available for ref in refs):
+                    if any(ref not in review.available_refs for ref in refs):
                         raise ValueError('unknown evidence citation; copy exact available_refs')
                     for ref in refs:
                         self.resolve(ref)
@@ -110,7 +118,16 @@ class Verifier:
                             return verdict(classification, result['reason'], refs)
                     else:
                         return verdict(classification, result['reason'], refs)
-            payload['protocol_error'] = error[:512]
+            # A correction re-measures the whole payload, protocol error included: the
+            # request that is actually sent has to stay inside the same budget.
+            try:
+                review = project(error[:512])
+            except CandidateFileChanged:
+                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
+            except ReviewContextTooLarge:
+                return verdict(None, 'semantic evidence exceeds bounded context; narrow candidate', uncertainty=('evidence omitted rather than silently truncated',))
+            except (ValueError, OSError, UnicodeError):
+                return verdict(None, 'evidence source is unavailable or altered')
         return verdict(None, 'semantic verdict invalid after 3 attempts: ' + error[:512], uncertainty=('MODEL_PROTOCOL_ERROR',))
 
     def confirm(self, contract, candidate, first, second, verdicts):
