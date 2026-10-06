@@ -1,0 +1,7 @@
+{
+  "base_url": "https://api.openai.com/v1",
+  "model": "your-model-id",
+  "api_key_env": "REPROAGENT_API_KEY",
+  "max_output_tokens": 4096,
+  "output_limit_field": "max_completion_tokens"
+}

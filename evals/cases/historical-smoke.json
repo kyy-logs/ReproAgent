@@ -1,0 +1,201 @@
+{
+  "evaluation_date": "2026-10-05",
+  "selection": "Three hand-picked lightweight historical bugs, not a representative benchmark.",
+  "prompt_sha256": {
+    "analyze_issue.md": "ef3094a596d00d7180d6c683ff4dbfcd0d4c99efa0341199f4ef017d0373d6df",
+    "explore.md": "49f02ad836d76b7edd58baaab335267f0310ffd5609bd850ca1460cc46acc131",
+    "review_evidence.md": "8bd309472bd50d965285bcbd2c2c9ecd5c3b75ad0d8aa22bc73234eb57953d7b"
+  },
+  "cases": [
+    {
+      "case_id": "more-itertools-645",
+      "repo": "more-itertools/more-itertools",
+      "issue_url": "https://github.com/more-itertools/more-itertools/issues/462",
+      "issue_hash": "210a5ad575ad80172db10c2f13b188e506bae9ac789646c8cca51601dace00c2",
+      "url": "https://github.com/more-itertools/more-itertools/pull/645",
+      "buggy_commit": "8a27da60d70fbfc348b124ce89733d8a7104977a",
+      "fixed_commit": "9a1168a13e38e35396d1f4722f4a204f585cdda1",
+      "buggy_archive_sha256": "f221b491addca6b841ce5dce0d5fd11352e2e3df374b5a263098f7b570dd1fe6",
+      "fixed_archive_sha256": "2157ebfab2219e948bac76be23f9529d5e9883643c9125bcf907ef464cb9c699",
+      "allowed_description": "Bug: more_itertools.windowed on an empty iterable with window size 2 produces one all-None window. Expected: an empty iterable must produce no windows. For example, list(more_itertools.windowed((), 2)) should equal [], but the buggy version returns [(None, None)]. This report concerns an empty iterable and positive window sizes. The maintainer explicitly confirmed this expected behavior in the public PR description. Source: https://github.com/more-itertools/more-itertools/issues/462 and https://github.com/more-itertools/more-itertools/pull/645 .",
+      "description_hash": "a47c74aefc35d3c042ba09bcbaa974bb69e3eaac2aed01681e41082e1da50984",
+      "target_modules": [
+        "more_itertools.more"
+      ],
+      "source_roots": [
+        "."
+      ],
+      "preparations": [],
+      "preflight": {
+        "buggy": {
+          "checks": [
+            {
+              "input": "windowed((), 2)",
+              "actual": [
+                [
+                  null,
+                  null
+                ]
+              ],
+              "expected": []
+            }
+          ],
+          "matches_expected": false
+        },
+        "fixed": {
+          "checks": [
+            {
+              "input": "windowed((), 2)",
+              "actual": [],
+              "expected": []
+            }
+          ],
+          "matches_expected": true
+        }
+      },
+      "review_status": "approved"
+    },
+    {
+      "case_id": "humanize-250",
+      "repo": "python-humanize/humanize",
+      "issue_url": "https://github.com/python-humanize/humanize/pull/250",
+      "issue_hash": "0e2bc40c84f81be7507b189c5f5f61e491a0df40e1b4d9ce9a10e13a5f965f7c",
+      "url": "https://github.com/python-humanize/humanize/pull/250",
+      "buggy_commit": "8059ebe1732c89177709476165f6e87cc76fe1b7",
+      "fixed_commit": "2968d44280a68f775db73ddeb2f2fc6c05edac84",
+      "buggy_archive_sha256": "68a0c5a4142472b5ed81cb2b84e4bc1ae602e00ae9e89414bef4b1f01437cb84",
+      "fixed_archive_sha256": "052fb94fa1a4417a529f65185c670131df0ab3b95f5eea814d94caaba67389ba",
+      "allowed_description": "Bug: humanize.naturalsize has a regression for a one-byte float or numeric string when gnu=False. humanize.naturalsize(1.0, gnu=False) and humanize.naturalsize(\"1\", gnu=False) should both return \"1 Byte\", matching the integer input. The buggy version returns \"1.0 Byte\" for these inputs. This report concerns these two inputs using the default binary=False and default format. Source: https://github.com/python-humanize/humanize/pull/250 .",
+      "description_hash": "40cf8bc7e3009b405fc797f62658e9b0b48e29ea7ed461a56acd0e3c71579707",
+      "target_modules": [
+        "humanize.filesize"
+      ],
+      "source_roots": [
+        "src"
+      ],
+      "preparations": [
+        {
+          "role": "buggy",
+          "generated_path": "src/humanize/_version.py",
+          "sha256": "30d2be470bcdd5f2c7370ca18e9a92ac5e1805bfa661d6421d109de1fcd56a89",
+          "method": "official hatch-vcs build hook with explicit metadata version"
+        },
+        {
+          "role": "fixed",
+          "generated_path": "src/humanize/_version.py",
+          "sha256": "30d2be470bcdd5f2c7370ca18e9a92ac5e1805bfa661d6421d109de1fcd56a89",
+          "method": "official hatch-vcs build hook with explicit metadata version"
+        }
+      ],
+      "preflight": {
+        "buggy": {
+          "checks": [
+            {
+              "input": "1.0",
+              "actual": "1.0 Byte",
+              "expected": "1 Byte"
+            },
+            {
+              "input": "'1'",
+              "actual": "1.0 Byte",
+              "expected": "1 Byte"
+            }
+          ],
+          "matches_expected": false
+        },
+        "fixed": {
+          "checks": [
+            {
+              "input": "1.0",
+              "actual": "1 Byte",
+              "expected": "1 Byte"
+            },
+            {
+              "input": "'1'",
+              "actual": "1 Byte",
+              "expected": "1 Byte"
+            }
+          ],
+          "matches_expected": true
+        }
+      },
+      "review_status": "approved"
+    },
+    {
+      "case_id": "humanize-254",
+      "repo": "python-humanize/humanize",
+      "issue_url": "https://github.com/python-humanize/humanize/issues/14",
+      "issue_hash": "83da144a5565d17033bbf2843a951712eb0df5385a18c9263c85a91139ccc3c6",
+      "url": "https://github.com/python-humanize/humanize/pull/254",
+      "buggy_commit": "58d10b43175a22eb9ece2c6f3dcff6b6b681e2df",
+      "fixed_commit": "0f5d2948d674a88a611f8e341c0df520767b1b80",
+      "buggy_archive_sha256": "8fcca88dbea723041023faf0e0e8e7324b48f96b89a8e928f2474f3ba09dc696",
+      "fixed_archive_sha256": "bbf9955a48cbf77e2abf935768327eaeeaa013a9ac0c182834fdcfabbdd58f3f",
+      "allowed_description": "Bug: humanize.precisedelta gives incorrect day components and pluralization with minimum_unit=\"days\" and format=\"%d\". For datetime.timedelta(days=31), the expected output is \"1 month\" but the reported output is \"1 month and 0 days\". For days=92, expected \"3 months\", reported \"3 month and 0 days\". For days=32, expected \"1 month and 1 day\", reported \"1 month and 1 days\". Use the default English locale. This report concerns exactly these three calls. Source: https://github.com/python-humanize/humanize/issues/14 .",
+      "description_hash": "33451928e5728ccfd1d1f88d0ab6a5525d47e389e15aa407ce67e4c3ffa16d0f",
+      "target_modules": [
+        "humanize.time"
+      ],
+      "source_roots": [
+        "src"
+      ],
+      "preparations": [
+        {
+          "role": "buggy",
+          "generated_path": "src/humanize/_version.py",
+          "sha256": "6a04113fa382ec79d35a4312212e0503c65a561daad3678e7aeb8f19a0521aa2",
+          "method": "official hatch-vcs build hook with explicit metadata version"
+        },
+        {
+          "role": "fixed",
+          "generated_path": "src/humanize/_version.py",
+          "sha256": "6a04113fa382ec79d35a4312212e0503c65a561daad3678e7aeb8f19a0521aa2",
+          "method": "official hatch-vcs build hook with explicit metadata version"
+        }
+      ],
+      "preflight": {
+        "buggy": {
+          "checks": [
+            {
+              "input": "31 days",
+              "actual": "1 month and 0 days",
+              "expected": "1 month"
+            },
+            {
+              "input": "92 days",
+              "actual": "3 months and 0 days",
+              "expected": "3 months"
+            },
+            {
+              "input": "32 days",
+              "actual": "1 month and 1 days",
+              "expected": "1 month and 1 day"
+            }
+          ],
+          "matches_expected": false
+        },
+        "fixed": {
+          "checks": [
+            {
+              "input": "31 days",
+              "actual": "1 month",
+              "expected": "1 month"
+            },
+            {
+              "input": "92 days",
+              "actual": "3 months",
+              "expected": "3 months"
+            },
+            {
+              "input": "32 days",
+              "actual": "1 month and 1 day",
+              "expected": "1 month and 1 day"
+            }
+          ],
+          "matches_expected": true
+        }
+      },
+      "review_status": "approved"
+    }
+  ]
+}

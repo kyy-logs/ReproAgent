@@ -1,0 +1,56 @@
+{
+  "evaluation_date": "2026-10-05",
+  "interpretation": "20 distinct selected bugs; previous three use their final post-fix run, new seventeen use the frozen-code first attempt. Not a first-attempt benchmark for all twenty.",
+  "summary": {
+    "unique_cases": 20,
+    "repositories": 7,
+    "controller_done": 11,
+    "differential_validated": 11,
+    "export_replayed": 11,
+    "not_completed": 9,
+    "independent_human_reviewed": 0,
+    "effective_reproductions": null,
+    "model_calls_selected_runs": 244,
+    "total_tokens_selected_runs": 1203284,
+    "cost_kind": "unknown",
+    "cost_value": null
+  },
+  "batches": [
+    {
+      "path": "historical-smoke-verified-results.json",
+      "sha256": "6656d47d9f174e9367776bf11e224c7c5f7f24c291e0059fb84a279b6fd091a6",
+      "cases": 3,
+      "done": 3,
+      "run_selection": "final post-fix run; original and intermediate failures retained"
+    },
+    {
+      "path": "expanded-historical-results.json",
+      "sha256": "f44fb369064a78af6159fc5ecd18702c6daaf21cfbf4d53b6178583a5e79d926",
+      "cases": 17,
+      "done": 8,
+      "run_selection": "first attempt, frozen source/prompts/model/budgets"
+    }
+  ],
+  "case_ids": [
+    "more-itertools-645",
+    "humanize-250",
+    "humanize-254",
+    "validators-432",
+    "validators-418",
+    "validators-405",
+    "validators-374",
+    "validators-317",
+    "pyjwt-608",
+    "pyjwt-1040",
+    "attrs-1428",
+    "attrs-1328",
+    "attrs-1319",
+    "click-3152",
+    "click-3079",
+    "click-3004",
+    "click-2940",
+    "packaging-1360",
+    "packaging-1332",
+    "packaging-1328"
+  ]
+}

@@ -1,0 +1,203 @@
+{
+  "evaluation_date": "2026-10-05",
+  "summary": {
+    "cases": 3,
+    "environment_runnable": 3,
+    "controller_done": 0,
+    "effective_reproductions": 0,
+    "model_calls": 27,
+    "prompt_tokens": 62182,
+    "completion_tokens": 15363,
+    "cost_kind": "unknown",
+    "cost_value": null,
+    "export_replay_status": "not_applicable_no_reproduction_package"
+  },
+  "results": [
+    {
+      "case_id": "more-itertools-645",
+      "cli_exit_code": 1,
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "accepted_candidate_id": "",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "duration_seconds": 26.22,
+      "model_calls": 13,
+      "prompt_tokens": 13691,
+      "completion_tokens": 4158,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\historical\\more-itertools-645",
+      "buggy_commit": "8a27da60d70fbfc348b124ce89733d8a7104977a",
+      "fixed_commit": "9a1168a13e38e35396d1f4722f4a204f585cdda1",
+      "issue_url": "https://github.com/more-itertools/more-itertools/issues/462",
+      "issue_hash": "210a5ad575ad80172db10c2f13b188e506bae9ac789646c8cca51601dace00c2",
+      "description_hash": "a47c74aefc35d3c042ba09bcbaa974bb69e3eaac2aed01681e41082e1da50984",
+      "limits": {
+        "agent_steps": 12,
+        "task_timeout_seconds": 240,
+        "command_timeout_seconds": 30
+      },
+      "human_supplements": 0,
+      "export_replayed": null,
+      "human_judgement": null,
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "contract_missing_information": [
+        [
+          "The affected more_itertools version is not specified in the supplied sources.",
+          "The referenced PR description with the maintainer confirmation is not included among the supplied sources, so that confirmation cannot be independently verified from the provided excerpts.",
+          "No implementation or source code excerpt for more_itertools.windowed is supplied.",
+          "Expected behavior for non-empty iterables with fewer elements than the window size is not specified in the supplied sources."
+        ]
+      ],
+      "environment_status": "runnable",
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "manual_control": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.18s"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.05s"
+        }
+      },
+      "environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.tmp\\package-envs\\target\\Scripts\\python.exe",
+        "version": "3.12.14 9.1.1"
+      }
+    },
+    {
+      "case_id": "humanize-250",
+      "cli_exit_code": 1,
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "accepted_candidate_id": "",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "duration_seconds": 36.72,
+      "model_calls": 13,
+      "prompt_tokens": 47993,
+      "completion_tokens": 7150,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\historical\\humanize-250",
+      "buggy_commit": "8059ebe1732c89177709476165f6e87cc76fe1b7",
+      "fixed_commit": "2968d44280a68f775db73ddeb2f2fc6c05edac84",
+      "issue_url": "https://github.com/python-humanize/humanize/pull/250",
+      "issue_hash": "0e2bc40c84f81be7507b189c5f5f61e491a0df40e1b4d9ce9a10e13a5f965f7c",
+      "description_hash": "40cf8bc7e3009b405fc797f62658e9b0b48e29ea7ed461a56acd0e3c71579707",
+      "limits": {
+        "agent_steps": 12,
+        "task_timeout_seconds": 240,
+        "command_timeout_seconds": 30
+      },
+      "human_supplements": 0,
+      "export_replayed": null,
+      "human_judgement": null,
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "contract_missing_information": [
+        [
+          "Exact humanize version or commit where the regression appears.",
+          "Whether other one-byte numeric types or string formats are affected."
+        ]
+      ],
+      "environment_status": "runnable",
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "manual_control": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "2 failed in 0.15s"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "2 passed in 0.04s"
+        }
+      },
+      "environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.tmp\\package-envs\\target\\Scripts\\python.exe",
+        "version": "3.12.14 9.1.1"
+      }
+    },
+    {
+      "case_id": "humanize-254",
+      "cli_exit_code": 1,
+      "status": "NEEDS_INFORMATION",
+      "evidence_level": "NONE",
+      "accepted_candidate_id": "",
+      "stop_reason": "INVALID_INPUT",
+      "uncertainties": [
+        "\"invalid contract text\""
+      ],
+      "duration_seconds": 21.34,
+      "model_calls": 1,
+      "prompt_tokens": 498,
+      "completion_tokens": 4055,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\historical\\humanize-254",
+      "buggy_commit": "58d10b43175a22eb9ece2c6f3dcff6b6b681e2df",
+      "fixed_commit": "0f5d2948d674a88a611f8e341c0df520767b1b80",
+      "issue_url": "https://github.com/python-humanize/humanize/issues/14",
+      "issue_hash": "83da144a5565d17033bbf2843a951712eb0df5385a18c9263c85a91139ccc3c6",
+      "description_hash": "33451928e5728ccfd1d1f88d0ab6a5525d47e389e15aa407ce67e4c3ffa16d0f",
+      "limits": {
+        "agent_steps": 12,
+        "task_timeout_seconds": 240,
+        "command_timeout_seconds": 30
+      },
+      "human_supplements": 0,
+      "export_replayed": null,
+      "human_judgement": null,
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "contract_missing_information": [],
+      "environment_status": "runnable",
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "manual_control": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "3 failed in 0.16s"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "3 passed in 0.05s"
+        }
+      },
+      "environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.tmp\\package-envs\\target\\Scripts\\python.exe",
+        "version": "3.12.14 9.1.1"
+      }
+    }
+  ]
+}

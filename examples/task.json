@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "repo": "../demo-project",
+  "output_dir": "../repro-results/task-001",
+  "issue_file": "../demo-project/issue.md",
+  "language": {
+    "python": "C:/path/to/project/.venv/Scripts/python.exe",
+    "target_modules": ["example.parser"],
+    "source_roots": ["."],
+    "candidate_parent": "tests",
+    "pytest_args": ["-q"]
+  }
+}

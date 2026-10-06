@@ -1,0 +1,29 @@
+from typing import Protocol
+
+from .models import (
+    AgentAction, AgentContext, CallContext, Candidate, EnvironmentSnapshot,
+    EvidenceContext, ExecutionSpec, FrameworkChecks, IssueContract, IssueDescription,
+    LanguageInspection, ModelRequest, ModelResponse, ProbeArtifacts, ProbeResults,
+    ProjectView, PythonPytestConfig, RawExecution, RunContext, RunWorkspace, TestObservation,
+)
+
+
+class ModelGateway(Protocol):
+    async def complete(self, request: ModelRequest, context: CallContext) -> ModelResponse: ...
+
+
+class LanguageAdapter(Protocol):
+    def inspect(self, project: ProjectView, config: PythonPytestConfig) -> LanguageInspection: ...
+    def describe_environment(self, inspection: LanguageInspection, probes: ProbeResults) -> EnvironmentSnapshot: ...
+    def build_execution(self, candidate: Candidate, run: RunWorkspace, environment: EnvironmentSnapshot) -> ExecutionSpec: ...
+    def normalize(self, raw: RawExecution, artifacts: ProbeArtifacts) -> TestObservation: ...
+    def check_framework(self, candidate: Candidate, observation: TestObservation) -> FrameworkChecks: ...
+
+
+class ExecutionBackend(Protocol):
+    async def execute(self, spec: ExecutionSpec, context: RunContext) -> RawExecution: ...
+
+
+class Explorer(Protocol):
+    async def analyze(self, description: IssueDescription, evidence: EvidenceContext) -> IssueContract: ...
+    async def next_action(self, context: AgentContext) -> AgentAction: ...

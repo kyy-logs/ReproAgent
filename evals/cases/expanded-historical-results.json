@@ -1,0 +1,2362 @@
+{
+  "evaluation_date": "2026-10-05",
+  "iteration": "expanded-frozen-code-first-attempt",
+  "selection": "17 additional hand-picked historical bugs across five new repositories; selected before model runs; not a representative benchmark",
+  "input_method": "researcher-authored behavioral descriptions and minimized inputs; preflight controls and fixed materials excluded from agent input",
+  "summary": {
+    "cases": 17,
+    "repositories": 5,
+    "preflight_buggy_fails_fixed_passes": 17,
+    "controller_done": 8,
+    "differential_validated": 8,
+    "export_replayed": 8,
+    "exhausted": 9,
+    "failure_categories": {
+      "single_run_no_submission": 1,
+      "search_without_candidate": 6,
+      "candidate_not_executed": 1,
+      "unstable_failure_signature": 1
+    },
+    "agent_steps": 177,
+    "actions": {
+      "invalid_json": 25,
+      "read_file": 74,
+      "write_candidate": 16,
+      "run_candidate": 10,
+      "submit_candidate": 9,
+      "search_code": 42
+    },
+    "action_responses_missing_from_trace": 1,
+    "model_calls": 216,
+    "prompt_tokens": 971739,
+    "completion_tokens": 121583,
+    "total_tokens": 1093322,
+    "cost_kind": "unknown",
+    "cost_value": null,
+    "codex_correctness_reviewed": 8,
+    "independent_human_reviewed": 0,
+    "effective_reproductions": null,
+    "effective_reproduction_status": "pending_independent_human_review"
+  },
+  "evaluation_lock": {
+    "evaluation_date": "2026-10-05",
+    "case_ids": [
+      "validators-432",
+      "validators-418",
+      "validators-405",
+      "validators-374",
+      "validators-317",
+      "pyjwt-608",
+      "pyjwt-1040",
+      "attrs-1428",
+      "attrs-1328",
+      "attrs-1319",
+      "click-3152",
+      "click-3079",
+      "click-3004",
+      "click-2940",
+      "packaging-1360",
+      "packaging-1332",
+      "packaging-1328"
+    ],
+    "definitions_sha256": "6c84bdfa127dd63284e31374b8a022caeddadc3abc35e8a7b9d87f7ccf7f5682",
+    "product_source_sha256": {
+      "src/reproagent/app.py": "a56bbbde2f7f6fa42c0aebdeccc3a49aed6f6b3e3b85d023f67df095b26c14de",
+      "src/reproagent/cli.py": "c62b7e52d9d0683b2f453562332102ec480e817c2cb2abe0a946aec770d02e80",
+      "src/reproagent/exporter.py": "69c92c8a52643f15c119fba5004df202daff6d0a6e86862a3f3e42391c88e12f",
+      "src/reproagent/runner.py": "3e2d2065bb182a4ed5442f9ffa9a36c90cfc7cef254bc6de9c08fc641dc93dc9",
+      "src/reproagent/store.py": "d26457153d2a9d5c9fd9d12a2c63b4bd5c88a3e93f3bf5e5a018b6e2a6407c17",
+      "src/reproagent/workspace.py": "a7eb6ba1a2e8fc5b65ff917cdfc91169afdd11816aac272aa0ca57359602670a",
+      "src/reproagent/__init__.py": "82e9075d19eed7dd58c2550b4640730d02e4b205bde4dbed239e02b7fa84ba0f",
+      "src/reproagent/__main__.py": "79ee6f134c5c5193377cf9b189cbdcc3e2095e49ba9cec310114441c15a917c4",
+      "src/reproagent/adapters/__init__.py": "683faeea2c5952becd6b96081a14d57867a9a3d6836f3d098f96403366837c54",
+      "src/reproagent/core/agent.py": "6fb22b45aee09131eadbd6d1d34fbfeee5705c3f4ee024476937400f6ebb993c",
+      "src/reproagent/core/budget.py": "31114f28ce57d3db76da30796cc1f073e15093fa77f56dec7759afd3e2350b6f",
+      "src/reproagent/core/controller.py": "cac58f7829b9fea0b58d4e58b8bd9d749c3e39b1eefa9d287a4ea129a8951deb",
+      "src/reproagent/core/models.py": "8cf91a790f0ebda407234c4a237ce68f438561e4fe0123ec0dd3103ac7e1e4f6",
+      "src/reproagent/core/ports.py": "6d4595ae93d9a31b0bbb48d8f0d5512b944e2f9e675befe1e43bc54f2d6c6aad",
+      "src/reproagent/core/protocol.py": "4f11e5507c6a7348b63135fd2c1bf106f8648c1084f8214b17928330e6ee2dd9",
+      "src/reproagent/core/serialization.py": "73a91618d6fbe057b355c3aca0e7fc20a31e282d6618a77f37f594016d5ccdd9",
+      "src/reproagent/core/tools.py": "d54a8656bafaa3df7c9b46410d781ff47f81b56bb7f91b306e8b09a233c9e9e2",
+      "src/reproagent/core/verifier.py": "a2f815cbea2de0442069612736a099d59bf68292207e698eab99584afff876d9",
+      "src/reproagent/core/__init__.py": "54406312e6c89a89c7230d6b9e7083e76e10f995d461b8d1ebf0c38af76f4e39",
+      "src/reproagent/resources/replay.py": "464ec6183b4f8f4f0c9a8f661bab9fbe0f327f0970a6b9f27b38a5c601461233",
+      "src/reproagent/adapters/languages/__init__.py": "fe713d19ff0f129a3a7d77792d35c5400e6cd73bcec31ab8ef4fc4e54b31bec8",
+      "src/reproagent/adapters/models/provider.py": "d707af876b90eadd72d31b8015e1c10817c684ef88843841c1082d70c7b5bdd5",
+      "src/reproagent/adapters/models/__init__.py": "516daf8b38954e612b8957b319d87b33b914a88ebbc19d5976c1e2f5e2ba4971",
+      "src/reproagent/adapters/runtimes/local.py": "4db83e9b5dfa72da4178f4f034d6c05608d0abdf4bdadc35054c670df02f97f0",
+      "src/reproagent/adapters/runtimes/process_tree.py": "593655f7e285215c10d92d02fa1136bd65c0482e192e14e02bfb75d27fe41e45",
+      "src/reproagent/adapters/runtimes/__init__.py": "1340d82324d4e136c08040f534c804e0dd806a88df5982633d70abc64bf0e379",
+      "src/reproagent/adapters/languages/python_pytest/adapter.py": "accfcc7223699b5c640edaf6f686896d7b73a45d2c4d82afedf15132f6f5f711",
+      "src/reproagent/adapters/languages/python_pytest/collector.py": "849acf354f4df30945da5a0e2d1c2c8bed30a87ba8592f6bc719971954d988ce",
+      "src/reproagent/adapters/languages/python_pytest/__init__.py": "04f55008ae2ef8130534a9c76a163fa8a8406e573643b8c8ce35e8090c33a2af",
+      "src/reproagent/adapters/languages/python_pytest/probe/reproagent_pytest_probe.py": "7eadf3d40189faa41fc1013b410a046e4a79590de61118f6f7594439b4430dd7"
+    },
+    "prompt_sha256": {
+      "analyze_issue.md": "033ae21469d549057b9a92a05c355c3effb296b5e2485c2aa7c78ef5f0b64180",
+      "explore.md": "974cb3a33ff5a6297999b8e52f3d38456fd6eeaf2fa791c6d804974a903a01df",
+      "review_evidence.md": "99aec0fd5a9697a45d2fff467af67ad404135437a6653b5f2d21ac123559a3ef"
+    },
+    "model_config": {
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "max_output_tokens": 4096,
+      "output_limit_field": "max_tokens",
+      "input_cost_per_million": null,
+      "output_cost_per_million": null
+    },
+    "target_environment_packages": [
+      {
+        "name": "colorama",
+        "version": "0.4.6"
+      },
+      {
+        "name": "hypothesis",
+        "version": "6.168.4"
+      },
+      {
+        "name": "iniconfig",
+        "version": "2.3.0"
+      },
+      {
+        "name": "packaging",
+        "version": "26.3"
+      },
+      {
+        "name": "pip",
+        "version": "25.0.1"
+      },
+      {
+        "name": "pluggy",
+        "version": "1.6.0"
+      },
+      {
+        "name": "Pygments",
+        "version": "2.21.0"
+      },
+      {
+        "name": "pytest",
+        "version": "9.1.1"
+      },
+      {
+        "name": "sortedcontainers",
+        "version": "2.4.0"
+      }
+    ],
+    "concurrency": 2
+  },
+  "repeat_confirmation_diagnostic": {
+    "case_id": "packaging-1360",
+    "comparison": "exact production confirm failure signature",
+    "production_signatures_equal": false,
+    "diagnostic_address_normalized_signatures_equal": true,
+    "normalization_used_for_scoring": false,
+    "run_ids": [
+      "run-689207e4b9ea41d997643fcbe8349d93",
+      "run-830c1ce66eef4a9d82a9d2293f853200"
+    ],
+    "failed_test_count_each_run": [
+      3,
+      3
+    ],
+    "diagnostic_pattern": "(?<=@ )\\d+|\\d+(?=>)",
+    "raw_signatures": [
+      [
+        [
+          "repro_tests/test_repro.py::test_cpython_tags_explicit_empty_platforms",
+          "call",
+          "{\"lineno\": 11, \"message\": \"assert [<cp311-cp311...9744064>, ...] == []\\n  \\n  Left contains 12 more items, first extra item: <cp311-cp311-win_amd64 @ 2828369755776>\\n  Use -v to get more diff\", \"path\": \"<run>\\\\repro_tests\\\\test_repro.py\"}"
+        ],
+        [
+          "repro_tests/test_repro.py::test_generic_tags_explicit_empty_platforms",
+          "call",
+          "{\"lineno\": 15, \"message\": \"assert [<custom-abi-...828369699008>] == []\\n  \\n  Left contains 2 more items, first extra item: <custom-abi-win_amd64 @ 2828369693824>\\n  Use -v to get more diff\", \"path\": \"<run>\\\\repro_tests\\\\test_repro.py\"}"
+        ],
+        [
+          "repro_tests/test_repro.py::test_compatible_tags_explicit_empty_platforms",
+          "call",
+          "{\"lineno\": 20, \"message\": \"assert [<py3-none-wi...828369609600>] == [<cp3-none-an...828369614208>]\\n  \\n  At index 0 diff: <py3-none-win_amd64 @ 2828369610816> != <cp3-none-any @ 2828369615040>\\n  Left contains one more item: <py3-none-any @ 2828369609600>\\n  Use -v to get more diff\", \"path\": \"<run>\\\\repro_tests\\\\test_repro.py\"}"
+        ]
+      ],
+      [
+        [
+          "repro_tests/test_repro.py::test_cpython_tags_explicit_empty_platforms",
+          "call",
+          "{\"lineno\": 11, \"message\": \"assert [<cp311-cp311...2971712>, ...] == []\\n  \\n  Left contains 12 more items, first extra item: <cp311-cp311-win_amd64 @ 1505802969216>\\n  Use -v to get more diff\", \"path\": \"<run>\\\\repro_tests\\\\test_repro.py\"}"
+        ],
+        [
+          "repro_tests/test_repro.py::test_generic_tags_explicit_empty_platforms",
+          "call",
+          "{\"lineno\": 15, \"message\": \"assert [<custom-abi-...505802967680>] == []\\n  \\n  Left contains 2 more items, first extra item: <custom-abi-win_amd64 @ 1505802967872>\\n  Use -v to get more diff\", \"path\": \"<run>\\\\repro_tests\\\\test_repro.py\"}"
+        ],
+        [
+          "repro_tests/test_repro.py::test_compatible_tags_explicit_empty_platforms",
+          "call",
+          "{\"lineno\": 20, \"message\": \"assert [<py3-none-wi...505802941056>] == [<cp3-none-an...505802932288>]\\n  \\n  At index 0 diff: <py3-none-win_amd64 @ 1505802932928> != <cp3-none-any @ 1505802934464>\\n  Left contains one more item: <py3-none-any @ 1505802941056>\\n  Use -v to get more diff\", \"path\": \"<run>\\\\repro_tests\\\\test_repro.py\"}"
+        ]
+      ]
+    ],
+    "reason": "Tag repr includes decimal object addresses, including pytest-truncated repr tails; exact crash.message differs across processes."
+  },
+  "offline_verification": {
+    "source": "cases/historical-smoke-verified-results.json",
+    "rerun_in_this_batch": false,
+    "reason": "Product source and prompt hashes verified unchanged; only evaluation preparation and documentation added."
+  },
+  "results": [
+    {
+      "case_id": "validators-432",
+      "status": "EXHAUSTED",
+      "evidence_level": "SINGLE_OBSERVATION",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "candidate-3f156a52cf3b4f909be328269f111c0a",
+      "export_state": "published",
+      "duration_seconds": 93.66,
+      "agent_steps": 12,
+      "model_calls": 16,
+      "prompt_tokens": 62806,
+      "completion_tokens": 19676,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\validators-432",
+      "description_hash": "378ac084d5b6133b44e3a89197495eddb74e511c873a3afa8c5a034791bbf43d",
+      "buggy_commit": "54404420a226c2a3c1603b81cb9958ef197b52a7",
+      "fixed_commit": "9bc7e82f7bf0fb3990eb287e11323fb6ca1c87cf",
+      "issue_url": "https://github.com/python-validators/validators/pull/432",
+      "category": "validation-false-positive",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 1,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.30s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-432\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.11s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-432\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 11,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 1,
+          "read_file": 7,
+          "write_candidate": 2,
+          "run_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 89 (char 88)",
+          "truncated, empty or incompatible provider response; return a complete JSON object",
+          "candidate files must remain in configured test area"
+        ],
+        "identical_actions_repeated": 2,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate is a regression test for the reported behavior: validators.mac_address must not accept the mixed-separator form 'aa:bb-cc-dd:ee:ff', while uniform ':' and '-' forms remain valid. The expectation source (input/issue.md) states the mixed form should yield a validators.ValidationError rather than True, and uniform forms should still be accepted. Execution was real: target_calls shows validators.mac_address called 5 times and target_origins binds it to src/validators/mac_address.py, so no mock replaced the target. Two candidate assertions failed against the real target: test_mixed_separators_are_invalid failed with AssertionError 'mac_address must reject mixed separators: aa:bb-cc-dd:ee:ff ... where False = _rejected(...)', and test_mixed_separators_raise_validation_error_when_requested failed with 'DID NOT RAISE ValidationError'. Both show mac_address returning True (accepted) for the mixed form, exactly the reported actual. The uniform-colon and uniform-hyphen tests passed, confirming the expected true-behavior controls hold. The assertion is on the expected correct behavior (rejection of mixed separators), not an undesired-exception expectation, and the exception handling is limited to ValidationError; failure_refs cite the probe records for these failures. Therefore all three checks hold."
+          }
+        ]
+      },
+      "repository": "python-validators/validators",
+      "symptom": "混用 MAC 分隔符仍被接受",
+      "failure_category": "single_run_no_submission",
+      "diagnosis": "第 12 步才运行；一次失败已通过语义核验，未提交独立重放。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/validators-432/request.json": "b691d934c48e0873c1ae575a33530e9005c59d7324fb1638aef28297ed864e6e",
+        "repro-results/expanded/validators-432/events.jsonl": "c70e2f5056eac081b024d023150bf29646d50d1e94523f7f59a683bb0b2c1515",
+        "repro-results/expanded/validators-432/input/issue.md": "378ac084d5b6133b44e3a89197495eddb74e511c873a3afa8c5a034791bbf43d",
+        ".local/expanded-cases/validators-432/trace.jsonl": "840f60381f3f92b9b725a9b9eb6440f659139062e2f9ee99616d812a67ccebd4",
+        ".local/expanded-cases/validators-432/controls/test_control.py": "12f117657d59084117949cf1f778d64e032690afcdfa6f3c79fac5072ff13ddb",
+        ".local/expanded-cases/validators-432/controls/buggy.log": "1be33fe84f691e0c29de1d2b38ae37a71dda005fb508d23ad09d4ba9e9580e57",
+        ".local/expanded-cases/validators-432/controls/fixed.log": "6a2cadadee24ba45fd3b15c75d70bcf039db761118695fc33a7217a6977a4076",
+        "repro-results/expanded/validators-432/verdicts/verdict-run-22df2eabdaaf4b88988b5139074725a2.json": "bd4fd3df5aa9e17f1f977c1f47b0b3505a2e71e87a4eccb0162e8f9bed5d8f6d",
+        "repro-results/expanded/validators-432/candidates/candidate-3f156a52cf3b4f909be328269f111c0a/manifest.json": "7e8012e8ef6f9f5d411f17b3ac2bd0a4938a6ba9c026d772183ea588927de4ac",
+        "repro-results/expanded/validators-432/candidates/candidate-3f156a52cf3b4f909be328269f111c0a/files/repro_tests/test_mac_address_mixed_separators.py": "c84140556380a0edde85d2e37f7fea85133019ae6ac46464c2ac2015d5113160",
+        "repro-results/expanded/validators-432/runs/run-22df2eabdaaf4b88988b5139074725a2/execution.json": "63c3fb65a547d3306a7f86885bb219a8cd723c7c47b446d81323028a97254ea8"
+      }
+    },
+    {
+      "case_id": "validators-418",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-b686ed7d9e774302a270f8d89de9f686",
+      "export_state": "published",
+      "duration_seconds": 38.06,
+      "agent_steps": 7,
+      "model_calls": 10,
+      "prompt_tokens": 35429,
+      "completion_tokens": 5072,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\validators-418",
+      "description_hash": "9b69b56c43731a57766163531510b804d39ee49bd9c1275b8f735863342d789f",
+      "buggy_commit": "25fcef05c293def421fd3f6714403a54fce993cf",
+      "fixed_commit": "d6241fc31f6b46bf81283c6ab3cae07c370fc1f6",
+      "issue_url": "https://github.com/python-validators/validators/pull/418",
+      "category": "prefix-handling",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.27s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-418\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.09s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-418\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 7,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 1,
+          "read_file": 3,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 81 (char 80)"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test calls the real validators.uri.uri target with 'mailto:m@example.com' and asserts the expected correct result is True. The observed call instead returned a ValidationError object for that URI, matching the issue's reported prefix-removal failure that loses the single-character local part. Target execution is confirmed by the validators.uri origin and call count in the observations."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate invokes the real validators.uri.uri target and asserts the expected correct behavior, that uri('mailto:m@example.com') is True. The observed execution fails with AssertionError because uri('mailto:m@example.com') returns a ValidationError, matching the reported mailto prefix-removal bug."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_uri_mailto_single_char_local_part",
+            "repro_tests/test_repro.py::test_uri_mailto_keeps_leading_m_of_local_part"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.uri": 29
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 1,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_uri_mailto_single_char_local_part",
+            "repro_tests/test_repro.py::test_uri_mailto_keeps_leading_m_of_local_part"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.uri": 29
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "mailto 前缀移除误删用户名",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "真实 URI 调用；合法 mailto 应返回 True；含另一合法地址对照。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/validators-418/request.json": "d2a54ccc5bfc3b0e6071f0cc97068f1f79f05e2df7cca4e0f6301fae3d88faa9",
+        "repro-results/expanded/validators-418/events.jsonl": "675131d63512d59926feb9c4607767b714e698af061e4553305725511d1cf4c9",
+        "repro-results/expanded/validators-418/input/issue.md": "9b69b56c43731a57766163531510b804d39ee49bd9c1275b8f735863342d789f",
+        ".local/expanded-cases/validators-418/trace.jsonl": "5b1d09fdb6eabee4a0c1ddd319e5ad6ed980c880521773f5a1cc6b848b0f2c20",
+        ".local/expanded-cases/validators-418/controls/test_control.py": "42806745f1aef582a1cd5737e0b6cf340a2cd8f431a13fb887c73cf67fe32cc0",
+        ".local/expanded-cases/validators-418/controls/buggy.log": "a6565b06707eb1f8c971a0373a352574e0cb4f079c795adfcffdb872ad8aa02c",
+        ".local/expanded-cases/validators-418/controls/fixed.log": "84e0eed98ec19324a3df0de6397f3383390b1f80a178e943c0a12ab064d5d12f",
+        "repro-results/expanded/validators-418/verdicts/verdict-run-1894000ae5084a9cbe09d2157b0b8fe2.json": "2ea41c3525425cca420ba327bb4c4bffb3d2fbe1e2be0342503ba67161994a69",
+        "repro-results/expanded/validators-418/verdicts/verdict-run-6385de9beb134b9a9cc346d1fe8916a6.json": "d4b5b6ecbe07ed446c513f805c30f15278e6934d07b9711e8e8bafec18fe941f",
+        "repro-results/expanded/validators-418/candidates/candidate-b686ed7d9e774302a270f8d89de9f686/manifest.json": "3c2c993fcd2024253e185a1bea82078a52ceed99a0972c904e1c32d866cfe426",
+        "repro-results/expanded/validators-418/candidates/candidate-b686ed7d9e774302a270f8d89de9f686/files/repro_tests/test_repro.py": "7b3151cd0daca8db2859b77c3f7c5b94471753792c96ded5e6b0777a899b9a3f",
+        "repro-results/expanded/validators-418/runs/run-1894000ae5084a9cbe09d2157b0b8fe2/execution.json": "6b7d6f72bfb003c48eb657cb32e286ebdd57b6773bb09f48408763dcd109c925",
+        "repro-results/expanded/validators-418/runs/run-6385de9beb134b9a9cc346d1fe8916a6/execution.json": "07abd19fa52eb55bec0342b6f753e7e4e5b83c0118fd84bf1c11abf9de4f666c",
+        "repro-results/expanded/validators-418/runs/run-ca138b3ebc98473c9d5ee022dad185a1/execution.json": "119b0d1b32b89a1dc638e319297ca70abe9613db9ed36281cab58ee8e74e3687",
+        "repro-results/expanded/validators-418/artifacts/reproduction/manifest.json": "45eee14b0beeb9ea31b5de3671f3fab819aee4cc2e099bb1c754cbbb363ff8c1",
+        ".local/expanded-cases/validators-418/independent-replays.json": "da18f9b7ff81c9ffe03a8c2392bb054a5958cf608d6bdd142cf265a30523246a",
+        ".local/expanded-cases/validators-418/standalone-buggy.log": "f83e902f79d54837064e8cf8c9fc2a0181c907e7fed0f46522ff6c5f4840d33b",
+        ".local/expanded-cases/validators-418/standalone-fixed.log": "d0410c27c5b3de7c7c98c2203c78b71fb1412abf7dbdef94d8e3247972201d46"
+      }
+    },
+    {
+      "case_id": "validators-405",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-15a4fc2a25354fedaa8262a091400368",
+      "export_state": "published",
+      "duration_seconds": 36.49,
+      "agent_steps": 8,
+      "model_calls": 11,
+      "prompt_tokens": 45940,
+      "completion_tokens": 4602,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\validators-405",
+      "description_hash": "621cb60c21c1a59b89725beb1220f95f5d38f3f81ed346d015e752f85d0b6832",
+      "buggy_commit": "597a0309fc315e86685187303abc24677a32d382",
+      "fixed_commit": "c9585e91f8b409029b059df148da4dc52bd951e3",
+      "issue_url": "https://github.com/python-validators/validators/issues/403",
+      "category": "url-fragment",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.25s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-405\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.10s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-405\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 8,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 4,
+          "search_code": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate invokes the real target validators.url (target_origins maps validators.url to src/validators/url.py, 14 target calls; no mocks), with the minimized trigger URL 'https://www.example.com/path#abc/#def'. The primary assertion expects the correct behavior (result is True), and pytest observed it fail as 'AssertionError: assert ValidationError(func=url, args={\"value\": \"https://www.example.com/path#abc/#def\"}) is True'. This matches the contract's reported_actual (ValidationError returned for a URL that should be valid) and the issue's expected result of True, so all three checks hold: the assertion encodes expected correct behavior, the target actually executed, and the failure matches the issue."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The issue expects validators.url('https://www.example.com/path#abc/#def') to return True and not return ValidationError. The supplied candidate tests assert that correct behavior directly, and the observed run executed the real validators.url target (14 calls) without mocks. Both tests failed because the actual result was ValidationError(...), exactly matching the reported bug. The expectation is cited from the issue, and the failures are cited from the probe output."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_url_fragment_containing_hash_is_valid",
+            "repro_tests/test_repro.py::test_url_fragment_containing_hash_does_not_raise_validation_error"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 14
+          },
+          "failed_call_tests": 2,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_url_fragment_containing_hash_is_valid",
+            "repro_tests/test_repro.py::test_url_fragment_containing_hash_does_not_raise_validation_error"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 14
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "合法 URL fragment 被拒绝",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "真实 URL 调用并断言 True；两项断言输入重复，但主回归有效。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/validators-405/request.json": "686056cf3a748515ce838db62717f7d5c0f45be16280fde935ef81d42ba06640",
+        "repro-results/expanded/validators-405/events.jsonl": "65182c30779d7e9716469bcdc82861bf8cbfd6f8659c7c03dc21875fa9654566",
+        "repro-results/expanded/validators-405/input/issue.md": "621cb60c21c1a59b89725beb1220f95f5d38f3f81ed346d015e752f85d0b6832",
+        ".local/expanded-cases/validators-405/trace.jsonl": "0aa6d46d5f1aa8a003618624945ceae7eb152d8b69d8d5b0673838f3edbee41b",
+        ".local/expanded-cases/validators-405/controls/test_control.py": "3ecb96003c10508cbc6fa5554ab166af98c34a56a8f17f52c4878bbb3845b1d6",
+        ".local/expanded-cases/validators-405/controls/buggy.log": "dfcb36115dda8446118aec77257e89d89dca7728deda18c9da78fed016e34d4c",
+        ".local/expanded-cases/validators-405/controls/fixed.log": "564910381f636777f7fbac7471edc5a637523f2c34ac9ff9a43c5a156097a6e8",
+        "repro-results/expanded/validators-405/verdicts/verdict-run-19c8f13ce7354e5eab69977b388e8354.json": "60f1fc1beb58b218c54b87840dbdd48601c6ac10f0dedbd6a044bfaf00bd2993",
+        "repro-results/expanded/validators-405/verdicts/verdict-run-247f110ac76542d7bae0bf51c5ae9237.json": "3c377510d2be427f4d285d0ee3067d8b8722bc63a081178fc9b413117f10ee21",
+        "repro-results/expanded/validators-405/candidates/candidate-15a4fc2a25354fedaa8262a091400368/manifest.json": "0880f0e1a33ca5100a890bc4de67f71cf3dc7fe471a639a24fa622b60ea03a2e",
+        "repro-results/expanded/validators-405/candidates/candidate-15a4fc2a25354fedaa8262a091400368/files/repro_tests/test_repro.py": "5c4ed90a0c1014ec7b850dfdfbbd93dbeb68d275023063f5b6b0c86c7bb2f060",
+        "repro-results/expanded/validators-405/runs/run-19c8f13ce7354e5eab69977b388e8354/execution.json": "6cee5697c60f1024c8139d797b39615df4d57db9a73b8fff15870da77dd6b72f",
+        "repro-results/expanded/validators-405/runs/run-247f110ac76542d7bae0bf51c5ae9237/execution.json": "83c82a1de2cb141c04550b91794bdda69b1afebb16ec9283c75177444a7b1f1b",
+        "repro-results/expanded/validators-405/runs/run-a081b335166044d28a605f18f418996d/execution.json": "c922dbe0041a7ba73134d3aee7506d9427a24c67326e9f7ee9b82e6cc53256b5",
+        "repro-results/expanded/validators-405/artifacts/reproduction/manifest.json": "9655c0141ec86112a6d86b9dfdb3d72de286f282363df6d968242c0453a2f3ef",
+        ".local/expanded-cases/validators-405/independent-replays.json": "25491d0cb00ae63a83db3ee335ec923a15fb70198dd11c43ac9cb5fd024a1889",
+        ".local/expanded-cases/validators-405/standalone-buggy.log": "a5ca32c8d34b9b79aa71a256ee2a35add3d00e2f8a5549d41524d132d605f2d8",
+        ".local/expanded-cases/validators-405/standalone-fixed.log": "d0410c27c5b3de7c7c98c2203c78b71fb1412abf7dbdef94d8e3247972201d46"
+      }
+    },
+    {
+      "case_id": "validators-374",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-6d1b4ab7d7f149c88d177e1d8606cd7a",
+      "export_state": "published",
+      "duration_seconds": 67.3,
+      "agent_steps": 9,
+      "model_calls": 13,
+      "prompt_tokens": 53195,
+      "completion_tokens": 12185,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\validators-374",
+      "description_hash": "fb9f64aba01f3df58e1b069861ffb12228f5c3a5c62816e447084cd3ca2f30b7",
+      "buggy_commit": "d46cd586bdd6b9946d5d421f009794a25650f72e",
+      "fixed_commit": "bcb134204edcfdabf0de0e5fc0a5010105659c36",
+      "issue_url": "https://github.com/python-validators/validators/issues/373",
+      "category": "optional-boolean",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.22s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-374\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.08s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-374\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 9,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 1,
+          "read_file": 4,
+          "write_candidate": 2,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 88 (char 87)",
+          "candidate files must remain in configured test area"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test exercises the real target (target_origins maps validators.ip_address to src/validators/ip_address.py, with 11 recorded target calls, and source_binding_ok is true). Test 1 asserts the expected correct behavior from the contract — that validators.ipv4('1.1.1.1', private=False) is valid and returns True — and it fails with AssertionError showing the call actually raised ValidationError(func=ipv4, args={'value': '1.1.1.1', 'private': False}), which is exactly the reported_actual. Test 2 (private=True on a public address) passes, matching the contract's comparison expectation. The assertion is a genuine regression assertion for the desired behavior, not an expectation of the bug, and the observed failure is the same public-address-rejected-as-private defect described in the issue."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the issue-defined correct behavior: validators.ipv4(\"1.1.1.1\", private=False) should return True and not indicate invalidity. The recorded probe shows this assertion executed against the real target (validators.ip_address was called) and failed because the public address produced a ValidationError, matching the reported actual behavior. The comparison test for private=True passed, so the failure specifically matches the private=False defect described in the issue."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_ipv4_private.py::test_ipv4_public_address_with_private_false_is_valid",
+            "repro_tests/test_ipv4_private.py::test_ipv4_public_address_with_private_true_is_invalid"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.ip_address": 11
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 1,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_ipv4_private.py::test_ipv4_public_address_with_private_false_is_valid",
+            "repro_tests/test_ipv4_private.py::test_ipv4_public_address_with_private_true_is_invalid"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.ip_address": 17
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "private=False 错拒公共 IPv4",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "主回归直接断言公共 IPv4 验证成功；辅助对照手动重抛返回的 ValidationError，样式可简化。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/validators-374/request.json": "8b201002817364b890cd07d1154133e0aacdca8327f072d17690d0f7a662cc10",
+        "repro-results/expanded/validators-374/events.jsonl": "b85dc5145684e604a8b86fdca2227c7774086a4b30cc107355aff540ed4691f0",
+        "repro-results/expanded/validators-374/input/issue.md": "fb9f64aba01f3df58e1b069861ffb12228f5c3a5c62816e447084cd3ca2f30b7",
+        ".local/expanded-cases/validators-374/trace.jsonl": "ae2cfe48a12cf9eed7eb2dec194d1ca90df540e4ce7fc830d7981401681a680b",
+        ".local/expanded-cases/validators-374/controls/test_control.py": "19b9942b68490d5d03f371b05dfe30b37bf36f0136f0b0411dfad53f46812c99",
+        ".local/expanded-cases/validators-374/controls/buggy.log": "aa27f632fd508127df10b09b0bec845a9ce66c539438aa03d6e218356b086ecb",
+        ".local/expanded-cases/validators-374/controls/fixed.log": "8ad57cbc4d8db15412b66082549e8911659560cbb57b5b814b8a722c2227bc6f",
+        "repro-results/expanded/validators-374/verdicts/verdict-run-1844655ac3444559b792767fd2d32a36.json": "8f6d7d859b451364106a8886082378154be14fd80fecc32122dfbe3a9fc31151",
+        "repro-results/expanded/validators-374/verdicts/verdict-run-cac6861fb3e74f4e803be62206872065.json": "9c4656bf4d44b5a6c7901f6ae9eb83491404c50df95a065fc90480e5043dd947",
+        "repro-results/expanded/validators-374/candidates/candidate-6d1b4ab7d7f149c88d177e1d8606cd7a/manifest.json": "51df8c3d390acaf1a2dda586f2559e296679fdac773e3368e7842cb7475989e4",
+        "repro-results/expanded/validators-374/candidates/candidate-6d1b4ab7d7f149c88d177e1d8606cd7a/files/repro_tests/test_ipv4_private.py": "f1a127ec454ac6a42f5c4813d5192fa61d181e99c8188f196d1a031adbc66807",
+        "repro-results/expanded/validators-374/runs/run-1844655ac3444559b792767fd2d32a36/execution.json": "cc50308dc222c8bb788d2656f7071a57332d4fcd25a419690ce62fad2b933ce2",
+        "repro-results/expanded/validators-374/runs/run-cac6861fb3e74f4e803be62206872065/execution.json": "4b47c82e947fdc7115256c416b68b9937acf1f6fa48fcaf4d8dfaaf8236c749e",
+        "repro-results/expanded/validators-374/runs/run-f3a3c25a0bae42c7954eebccfc60b0da/execution.json": "d5b04adf39ce9ccd6c13ddc7a32e945adb2a9f5c22fe4eea6644c247bdb5f646",
+        "repro-results/expanded/validators-374/artifacts/reproduction/manifest.json": "1f182ec64832cdfd910cf6474a42f10719dd9084b89f9542b01a81137fa524ed",
+        ".local/expanded-cases/validators-374/independent-replays.json": "87c0f88137fa1a43e8c843186bd0b58b6f0fe5497f3836854f9f9191ac0fb1d7",
+        ".local/expanded-cases/validators-374/standalone-buggy.log": "0994a22341472820cd18f25a44fb206a2a768979e8a96577c389c158bc318a97",
+        ".local/expanded-cases/validators-374/standalone-fixed.log": "d67911a578c5ab0331cf6496e8ef702bd17382d197325fef6ca440b3d26ae4aa"
+      }
+    },
+    {
+      "case_id": "validators-317",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-4bc05f3b4dae4a9789b49bb497e356ee",
+      "export_state": "published",
+      "duration_seconds": 38.34,
+      "agent_steps": 11,
+      "model_calls": 14,
+      "prompt_tokens": 57860,
+      "completion_tokens": 5551,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\validators-317",
+      "description_hash": "91899e29103c3c2955a66d78d19618e0adab9d27ae7ef92aa0bc7ca665384160",
+      "buggy_commit": "8f1159718f36cef59f4e647b03c43df52b50c2d1",
+      "fixed_commit": "54484c4d69dc7482018eee6ae4123a8c11c0fcb4",
+      "issue_url": "https://github.com/python-validators/validators/issues/316",
+      "category": "url-encoding",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.21s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-317\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.09s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-317\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 11,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 5,
+          "invalid_json": 1,
+          "write_candidate": 3,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 76 (char 75)",
+          "candidate files must remain in configured test area",
+          "candidate files must remain in configured test area"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test calls the real validators.url implementation and asserts the issue's expected behavior: the supplied percent-encoded-fragment URL should return True. In the actual test run, validators.url returned a ValidationError for that exact URL, causing both candidate assertions to fail with the same mismatch described in the issue. The target was executed from src/validators/url.py, no mock replaced it, and the failure is directly caused by rejection of the valid URL rather than an unrelated error."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test calls the real validators.url implementation (target_origins binds validators.url to src/validators/url.py, and 14 target calls were recorded; no mocks replace the target) with the exact trigger URL from the contract and asserts the expected correct behavior: `result is True`. The probe shows the call returning `ValidationError(func=url, args={'value': 'https://example.org/path#2022%201040%20(Cornelius%20Morgan%20G).pdf'})`, so the assertion fails with `assert ValidationError(...) is True` at test line 21. This matches the issue's reported behavior (valid URL with percent-encoded fragment returns ValidationError instead of True). The contract expectation is cited from the issue source, and the actual failure is cited from the probe output."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_url_encoded_fragment.py::test_url_with_percent_encoded_fragment_is_valid",
+            "repro_tests/test_url_encoded_fragment.py::test_url_with_percent_encoded_fragment_raises_no_validation_error"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 14
+          },
+          "failed_call_tests": 2,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_url_encoded_fragment.py::test_url_with_percent_encoded_fragment_is_valid",
+            "repro_tests/test_url_encoded_fragment.py::test_url_with_percent_encoded_fragment_raises_no_validation_error"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 14
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "百分号编码 fragment 被拒绝",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "直接验证预期 URL 有效；两项测试输入重复，但回归断言有效。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/validators-317/request.json": "304d6b7dadb6d783c749522a48c909b31ed19a85e2cdb950cbfe1ef26e9609b6",
+        "repro-results/expanded/validators-317/events.jsonl": "534011ee834601bd3a021a2ac8fad5951624090c0addfb4dca06a5d75265b5e6",
+        "repro-results/expanded/validators-317/input/issue.md": "91899e29103c3c2955a66d78d19618e0adab9d27ae7ef92aa0bc7ca665384160",
+        ".local/expanded-cases/validators-317/trace.jsonl": "cf38cbed199a0bc967c91501c88767df587e86baca8ddc8ee3d01b2ec5c2688b",
+        ".local/expanded-cases/validators-317/controls/test_control.py": "03554664f14df4e2be5900a723422995cf8235a21bb1241ff37f2d11603f587e",
+        ".local/expanded-cases/validators-317/controls/buggy.log": "9a6b52295e2c6b381422a9c71878756be2ed74a9733981ef8a5c4b4d73b67675",
+        ".local/expanded-cases/validators-317/controls/fixed.log": "84e0eed98ec19324a3df0de6397f3383390b1f80a178e943c0a12ab064d5d12f",
+        "repro-results/expanded/validators-317/verdicts/verdict-run-9c6178a6ca514029bc4a23b7786d5207.json": "c9a819af3b1087b9b6a4f724bc72d83cd1a1a330dde4984d636c37745883fb06",
+        "repro-results/expanded/validators-317/verdicts/verdict-run-b0fd6722896d4d82ad26c9a549aec187.json": "44e598d35cb716ce5f270674dcfa41303ad9d6f04e9c4a0e7f71e2982557fdec",
+        "repro-results/expanded/validators-317/candidates/candidate-4bc05f3b4dae4a9789b49bb497e356ee/manifest.json": "13d8352363525212f8cbd83bfe07320f3054c185d283f35387d3de2840754fec",
+        "repro-results/expanded/validators-317/candidates/candidate-4bc05f3b4dae4a9789b49bb497e356ee/files/repro_tests/test_url_encoded_fragment.py": "9a022258c205ff0fed32fb22539efd7a93e556ed546661037125f6fea2bad2cc",
+        "repro-results/expanded/validators-317/runs/run-06cb961cd8c7449a8127e30532119a50/execution.json": "fad7ba5ba6167d2948b8b2f67685ec1b2c6ddbd423461d8e4bc1644be5a66a3b",
+        "repro-results/expanded/validators-317/runs/run-9c6178a6ca514029bc4a23b7786d5207/execution.json": "1fbb53a72e0bb612d5b6ccf527b3e96fdcfc9aeb5ca2bf67fe4b83d76e8d2b3e",
+        "repro-results/expanded/validators-317/runs/run-b0fd6722896d4d82ad26c9a549aec187/execution.json": "b9f1917939b900484ab74462c0988f88567b8534bc01018cc26aace8a3ee3d5c",
+        "repro-results/expanded/validators-317/artifacts/reproduction/manifest.json": "f343a8ceac036b4151394d9b209841888cedc13f9f4f6c5d44d74df7a54c1651",
+        ".local/expanded-cases/validators-317/independent-replays.json": "c54d1ecf3afcb609a831eae691733992cb8d694b26b1ffbb8b3f3a0a6f416edf",
+        ".local/expanded-cases/validators-317/standalone-buggy.log": "2d11fe788ef698c559740e3a1b57ce85394f7427fdc6851286ed53b1ac3618c1",
+        ".local/expanded-cases/validators-317/standalone-fixed.log": "f5c5d1fc97bcd49a91185b3fb7c583b67391840178d834289230108fbdb15644"
+      }
+    },
+    {
+      "case_id": "pyjwt-608",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-0687d0c323304e9f96c76ec48f5593db",
+      "export_state": "published",
+      "duration_seconds": 35.05,
+      "agent_steps": 6,
+      "model_calls": 9,
+      "prompt_tokens": 34009,
+      "completion_tokens": 4853,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\pyjwt-608",
+      "description_hash": "0dd482559c8d462b48e7dd86d396ee38bd7ed03f942e501d0c699a6a79f8671a",
+      "buggy_commit": "cda3ef147a6e7c12a63b761631b3f169a6827df0",
+      "fixed_commit": "373d4d8a45ce7071e8677d4835a46bd762fa1210",
+      "issue_url": "https://github.com/jpadilla/pyjwt/issues/599",
+      "category": "independent-validation-options",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.20s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-608\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed, 1 warning in 0.06s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-608\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 6,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 2,
+          "search_code": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test test_expired_token_raises_when_verify_exp_explicitly_enabled asserts the contract's expected correct behavior: decoding the expired HS256 token with options={'verify_signature': False, 'verify_exp': True} must raise jwt.ExpiredSignatureError. Real target execution is confirmed (target_calls jwt.api_jwt=10, target_origins point to the actual jwt/api_jwt.py source, source_binding_ok=true). The observed failure is 'Failed: DID NOT RAISE ExpiredSignatureError' at repro_tests/test_repro.py:16, which directly matches the reported bug that expiration validation is skipped and the payload is returned instead of raising. The accompanying test test_signature_disabled_decode_still_permitted_without_verify_exp passed, confirming the permitted signature-disabled decode path still works. All three checks (regression assertion of expected behavior, real target execution, matching failure) hold."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate exercises the real jwt.decode path with an expired HS256 token and explicitly sets verify_signature=False with verify_exp=True. The first test's assertion that jwt.ExpiredSignatureError should be raised is the expected correct behavior from the issue, and it failed with 'DID NOT RAISE ExpiredSignatureError'. The second test confirms that signature-disabled decode without explicit verify_exp remains permitted. Real target execution is supported by target_calls/target_origins for jwt.api_jwt, and the observed failure matches the reported bug."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_expired_token_raises_when_verify_exp_explicitly_enabled",
+            "repro_tests/test_repro.py::test_signature_disabled_decode_still_permitted_without_verify_exp"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "jwt.api_jwt": 10
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 1,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_expired_token_raises_when_verify_exp_explicitly_enabled",
+            "repro_tests/test_repro.py::test_signature_disabled_decode_still_permitted_without_verify_exp"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "jwt.api_jwt": 15
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "jpadilla/pyjwt",
+      "symptom": "显式 verify_exp=True 仍跳过过期校验",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "本地 HS256 过期 token；断言显式 verify_exp 导致 ExpiredSignatureError，含省略选项对照。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/pyjwt-608/request.json": "3999db5681a44d1af0996bc9b2277012e1818d2e4f8f934781d57523358c1463",
+        "repro-results/expanded/pyjwt-608/events.jsonl": "e2ad6930b9a5580c29d58100cda523d24fd941cbac8de9df5bcd56382014da9e",
+        "repro-results/expanded/pyjwt-608/input/issue.md": "0dd482559c8d462b48e7dd86d396ee38bd7ed03f942e501d0c699a6a79f8671a",
+        ".local/expanded-cases/pyjwt-608/trace.jsonl": "6f3d1e479642b615b862810e50dbb0d0e11d4975d8a4b9da4a270adf7c2248d4",
+        ".local/expanded-cases/pyjwt-608/controls/test_control.py": "2dd10ea71277225d10b95a08e5b0f09448ef533ae4888b60feef6694116b7d5b",
+        ".local/expanded-cases/pyjwt-608/controls/buggy.log": "e076d21fd187fb7135f721f334d7866402269ee81db18b24646e4e852c38a194",
+        ".local/expanded-cases/pyjwt-608/controls/fixed.log": "2cdad7f420e20754740418a7e42962ce43cd208881a1cee31a212b0a611cb355",
+        "repro-results/expanded/pyjwt-608/verdicts/verdict-run-1ea35224e59c41d5bbd8529f5afd8687.json": "f4a3f8e8780c81ccf71935dc3e3bdddeb6dbb7a14a7f75dc217783db544e17fe",
+        "repro-results/expanded/pyjwt-608/verdicts/verdict-run-abb5a42c1c9a47b2b9daba8f6d5c9630.json": "5f278e0c0211ccaa55b23f45f7339e1e76e249df797f9383111f18542e934cc8",
+        "repro-results/expanded/pyjwt-608/candidates/candidate-0687d0c323304e9f96c76ec48f5593db/manifest.json": "04dbf5825424252cf7f70b9e0694f6ed0d11c46065bae25a40c9abb5051d29f7",
+        "repro-results/expanded/pyjwt-608/candidates/candidate-0687d0c323304e9f96c76ec48f5593db/files/repro_tests/test_repro.py": "2c5950d5b058c7a749bb7423a3f8ac087e09e10434d1bd82c1e36da06ddf3eda",
+        "repro-results/expanded/pyjwt-608/runs/run-1ea35224e59c41d5bbd8529f5afd8687/execution.json": "f48cb922d89b1fb51f0c1e50a39c7e0c0c4b6f65c7ffcb44f4f82baea40798da",
+        "repro-results/expanded/pyjwt-608/runs/run-abb5a42c1c9a47b2b9daba8f6d5c9630/execution.json": "3553f73d0c212099ae27e28930bacdcac521a9ed32d649913a0c78deb768ac9e",
+        "repro-results/expanded/pyjwt-608/runs/run-c1c80edfa2244f76baeb86963bc4484a/execution.json": "9fa177864203a4cf1126a7f0c088c7ab4261bf36ac3c43266c2d210f50c081c1",
+        "repro-results/expanded/pyjwt-608/artifacts/reproduction/manifest.json": "0c4a97c5858469c0e4bb326fc42598b5c0c65da96eb22e7ec20a6400ad465645",
+        ".local/expanded-cases/pyjwt-608/independent-replays.json": "5cdf501e3ec130941832cfcf09e9b05d571f792f1a643ff4e374d70e69b27199",
+        ".local/expanded-cases/pyjwt-608/standalone-buggy.log": "89d8299e7670ea254c1e5dd7a982a38dd0d58bca92c70a86517080e687b054b7",
+        ".local/expanded-cases/pyjwt-608/standalone-fixed.log": "1d2b0ac622acdb6c66d5826307f963a66687990232f9a299892b0f3a20d76d44"
+      }
+    },
+    {
+      "case_id": "pyjwt-1040",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 52.17,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 61295,
+      "completion_tokens": 8350,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\pyjwt-1040",
+      "description_hash": "a1720da5622a23aa23cadbeba840543a30a6da561fcc3e84f1995c6ae2cb078d",
+      "buggy_commit": "ebc941de508f76acaa78defb15197092458f1874",
+      "fixed_commit": "9085670a1f69de3e86c7d122317c3b2707e0123b",
+      "issue_url": "https://github.com/jpadilla/pyjwt/issues/1039",
+      "category": "claim-type-validation",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.18s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-1040\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.06s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-1040\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "invalid_json": 2,
+          "search_code": 6,
+          "read_file": 4
+        },
+        "tool_errors": [
+          "Extra data: line 3 column 1 (char 79)",
+          "Extra data: line 3 column 1 (char 81)"
+        ],
+        "identical_actions_repeated": 2,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "jpadilla/pyjwt",
+      "symptom": "非字符串 iss 编码未拒绝",
+      "failure_category": "search_without_candidate",
+      "diagnosis": "10 次读取/搜索、2 次格式错误；未生成候选。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/pyjwt-1040/request.json": "60c3a7dfbf9e5f56b07c3e8de5c7962ea974777ac2940e392c283b6b16bd9cd8",
+        "repro-results/expanded/pyjwt-1040/events.jsonl": "ee398366053b3a3205eac1c4b4429f9def73d40f21b3399b72959e0e9d9fb9ad",
+        "repro-results/expanded/pyjwt-1040/input/issue.md": "a1720da5622a23aa23cadbeba840543a30a6da561fcc3e84f1995c6ae2cb078d",
+        ".local/expanded-cases/pyjwt-1040/trace.jsonl": "cd09adfd2ba319505c735e350768f51c864327fcae362dfd8590b096ba6ea968",
+        ".local/expanded-cases/pyjwt-1040/controls/test_control.py": "b796ad7df43e2ca195eb634ab6b6bf11e1cac19e9fb96306b31c3c86e08a6b0c",
+        ".local/expanded-cases/pyjwt-1040/controls/buggy.log": "dd69773a1f2383308aa177c469fa22538ba13a92380c8bd63a410cd3e788ea47",
+        ".local/expanded-cases/pyjwt-1040/controls/fixed.log": "5bda4f8fc0165420e8b84a348679234f7bc8cc5532843d7e34d3e0c30ff83f12"
+      }
+    },
+    {
+      "case_id": "attrs-1428",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 31.12,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 72454,
+      "completion_tokens": 4644,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\attrs-1428",
+      "description_hash": "8532c150757b472af95849587c35f369686c2e45b906fc7a04a397274e694cb1",
+      "buggy_commit": "94caa57142c057ce52504cdf239ae0ed3168f9b5",
+      "fixed_commit": "937b1e232803cc4ec9b9375ef525fc57c24ec498",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1427",
+      "category": "generated-init-arguments",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.20s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1428\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.03s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1428\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "search_code": 3,
+          "invalid_json": 1,
+          "read_file": 8
+        },
+        "tool_errors": [
+          "Extra data: line 3 column 1 (char 88)"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "python-attrs/attrs",
+      "symptom": "pre_init 收到默认值而非传入值",
+      "failure_category": "search_without_candidate",
+      "diagnosis": "11 次读取/搜索、1 次格式错误；未生成候选。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/attrs-1428/request.json": "7ba4ac5db6c07b81dd1806483ee70ca3d63d97ce2f78abddc397a973e5d53895",
+        "repro-results/expanded/attrs-1428/events.jsonl": "cc45e857b097e0d040cddc8317a1aaa52fc9712f2272cfcbfb033e908f4e7277",
+        "repro-results/expanded/attrs-1428/input/issue.md": "8532c150757b472af95849587c35f369686c2e45b906fc7a04a397274e694cb1",
+        ".local/expanded-cases/attrs-1428/trace.jsonl": "0700034e84fdeb4e5af92b0813776d784e0ade9d9bd758b078bf1e8d5b2791e2",
+        ".local/expanded-cases/attrs-1428/controls/test_control.py": "49fd900c6d33381abff7f405bded4ed779f830b293e10994ca13f9a848c2734a",
+        ".local/expanded-cases/attrs-1428/controls/buggy.log": "196be68c533557383a015805f51cbae3817ab31fca9d34984463bcbcfc7f23a2",
+        ".local/expanded-cases/attrs-1428/controls/fixed.log": "20ee3f7b7e36d0f92a6c8c7a068f6ae5d7546cd4a3fd061d2250832019002977"
+      }
+    },
+    {
+      "case_id": "attrs-1328",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 32.31,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 73564,
+      "completion_tokens": 4668,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\attrs-1328",
+      "description_hash": "01efe5d56d5d5501484f6762b9c5eee186f2c949113639b6f8f5a66a6307c9ac",
+      "buggy_commit": "53e632c5218b729da6ac37a35b4b68379dc18999",
+      "fixed_commit": "6fda0a4e086b56d7058855e4c15112c8f58de74c",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1327",
+      "category": "converter-assignment",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.26s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1328\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.03s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1328\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "search_code": 5,
+          "read_file": 6,
+          "invalid_json": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 80 (char 79)"
+        ],
+        "identical_actions_repeated": 1,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "python-attrs/attrs",
+      "symptom": "列表 converter 在赋值时出错",
+      "failure_category": "search_without_candidate",
+      "diagnosis": "11 次读取/搜索、1 次格式错误；未生成候选。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/attrs-1328/request.json": "fc09d3294b421080fe5f14befa3d242d7c82f2d54989b17b17bf6d9c14fd0c2a",
+        "repro-results/expanded/attrs-1328/events.jsonl": "91b599859515f90d3fae0172370064f2889dad1f040c8646f2740bd518c5432c",
+        "repro-results/expanded/attrs-1328/input/issue.md": "01efe5d56d5d5501484f6762b9c5eee186f2c949113639b6f8f5a66a6307c9ac",
+        ".local/expanded-cases/attrs-1328/trace.jsonl": "403fd22c6750dc5d7b35359c35272f25a9699e1554fb6aee7193df167823dc42",
+        ".local/expanded-cases/attrs-1328/controls/test_control.py": "6c95d9448c111a08b6d2f63c7f888b8bfa2fd484cd774c5b10857d07dda0b233",
+        ".local/expanded-cases/attrs-1328/controls/buggy.log": "2ebd822c591f802b3f242a0a89dc54e75d670d0d41af5768be228ef29c513474",
+        ".local/expanded-cases/attrs-1328/controls/fixed.log": "20ee3f7b7e36d0f92a6c8c7a068f6ae5d7546cd4a3fd061d2250832019002977"
+      }
+    },
+    {
+      "case_id": "attrs-1319",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 67.67,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 69448,
+      "completion_tokens": 13483,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\attrs-1319",
+      "description_hash": "83bf1979593f55a610e61c4f4093c09127eebdcb2ab3d34c9fd7f3f7d9ca6a72",
+      "buggy_commit": "689a0e64012d1e576ebd99e786a254bc537582c6",
+      "fixed_commit": "09161fc9181bf94aa3bbc5509c663d736a9553dc",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1284",
+      "category": "target-generated-syntax-error",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.32s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1319\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.03s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1319\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "search_code": 4,
+          "read_file": 7,
+          "invalid_json": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 80 (char 79)"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "python-attrs/attrs",
+      "symptom": "生成的初始化代码出现 SyntaxError",
+      "failure_category": "search_without_candidate",
+      "diagnosis": "11 次读取/搜索、1 次格式错误；未生成候选。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/attrs-1319/request.json": "6899382e57827254b2c88b5151135646d24dcf7909994eb6f762c8c465c63c9a",
+        "repro-results/expanded/attrs-1319/events.jsonl": "af6f8d3fb0d8d93da27f3ba17545320e4529d18ac46d12eeac244c076e3f04c1",
+        "repro-results/expanded/attrs-1319/input/issue.md": "83bf1979593f55a610e61c4f4093c09127eebdcb2ab3d34c9fd7f3f7d9ca6a72",
+        ".local/expanded-cases/attrs-1319/trace.jsonl": "36d2227a888b8c328cc98bc4c117ed2d9fe82db7dda95195565dfcde2bd2124f",
+        ".local/expanded-cases/attrs-1319/controls/test_control.py": "c3c374eb88dd75ae066c3633f43364d8d684669d6225d58903508d93763ca7d8",
+        ".local/expanded-cases/attrs-1319/controls/buggy.log": "31ae6934cb1a9b639167c2034d128bd03ac87822f908039e04b83c2c067fddd1",
+        ".local/expanded-cases/attrs-1319/controls/fixed.log": "20ee3f7b7e36d0f92a6c8c7a068f6ae5d7546cd4a3fd061d2250832019002977"
+      }
+    },
+    {
+      "case_id": "click-3152",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-0e7e18e3f7ad4f4abe876c32b8b64ff8",
+      "export_state": "published",
+      "duration_seconds": 42.27,
+      "agent_steps": 8,
+      "model_calls": 11,
+      "prompt_tokens": 47011,
+      "completion_tokens": 5669,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\click-3152",
+      "description_hash": "466a1ce7df45f9fdb686297f8aa2ca10475e58c28d78657b4ad623918c2a06f2",
+      "buggy_commit": "7f7bbe4569ea68e8dabee232eade069ef3310aea",
+      "fixed_commit": "ebcd548d50662bc8fa4f8b9ec7fe13cb8310bfaa",
+      "issue_url": "https://github.com/pallets/click/issues/3084",
+      "category": "cli-optional-value",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.27s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3152\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.12s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3152\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 8,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 3,
+          "invalid_json": 1,
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 77 (char 76)"
+        ],
+        "identical_actions_repeated": 1,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test invokes the real Click command via CliRunner with only --name and asserts the expected correct behavior: exit code 0 and output \"Hello, Flag!\\n\". The observed failure is the exact reported bug behavior: exit code 2 with \"Error: Option '--name' requires an argument.\" The target Click source was executed, and the failing assertion directly checks the contract's expected output rather than accepting the erroneous exception."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test invokes a Click command through CliRunner with only --name and asserts the expected correct behavior: exit code 0 and output \"Hello, Flag!\\n\". The real target click.core was executed (target_calls recorded and source binding OK), and the test failed with SystemExit(2) plus \"Error: Option '--name' requires an argument.\" This matches the issue's reported buggy behavior for only --name. The control cases with no option and with --name Alice passed, further confirming the targeted condition."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_only_name_uses_flag_value",
+            "repro_tests/test_repro.py::test_no_name_uses_default",
+            "repro_tests/test_repro.py::test_name_with_value_uses_value"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 181
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 2,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_only_name_uses_flag_value",
+            "repro_tests/test_repro.py::test_no_name_uses_default",
+            "repro_tests/test_repro.py::test_name_with_value_uses_value"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 227
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true
+        }
+      },
+      "repository": "pallets/click",
+      "symptom": "可选参数缺值时未使用 flag_value",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "CliRunner 实际解析参数；缺值、未指定、显式值三种分支；同时核对输出与退出码。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/click-3152/request.json": "568817a6d3967d6b48343ede6a3a2ad2ce38292768aefe3c5042c61c923c5bba",
+        "repro-results/expanded/click-3152/events.jsonl": "96a6148f445d344e66336916f103f2ee10eb9112606de3934ea381eab627ce0f",
+        "repro-results/expanded/click-3152/input/issue.md": "466a1ce7df45f9fdb686297f8aa2ca10475e58c28d78657b4ad623918c2a06f2",
+        ".local/expanded-cases/click-3152/trace.jsonl": "215f6280964628333a9bababbff3690f26ab57a36fd7434e5a5aeb447cb30925",
+        ".local/expanded-cases/click-3152/controls/test_control.py": "f10378a2a4beb78b87e29566c44bf70dca3bdb7010e3e74b7b31b360d46d92a7",
+        ".local/expanded-cases/click-3152/controls/buggy.log": "6e9cce93d5076ef360f3abc1b1c384f76271998511f561db00d2fe7485e43462",
+        ".local/expanded-cases/click-3152/controls/fixed.log": "97f5adfb2ec9975df6d998bc11af616286bd89a5feba3be34a12c5039d829f43",
+        "repro-results/expanded/click-3152/verdicts/verdict-run-18c2a67d9a544fc2b1cba7de3ddc804b.json": "5630d3695df025190aa59a7e7ccf04c137ca2888be324fe391b50237916a0d50",
+        "repro-results/expanded/click-3152/verdicts/verdict-run-35da09a07b9c44068073477c0950fe6e.json": "20caabf6f563da65bf99a208a0805ccee8b0532f001b4295bdd1bc164a4ecd21",
+        "repro-results/expanded/click-3152/candidates/candidate-0e7e18e3f7ad4f4abe876c32b8b64ff8/manifest.json": "cb0d6401ed10bb7e78583a03549b70d20578e3191be00cf26a8648377eb21215",
+        "repro-results/expanded/click-3152/candidates/candidate-0e7e18e3f7ad4f4abe876c32b8b64ff8/files/repro_tests/test_repro.py": "4a3b3e8485d7ab1b05aa467145036c655a8526c8c9f8196df076f37630ad4aab",
+        "repro-results/expanded/click-3152/runs/run-18c2a67d9a544fc2b1cba7de3ddc804b/execution.json": "a04c33b92c98e87923354d31a0605ba44f8a808a7ce7babee7c906e7be913d71",
+        "repro-results/expanded/click-3152/runs/run-35da09a07b9c44068073477c0950fe6e/execution.json": "453de7f83912f51478aa7c688501b4e5cf922ee439b47b8df3e8a91b1396dca8",
+        "repro-results/expanded/click-3152/runs/run-581116525e7a45aa897def4d3973900e/execution.json": "9c3a86ffd40501ffcb026c95aec89c6963f77183ba73c03e1a154b80d091c36d",
+        "repro-results/expanded/click-3152/artifacts/reproduction/manifest.json": "225cddab693dcd37657dcb673257a45993a526571708ca01a67879a776e08f28",
+        ".local/expanded-cases/click-3152/independent-replays.json": "5b777f7cac312033312a41b2ae4309aa28e9554af2d35d67c389722839a8674e",
+        ".local/expanded-cases/click-3152/standalone-buggy.log": "ad3da7106272dc496dcb9672b7740753504912768ce51d89d777b85c9b398e2d",
+        ".local/expanded-cases/click-3152/standalone-fixed.log": "7616592cb931cb2d3f84628cacf197170bee8ddd5f879b3bd034ce33f54c9783"
+      }
+    },
+    {
+      "case_id": "click-3079",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 34.5,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 60680,
+      "completion_tokens": 5133,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\click-3079",
+      "description_hash": "f8930c9f8be080d4fe87f517044f8f6530f723ab017f3e2085120e175b3a3244",
+      "buggy_commit": "2ed395b0b5ac4d56553ff715335f456f812cdc78",
+      "fixed_commit": "27aaed3fe5bcd6adedd6e91de234914af9859cf1",
+      "issue_url": "https://github.com/pallets/click/issues/3071",
+      "category": "cli-shared-default",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.27s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3079\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.12s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3079\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "invalid_json": 3,
+          "search_code": 4,
+          "read_file": 5
+        },
+        "tool_errors": [
+          "Extra data: line 3 column 1 (char 79)",
+          "Extra data: line 3 column 1 (char 79)",
+          "Extra data: line 1 column 72 (char 71)"
+        ],
+        "identical_actions_repeated": 2,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "pallets/click",
+      "symptom": "共享 flag 的默认值选错",
+      "failure_category": "search_without_candidate",
+      "diagnosis": "9 次读取/搜索、3 次格式错误；未生成候选。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/click-3079/request.json": "995907d0098f3a8def64517782722592bc9624245abf047f77e94408fec56715",
+        "repro-results/expanded/click-3079/events.jsonl": "08690535e60d4b19df7e73a3edaaea989e22a56555cada378884066f72576d68",
+        "repro-results/expanded/click-3079/input/issue.md": "f8930c9f8be080d4fe87f517044f8f6530f723ab017f3e2085120e175b3a3244",
+        ".local/expanded-cases/click-3079/trace.jsonl": "698f271198080540458ad16d5ac1a1fa2319f35186c00aea8422f485060a9257",
+        ".local/expanded-cases/click-3079/controls/test_control.py": "c89c973fb9535aa56adcfde9ee8644d759b0aa13b1e58c5418df64cc0d05c8ec",
+        ".local/expanded-cases/click-3079/controls/buggy.log": "5b094930aae7781a7cd025112e279d40a01611612f3302ca4d2b00dc3b261e85",
+        ".local/expanded-cases/click-3079/controls/fixed.log": "97f5adfb2ec9975df6d998bc11af616286bd89a5feba3be34a12c5039d829f43"
+      }
+    },
+    {
+      "case_id": "click-3004",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 26.97,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 57545,
+      "completion_tokens": 3549,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\click-3004",
+      "description_hash": "73c7cb6aa5fa3dfec6b75b0ccf092c00d9e8d8f95a116169cf677cf5f6799266",
+      "buggy_commit": "a1235aacb1be55dc66ddcfefbf64dec44b6ab54d",
+      "fixed_commit": "eaf33a957975e7d0943fad8d2b4b905b6bd98cb9",
+      "issue_url": "https://github.com/pallets/click/pull/3004",
+      "category": "cli-enum-help",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.23s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3004\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.13s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3004\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "invalid_json": 4,
+          "search_code": 3,
+          "read_file": 4,
+          "write_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 3 column 1 (char 81)",
+          "Extra data: line 3 column 1 (char 88)",
+          "Extra data: line 1 column 80 (char 79)",
+          "Extra data: line 3 column 1 (char 81)"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "pallets/click",
+      "symptom": "Enum 默认值 help 显示错误",
+      "failure_category": "candidate_not_executed",
+      "diagnosis": "4 次格式错误；第 12 步才写入候选，未执行。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/click-3004/request.json": "47ffa0a5b1dbc9f1a25e4fbde04e90d3a02743c359ce04f0083619d108b9e3fb",
+        "repro-results/expanded/click-3004/events.jsonl": "de947bff8c1f1aa32b5750ff409f17f146e3a6091cdd25ea390f39602cda47cc",
+        "repro-results/expanded/click-3004/input/issue.md": "73c7cb6aa5fa3dfec6b75b0ccf092c00d9e8d8f95a116169cf677cf5f6799266",
+        ".local/expanded-cases/click-3004/trace.jsonl": "835f01bf252ccb6df7042975b27a2d342411036f3b0922a70c1df4510de73601",
+        ".local/expanded-cases/click-3004/controls/test_control.py": "9ecba3472853c13786e3c3a035fa81c5db4e725a9e7ffb3ea4b242557edbe673",
+        ".local/expanded-cases/click-3004/controls/buggy.log": "2a3c7070c512e5a54de070a7fba75d5a9d1efc15e1eb438fe70c5ca960201d58",
+        ".local/expanded-cases/click-3004/controls/fixed.log": "85e10415ad73f4d61a8714b9917f3fd220ee0e5cbcb555a1ae80b7f1bf9cb8ab",
+        "repro-results/expanded/click-3004/candidates/candidate-0f1527989f1748ad86dccc191c9fe17a/manifest.json": "81267e7ecbd56cef9507abb7f27a990ae42df0a5645790af792de716d308ce51",
+        "repro-results/expanded/click-3004/candidates/candidate-0f1527989f1748ad86dccc191c9fe17a/files/repro_tests/test_repro.py": "ae94099cbff3ec37028dc2a65db849bab7ec8845aeda2d434ee09b6221486d84"
+      }
+    },
+    {
+      "case_id": "click-2940",
+      "status": "EXHAUSTED",
+      "evidence_level": "NONE",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "",
+      "export_state": "published",
+      "duration_seconds": 40.41,
+      "agent_steps": 12,
+      "model_calls": 13,
+      "prompt_tokens": 59867,
+      "completion_tokens": 6315,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\click-2940",
+      "description_hash": "c7e75be3541a04bcc9529ee64341c98832d0700ff13355d8408dd631cbf5f0bb",
+      "buggy_commit": "36deba8a95a2585de1a2aa4475b7f054f52830ac",
+      "fixed_commit": "2a0e3ba907927ade6951d5732b775f11b54cb766",
+      "issue_url": "https://github.com/pallets/click/issues/2939",
+      "category": "cli-stdin-eof",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 0,
+      "candidate_executions": 0,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.24s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-2940\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.12s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-2940\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12
+        },
+        "actions": {
+          "search_code": 6,
+          "invalid_json": 2,
+          "read_file": 4
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 80 (char 79)",
+          "Extra data: line 1 column 63 (char 62)"
+        ],
+        "identical_actions_repeated": 1,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": []
+      },
+      "repository": "pallets/click",
+      "symptom": "stdin 行迭代错误中止",
+      "failure_category": "search_without_candidate",
+      "diagnosis": "10 次读取/搜索、2 次格式错误；未生成候选。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/click-2940/request.json": "5387899968a15896060daa42480a2f3f2789a49c9d43246d7c19c90174a1df73",
+        "repro-results/expanded/click-2940/events.jsonl": "1cb2a5c550cafb406e96298b0dc5947f0f1db026b1260cb0bd2b6794097f00f3",
+        "repro-results/expanded/click-2940/input/issue.md": "c7e75be3541a04bcc9529ee64341c98832d0700ff13355d8408dd631cbf5f0bb",
+        ".local/expanded-cases/click-2940/trace.jsonl": "76992b7ef30b3974b148943a4434e2b71b2fa075d382798a049a7b10cc05fda7",
+        ".local/expanded-cases/click-2940/controls/test_control.py": "cfc7bfebf62be964f03adb4475fb789f6b167e77680b69c276c91ad01a957f6c",
+        ".local/expanded-cases/click-2940/controls/buggy.log": "d541e615f8a2cfa0c25adf78cef3027aa22166b07f45eb31996446ed5cfc5b71",
+        ".local/expanded-cases/click-2940/controls/fixed.log": "97f5adfb2ec9975df6d998bc11af616286bd89a5feba3be34a12c5039d829f43"
+      }
+    },
+    {
+      "case_id": "packaging-1360",
+      "status": "EXHAUSTED",
+      "evidence_level": "SINGLE_OBSERVATION",
+      "stop_reason": "EXHAUSTED",
+      "uncertainties": [
+        "agent step limit reached"
+      ],
+      "accepted_candidate_id": "candidate-3bc3966434ec4d83a97e71a4018ac71d",
+      "export_state": "published",
+      "duration_seconds": 34.74,
+      "agent_steps": 12,
+      "model_calls": 15,
+      "prompt_tokens": 63306,
+      "completion_tokens": 4727,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\packaging-1360",
+      "description_hash": "159330a431d9b008e4ffcc949f566b4cf13f76541d1b887b3f9c6aec36d5a4e1",
+      "buggy_commit": "b097450461523502ada842f98274449ad74ff1ff",
+      "fixed_commit": "4e79787a31c99348649bb0dafee2a5078d3595be",
+      "issue_url": "https://github.com/pypa/packaging/pull/1360",
+      "category": "explicit-empty-iterable",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": false,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 2,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.38s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1360\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.05s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1360\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 12,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 3,
+          "invalid_json": 3,
+          "read_file": 3,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 83 (char 82)",
+          "Extra data: line 1 column 83 (char 82)",
+          "Extra data: line 1 column 77 (char 76)"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate tests assert the contract's expected correct behavior: explicit empty platforms must not be replaced by host platform tags. All three tests executed against the real packaging.tags implementation (target_calls packaging.tags: 149, target source at .../src/packaging/tags.py) and failed exactly as described in the issue. cpython_tags((3,11), abis=[\"cp311\"], platforms=[]) returned host win_amd64 tags instead of []; generic_tags(interpreter=\"custom\", abis=[\"abi\"], platforms=[]) returned host win_amd64 tags instead of []; compatible_tags((3,), interpreter=\"cp3\", platforms=[]) returned host win_amd64 tags plus expected tags instead of the two expected Tag values. The failures therefore match the reported issue and demonstrate the explicit-empty-platforms bug."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the exact correct behavior described in the issue: cpython_tags((3,11), abis=[\"cp311\"], platforms=[]) == [], generic_tags(interpreter=\"custom\", abis=[\"abi\"], platforms=[]) == [], and compatible_tags((3,), interpreter=\"cp3\", platforms=[]) == [Tag(\"cp3\",\"none\",\"any\"), Tag(\"py3\",\"none\",\"any\")]. These are regression assertions of the expected outcome, not assertions that expect the buggy exception. The probe confirms the real target module was executed (target_origins maps packaging.tags to the workspace src/packaging/tags.py, 149 target calls, no mocks), and all three tests failed on the call phase with exactly the issue's symptom: explicit empty platforms is treated as omitted, so host platform tags (win_amd64) are substituted. cpython_tags returned 12 items (first extra cp311-cp311-win_amd64), generic_tags returned custom-abi-win_amd64 entries instead of [], and compatible_tags returned py3-none-win_amd64, cp3-none-any, py3-none-any instead of just the two universal tags. Expected assertion, real target execution, and matching failure are all satisfied."
+          }
+        ]
+      },
+      "repository": "pypa/packaging",
+      "symptom": "显式空 platforms 被替换为宿主平台",
+      "failure_category": "unstable_failure_signature",
+      "diagnosis": "两次执行及语义核验均确认问题；对象 repr 内存地址变化使 confirm 拒绝重复失败，随后动作预算耗尽。",
+      "codex_correctness_review": {
+        "reviewed": false,
+        "notes": null,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/packaging-1360/request.json": "3d660ccf3c8190b9a9adb073fccc54d9ceb40450d4484a3aacf60fb0858ea2d1",
+        "repro-results/expanded/packaging-1360/events.jsonl": "8556688e75f6a4094049d7885c331d6744ff1009d4f269bd53d159a6f40a1430",
+        "repro-results/expanded/packaging-1360/input/issue.md": "159330a431d9b008e4ffcc949f566b4cf13f76541d1b887b3f9c6aec36d5a4e1",
+        ".local/expanded-cases/packaging-1360/trace.jsonl": "60c5176f3e825f59625c6d8561560643db28859def1cddf9e8360ecd1be7e670",
+        ".local/expanded-cases/packaging-1360/controls/test_control.py": "10b0bc0496040c343876762300f68ff42dc22bd96e4d98e4c6f37a39afffd9f8",
+        ".local/expanded-cases/packaging-1360/controls/buggy.log": "f3ad29a9ffa1e4b25440619cc909c8119a4a76778cd5f8a7d54d82c192179180",
+        ".local/expanded-cases/packaging-1360/controls/fixed.log": "d124f9696ed40502b4b30c0104e7d254a7e35a3d854991f72025ba67c7e5c805",
+        "repro-results/expanded/packaging-1360/verdicts/verdict-run-689207e4b9ea41d997643fcbe8349d93.json": "4248b8692cb6055a0b4f7e910c5d32384ab3552e2d24d99f670e6f300f8fed47",
+        "repro-results/expanded/packaging-1360/verdicts/verdict-run-830c1ce66eef4a9d82a9d2293f853200.json": "db3d80dd65a283ab3803909c7822d8f9ef141e964f541ccee6b2393d833329bc",
+        "repro-results/expanded/packaging-1360/candidates/candidate-3bc3966434ec4d83a97e71a4018ac71d/manifest.json": "05a1bba08288ad705cf68879070139953f310fd212377621acfcdd3ae4e3832c",
+        "repro-results/expanded/packaging-1360/candidates/candidate-3bc3966434ec4d83a97e71a4018ac71d/files/repro_tests/test_repro.py": "473ccd64736ae96f011af4b27cce190f9b30c08f8b48f4358291a431acd7a0ca",
+        "repro-results/expanded/packaging-1360/runs/run-689207e4b9ea41d997643fcbe8349d93/execution.json": "48e0dba8147001f8e0eeea365c2bb781f4c903b14830b9f0dbcbaf35aeb15b67",
+        "repro-results/expanded/packaging-1360/runs/run-830c1ce66eef4a9d82a9d2293f853200/execution.json": "283450b4f51432f5dd5d32ffc3e0622df1cbf7bddc30cadaf333b993da94a8c1"
+      }
+    },
+    {
+      "case_id": "packaging-1332",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-ed811c1070ac48ec9a2762d056030a0e",
+      "export_state": "published",
+      "duration_seconds": 44.28,
+      "agent_steps": 9,
+      "model_calls": 12,
+      "prompt_tokens": 59683,
+      "completion_tokens": 5580,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\packaging-1332",
+      "description_hash": "7afd88d56fe0e8a16b743cfa46e8b89159dada049610b4281826c89b2c6d0bf9",
+      "buggy_commit": "9c652e4b4ced3c94f133a1b91c726023f0950b4f",
+      "fixed_commit": "fe18f139c5b3d73cd9fdd9b25f1eda1b6fd7ba15",
+      "issue_url": "https://github.com/pypa/packaging/pull/1332",
+      "category": "public-exception-contract",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.24s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1332\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.10s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1332\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 9,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 4,
+          "search_code": 1,
+          "write_candidate": 1,
+          "invalid_json": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 87 (char 86)"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate calls the real packaging.requirements.Requirement constructor with the malformed requirement \"demo===x,y\" and asserts that packaging.requirements.InvalidRequirement is raised. Execution instead leaked packaging.specifiers.InvalidSpecifier: 'Invalid specifier: y', exactly matching the issue's reported actual behavior. The second candidate test independently fails with pytest.fail for the same leaked InvalidSpecifier. The target was executed from the real source binding, so the expected-correct-behavior assertion is present, the target trigger occurred, and the observed failure matches the issue."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate regression test expects Requirement(\"demo===x,y\") to raise packaging.requirements.InvalidRequirement and not InvalidSpecifier. Real execution invoked the packaging.requirements target and failed exactly as reported: packaging.specifiers.InvalidSpecifier escaped from requirements.py line 85/specifiers.py, so the public InvalidRequirement assertion failed. The expectation source and actual failure are both cited."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_malformed_requirement_raises_invalid_requirement",
+            "repro_tests/test_repro.py::test_malformed_requirement_does_not_raise_invalid_specifier"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.requirements": 13
+          },
+          "failed_call_tests": 2,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_malformed_requirement_raises_invalid_requirement",
+            "repro_tests/test_repro.py::test_malformed_requirement_does_not_raise_invalid_specifier"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.requirements": 5
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "pypa/packaging",
+      "symptom": "公开 API 泄漏 InvalidSpecifier",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "公开 Requirement API 应抛 InvalidRequirement；两项回归均拒绝泄漏 InvalidSpecifier。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/packaging-1332/request.json": "2ff15febd239a9ef9a1f955e7476db6f3a6f6188502b1a6a0a88321f2f346b7b",
+        "repro-results/expanded/packaging-1332/events.jsonl": "f63497d02976b56612acf95c9375d57ebe50110897b6eda3a01edf80731aee12",
+        "repro-results/expanded/packaging-1332/input/issue.md": "7afd88d56fe0e8a16b743cfa46e8b89159dada049610b4281826c89b2c6d0bf9",
+        ".local/expanded-cases/packaging-1332/trace.jsonl": "1a10f7f9c59c2c394376cb009864b8c79c56f0b69730d7a511634ca974d8a276",
+        ".local/expanded-cases/packaging-1332/controls/test_control.py": "7e37f581a3fe5e2901eb765b55be65abb0d01b88e0e55ffc267cb8e4b7926f67",
+        ".local/expanded-cases/packaging-1332/controls/buggy.log": "a286ed7e2dbeae80815f627065caea2ee63bc79bb591158ed49679744a9ec69d",
+        ".local/expanded-cases/packaging-1332/controls/fixed.log": "564910381f636777f7fbac7471edc5a637523f2c34ac9ff9a43c5a156097a6e8",
+        "repro-results/expanded/packaging-1332/verdicts/verdict-run-2dff571cf2f14adca858bac853e77fd0.json": "6071b53a9a54280c57a8737007e1afd1962f3db82b2e050afaf53ce109b5309e",
+        "repro-results/expanded/packaging-1332/verdicts/verdict-run-eb40c4afeb3740ffbbc720ee8b165282.json": "0dfb41c93c2c9a61fc019665090270543dda21a9475f1e6dc3400e6021ac54d6",
+        "repro-results/expanded/packaging-1332/candidates/candidate-ed811c1070ac48ec9a2762d056030a0e/manifest.json": "b333f3e86125fe4761accd96b70c113636cde6662959d31feb75b2d17d23714f",
+        "repro-results/expanded/packaging-1332/candidates/candidate-ed811c1070ac48ec9a2762d056030a0e/files/repro_tests/test_repro.py": "cdc02a9b2436f4ffa5dd4674434d18dc3ea79b2f03cc114297c7cc352c18c8d0",
+        "repro-results/expanded/packaging-1332/runs/run-2dff571cf2f14adca858bac853e77fd0/execution.json": "03bfd42bccae653e6154b6f4635418027589944d576c17073748e995026ffa59",
+        "repro-results/expanded/packaging-1332/runs/run-eb40c4afeb3740ffbbc720ee8b165282/execution.json": "ea316b943bd5d598318b18490471485d304425ad1cca2fcf9acc1cf22b34e316",
+        "repro-results/expanded/packaging-1332/runs/run-fb8c601256c24d349622ffe6b4d5c796/execution.json": "71fda5f63bfeb2f0fae68df4f092114cfa792e508af22a08d61124b0e2a4ea40",
+        "repro-results/expanded/packaging-1332/artifacts/reproduction/manifest.json": "0587f8d45f0d5bfc453e16c6d8bf204171b570ffbdd17a8ecd04709403068255",
+        ".local/expanded-cases/packaging-1332/independent-replays.json": "04e0065ec4dc12b8d7fe4c6372eef056e217844c77ff6a13ca090ab4f93edac2",
+        ".local/expanded-cases/packaging-1332/standalone-buggy.log": "1a443d531dd8079f92bb28707dda9987e9ad6c34e434b6fe27de09b26201db54",
+        ".local/expanded-cases/packaging-1332/standalone-fixed.log": "35087fe89c4d376b6c33b3c116b690988d86ef8f9562abfbfebac9aa19bdbdbc"
+      }
+    },
+    {
+      "case_id": "packaging-1328",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-2983d7af322f4636b26a91f2ba8c0373",
+      "export_state": "published",
+      "duration_seconds": 52.12,
+      "agent_steps": 11,
+      "model_calls": 14,
+      "prompt_tokens": 57647,
+      "completion_tokens": 7526,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded\\packaging-1328",
+      "description_hash": "90707953a49499f6886ede07eb945c692299a2621e078f7429e409caf823852a",
+      "buggy_commit": "458b0ae53e5a4261df851657d147e590b4546eb2",
+      "fixed_commit": "1a9c4cb6b6aac7fb6137fcdc4f440af912d8d87f",
+      "issue_url": "https://github.com/pypa/packaging/pull/1328",
+      "category": "exception-pickle-roundtrip",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.28s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1328\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.17s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1328\\controls\\fixed.log"
+        }
+      },
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 11,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 2,
+          "read_file": 3,
+          "search_code": 2,
+          "write_candidate": 2,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [
+          "Extra data: line 1 column 83 (char 82)",
+          "Extra data: line 1 column 83 (char 82)",
+          "candidate files must remain in configured test area"
+        ],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate constructs InvalidMetadata(\"version\", \"bad version\"), performs the pickle round trip, and asserts the expected successful result: same InvalidMetadata type, field == \"version\", and identical string message. The observed run executes the real packaging.metadata target and fails at the pickle.loads line with TypeError: InvalidMetadata.__init__() missing 1 required positional argument: 'message', matching the issue's reported unpickling TypeError. The test does not merely expect the exception; it asserts correct round-trip behavior, so this is a valid reproduction."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test constructs InvalidMetadata(\"version\", \"bad version\"), performs pickle.loads(pickle.dumps(error)) against the real packaging.metadata target (target_origins shows the source-bound metadata.py, source_binding_ok true, 72 target calls, no mocks), and asserts the expected correct behavior: same type, field == \"version\", and identical str/message. The observed run fails exactly at the unpickling step (repro_tests/test_repro.py:9) with TypeError: InvalidMetadata.__init__() missing 1 required positional argument: 'message', matching the contract's reported actual that the buggy version raises TypeError during unpickling because the exception's reconstruction only carries the message arg. The assertion expects the correct post-fix round trip, not the undesired exception, so this is a valid regression assertion."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_roundtrip"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.metadata": 72
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_roundtrip"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.metadata": 74
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "pypa/packaging",
+      "symptom": "InvalidMetadata pickle 重建失败",
+      "failure_category": null,
+      "diagnosis": "完整流程及导出包独立重放通过。",
+      "codex_correctness_review": {
+        "reviewed": true,
+        "notes": "本地构造异常后 pickle 往返，断言类型、field 与 message 保持。",
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded/packaging-1328/request.json": "f0f5c5344b5b59955657aa7c84f62b457f1efb324eb241b8e126b1fe5a160a2d",
+        "repro-results/expanded/packaging-1328/events.jsonl": "5a6d7188964dded20552e679ad4c5ce70bc8e2dc3de5714852a56ee756195f35",
+        "repro-results/expanded/packaging-1328/input/issue.md": "90707953a49499f6886ede07eb945c692299a2621e078f7429e409caf823852a",
+        ".local/expanded-cases/packaging-1328/trace.jsonl": "9d81840de4667b496b7fdb6cc359d3819986bcfba1d4678ae0e5db5c1cd3fdbc",
+        ".local/expanded-cases/packaging-1328/controls/test_control.py": "d73f881c015c4015de93b4dd50a4000954792e65dacc79b253a0dbb4121ea255",
+        ".local/expanded-cases/packaging-1328/controls/buggy.log": "9fe8bcad5de154c35ee6e44c4a1c14be90bedc5d85942bb310d3c0a1deab72ae",
+        ".local/expanded-cases/packaging-1328/controls/fixed.log": "8fe1a5ebe3bef9e75708f4835e8b369440d1a5a7b0bad4ed8a81513c7b8d4fc5",
+        "repro-results/expanded/packaging-1328/verdicts/verdict-run-df52bfd4d52c450cac7151388448f71d.json": "118434fa62928ac3529eade5bbeb9a66e463fa81b439c867f7ade386ce137fa0",
+        "repro-results/expanded/packaging-1328/verdicts/verdict-run-fec85fef6fd1432e99d6343b9f3440f3.json": "911386bbfd15c9fa0924ca2aef35cec0f0163e19024b470eb811020870cf0b93",
+        "repro-results/expanded/packaging-1328/candidates/candidate-2983d7af322f4636b26a91f2ba8c0373/manifest.json": "26c9834e5836deeb4966ac8ac295bf55b6ddd5750c0eb92c6b711de501c316b9",
+        "repro-results/expanded/packaging-1328/candidates/candidate-2983d7af322f4636b26a91f2ba8c0373/files/repro_tests/test_repro.py": "a5fdd2f1221346dc209930fda164c8ece79780cec2198eaa3434a61daa921cee",
+        "repro-results/expanded/packaging-1328/runs/run-165850a3c80441409cd90b6ddcdda8c1/execution.json": "29f9b0abb90e445201c32f6b5d5dddc09d57f21083b646639cf8c9505e41571a",
+        "repro-results/expanded/packaging-1328/runs/run-df52bfd4d52c450cac7151388448f71d/execution.json": "7865a2fb7e7775f6f59ce072e99ae3224ff40424afe2886c59c2a189a56d7ced",
+        "repro-results/expanded/packaging-1328/runs/run-fec85fef6fd1432e99d6343b9f3440f3/execution.json": "549d3eeb373c2987aca2b3ad241b31b03142c7d45c3be4e57be04d6402a001b3",
+        "repro-results/expanded/packaging-1328/artifacts/reproduction/manifest.json": "82e2ca8cdb1226d147f48e707ddca2555e9b83424c446632d04eadf4fb7e527a",
+        ".local/expanded-cases/packaging-1328/independent-replays.json": "500a9b94f167784345d75a731c025f249bd6a3bfe0f4fae541f7d76f4c58b160",
+        ".local/expanded-cases/packaging-1328/standalone-buggy.log": "fa29d685133e77749db3d30945793ef5b69bda26e7cd36a4f2ea182ba6398117",
+        ".local/expanded-cases/packaging-1328/standalone-fixed.log": "db4ce22a81508ccb886f409bf6d5791df57d3810dd37302d8c4c62e5f45a28a3"
+      }
+    }
+  ]
+}

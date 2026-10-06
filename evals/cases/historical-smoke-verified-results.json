@@ -1,0 +1,401 @@
+{
+  "evaluation_date": "2026-10-05",
+  "iteration": "final-protocol-and-source-fixes",
+  "selection": "Same three hand-picked cases, unchanged descriptions, buggy/fixed commits, model and budgets. Not a representative benchmark.",
+  "summary": {
+    "cases": 3,
+    "controller_done": 3,
+    "export_replayed": 3,
+    "model_calls": 28,
+    "prompt_tokens": 98977,
+    "completion_tokens": 10985,
+    "cost_kind": "unknown",
+    "cost_value": null,
+    "codex_correctness_reviewed": 3,
+    "independent_human_reviewed": 0,
+    "effective_reproductions": null,
+    "effective_reproduction_status": "pending_independent_human_review"
+  },
+  "offline_tests": {
+    "passed": 122,
+    "skipped": 1,
+    "seconds": 85.42,
+    "pip_check": "no broken requirements"
+  },
+  "all_historical_rounds": {
+    "rounds": 3,
+    "case_attempts": 9,
+    "model_calls": 100,
+    "prompt_tokens": 349500,
+    "completion_tokens": 64347,
+    "cost_kind": "unknown",
+    "cost_value": null
+  },
+  "prompt_sha256": {
+    "analyze_issue.md": "033ae21469d549057b9a92a05c355c3effb296b5e2485c2aa7c78ef5f0b64180",
+    "explore.md": "974cb3a33ff5a6297999b8e52f3d38456fd6eeaf2fa791c6d804974a903a01df",
+    "review_evidence.md": "99aec0fd5a9697a45d2fff467af67ad404135437a6653b5f2d21ac123559a3ef"
+  },
+  "product_source_sha256": {
+    "src/reproagent/app.py": "a56bbbde2f7f6fa42c0aebdeccc3a49aed6f6b3e3b85d023f67df095b26c14de",
+    "src/reproagent/cli.py": "c62b7e52d9d0683b2f453562332102ec480e817c2cb2abe0a946aec770d02e80",
+    "src/reproagent/exporter.py": "69c92c8a52643f15c119fba5004df202daff6d0a6e86862a3f3e42391c88e12f",
+    "src/reproagent/runner.py": "3e2d2065bb182a4ed5442f9ffa9a36c90cfc7cef254bc6de9c08fc641dc93dc9",
+    "src/reproagent/store.py": "d26457153d2a9d5c9fd9d12a2c63b4bd5c88a3e93f3bf5e5a018b6e2a6407c17",
+    "src/reproagent/workspace.py": "a7eb6ba1a2e8fc5b65ff917cdfc91169afdd11816aac272aa0ca57359602670a",
+    "src/reproagent/__init__.py": "82e9075d19eed7dd58c2550b4640730d02e4b205bde4dbed239e02b7fa84ba0f",
+    "src/reproagent/__main__.py": "79ee6f134c5c5193377cf9b189cbdcc3e2095e49ba9cec310114441c15a917c4",
+    "src/reproagent/adapters/__init__.py": "683faeea2c5952becd6b96081a14d57867a9a3d6836f3d098f96403366837c54",
+    "src/reproagent/core/agent.py": "6fb22b45aee09131eadbd6d1d34fbfeee5705c3f4ee024476937400f6ebb993c",
+    "src/reproagent/core/budget.py": "31114f28ce57d3db76da30796cc1f073e15093fa77f56dec7759afd3e2350b6f",
+    "src/reproagent/core/controller.py": "cac58f7829b9fea0b58d4e58b8bd9d749c3e39b1eefa9d287a4ea129a8951deb",
+    "src/reproagent/core/models.py": "8cf91a790f0ebda407234c4a237ce68f438561e4fe0123ec0dd3103ac7e1e4f6",
+    "src/reproagent/core/ports.py": "6d4595ae93d9a31b0bbb48d8f0d5512b944e2f9e675befe1e43bc54f2d6c6aad",
+    "src/reproagent/core/protocol.py": "4f11e5507c6a7348b63135fd2c1bf106f8648c1084f8214b17928330e6ee2dd9",
+    "src/reproagent/core/serialization.py": "73a91618d6fbe057b355c3aca0e7fc20a31e282d6618a77f37f594016d5ccdd9",
+    "src/reproagent/core/tools.py": "d54a8656bafaa3df7c9b46410d781ff47f81b56bb7f91b306e8b09a233c9e9e2",
+    "src/reproagent/core/verifier.py": "a2f815cbea2de0442069612736a099d59bf68292207e698eab99584afff876d9",
+    "src/reproagent/core/__init__.py": "54406312e6c89a89c7230d6b9e7083e76e10f995d461b8d1ebf0c38af76f4e39",
+    "src/reproagent/resources/replay.py": "464ec6183b4f8f4f0c9a8f661bab9fbe0f327f0970a6b9f27b38a5c601461233",
+    "src/reproagent/adapters/languages/__init__.py": "fe713d19ff0f129a3a7d77792d35c5400e6cd73bcec31ab8ef4fc4e54b31bec8",
+    "src/reproagent/adapters/models/provider.py": "d707af876b90eadd72d31b8015e1c10817c684ef88843841c1082d70c7b5bdd5",
+    "src/reproagent/adapters/models/__init__.py": "516daf8b38954e612b8957b319d87b33b914a88ebbc19d5976c1e2f5e2ba4971",
+    "src/reproagent/adapters/runtimes/local.py": "4db83e9b5dfa72da4178f4f034d6c05608d0abdf4bdadc35054c670df02f97f0",
+    "src/reproagent/adapters/runtimes/process_tree.py": "593655f7e285215c10d92d02fa1136bd65c0482e192e14e02bfb75d27fe41e45",
+    "src/reproagent/adapters/runtimes/__init__.py": "1340d82324d4e136c08040f534c804e0dd806a88df5982633d70abc64bf0e379",
+    "src/reproagent/adapters/languages/python_pytest/adapter.py": "accfcc7223699b5c640edaf6f686896d7b73a45d2c4d82afedf15132f6f5f711",
+    "src/reproagent/adapters/languages/python_pytest/collector.py": "849acf354f4df30945da5a0e2d1c2c8bed30a87ba8592f6bc719971954d988ce",
+    "src/reproagent/adapters/languages/python_pytest/__init__.py": "04f55008ae2ef8130534a9c76a163fa8a8406e573643b8c8ce35e8090c33a2af",
+    "src/reproagent/adapters/languages/python_pytest/probe/reproagent_pytest_probe.py": "7eadf3d40189faa41fc1013b410a046e4a79590de61118f6f7594439b4430dd7"
+  },
+  "results": [
+    {
+      "case_id": "more-itertools-645",
+      "cli_exit_code": 0,
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "accepted_candidate_id": "candidate-92f5ec22707140af95f202f3347bade5",
+      "stop_reason": "",
+      "uncertainties": [],
+      "duration_seconds": 18.03,
+      "model_calls": 8,
+      "prompt_tokens": 21347,
+      "completion_tokens": 2050,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\historical-verified\\more-itertools-645",
+      "buggy_commit": "8a27da60d70fbfc348b124ce89733d8a7104977a",
+      "fixed_commit": "9a1168a13e38e35396d1f4722f4a204f585cdda1",
+      "issue_url": "https://github.com/more-itertools/more-itertools/issues/462",
+      "issue_hash": "210a5ad575ad80172db10c2f13b188e506bae9ac789646c8cca51601dace00c2",
+      "description_hash": "a47c74aefc35d3c042ba09bcbaa974bb69e3eaac2aed01681e41082e1da50984",
+      "limits": {
+        "agent_steps": 12,
+        "task_timeout_seconds": 240,
+        "command_timeout_seconds": 30
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "contract_missing_information": [
+        []
+      ],
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "target_origins_in_fresh_copy": true,
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true,
+          "completed_nodeids": [
+            ".local/historical-cases/more-itertools-645/independent-verified2-buggy/tests/test_repro.py::test_windowed_empty_iterable_positive_n"
+          ],
+          "normalized_completed_nodeids": [
+            "tests/test_repro.py::test_windowed_empty_iterable_positive_n"
+          ],
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\more-itertools-645\\independent-verified2-buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "target_origins_in_fresh_copy": true,
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true,
+          "completed_nodeids": [
+            ".local/historical-cases/more-itertools-645/independent-verified2-fixed/tests/test_repro.py::test_windowed_empty_iterable_positive_n"
+          ],
+          "normalized_completed_nodeids": [
+            "tests/test_repro.py::test_windowed_empty_iterable_positive_n"
+          ],
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\more-itertools-645\\independent-verified2-fixed.log"
+        }
+      },
+      "candidate_files": [
+        {
+          "content_hash": "519ecbf9355e1f01b4797b22add4a9942537d2671cdd1cb53b5a33e6b0966458",
+          "path": "tests/test_repro.py",
+          "role": "test",
+          "size": 236
+        }
+      ],
+      "environment_status": "runnable",
+      "manual_control": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.18s"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.05s"
+        }
+      },
+      "codex_correctness_review": {
+        "accepted": true,
+        "reviewer": "Codex",
+        "independent_human": false,
+        "notes": "Direct real target calls and assertions of sourced correct behavior; no mocks, broad exception catches, or unconditional failure. All report inputs covered. Integer reference also included for humanize-250."
+      }
+    },
+    {
+      "case_id": "humanize-250",
+      "cli_exit_code": 0,
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "accepted_candidate_id": "candidate-770fe0d0a08c4e15b3380d1cb8b58260",
+      "stop_reason": "",
+      "uncertainties": [],
+      "duration_seconds": 31.11,
+      "model_calls": 10,
+      "prompt_tokens": 34073,
+      "completion_tokens": 3375,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\historical-verified\\humanize-250",
+      "buggy_commit": "8059ebe1732c89177709476165f6e87cc76fe1b7",
+      "fixed_commit": "2968d44280a68f775db73ddeb2f2fc6c05edac84",
+      "issue_url": "https://github.com/python-humanize/humanize/pull/250",
+      "issue_hash": "0e2bc40c84f81be7507b189c5f5f61e491a0df40e1b4d9ce9a10e13a5f965f7c",
+      "description_hash": "40cf8bc7e3009b405fc797f62658e9b0b48e29ea7ed461a56acd0e3c71579707",
+      "limits": {
+        "agent_steps": 12,
+        "task_timeout_seconds": 240,
+        "command_timeout_seconds": 30
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "contract_missing_information": [
+        []
+      ],
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "target_origins_in_fresh_copy": true,
+          "failed_call_tests": 2,
+          "passed_call_tests": 1,
+          "verified": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_naturalsize_one_byte_float",
+            "tests/test_repro.py::test_naturalsize_one_byte_numeric_string",
+            "tests/test_repro.py::test_naturalsize_one_byte_integer_reference"
+          ],
+          "normalized_completed_nodeids": [
+            "tests/test_repro.py::test_naturalsize_one_byte_float",
+            "tests/test_repro.py::test_naturalsize_one_byte_numeric_string",
+            "tests/test_repro.py::test_naturalsize_one_byte_integer_reference"
+          ],
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\humanize-250\\independent-verified2-buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "target_origins_in_fresh_copy": true,
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_naturalsize_one_byte_float",
+            "tests/test_repro.py::test_naturalsize_one_byte_numeric_string",
+            "tests/test_repro.py::test_naturalsize_one_byte_integer_reference"
+          ],
+          "normalized_completed_nodeids": [
+            "tests/test_repro.py::test_naturalsize_one_byte_float",
+            "tests/test_repro.py::test_naturalsize_one_byte_numeric_string",
+            "tests/test_repro.py::test_naturalsize_one_byte_integer_reference"
+          ],
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\humanize-250\\independent-verified2-fixed.log"
+        }
+      },
+      "candidate_files": [
+        {
+          "content_hash": "9ad4fc4d0043bc502a43f7aaf4b2c9205356408f66e223308e2ad85d9ff49f69",
+          "path": "tests/test_repro.py",
+          "role": "test",
+          "size": 410
+        }
+      ],
+      "environment_status": "runnable",
+      "manual_control": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "2 failed in 0.15s"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "2 passed in 0.04s"
+        }
+      },
+      "codex_correctness_review": {
+        "accepted": true,
+        "reviewer": "Codex",
+        "independent_human": false,
+        "notes": "Direct real target calls and assertions of sourced correct behavior; no mocks, broad exception catches, or unconditional failure. All report inputs covered. Integer reference also included for humanize-250."
+      }
+    },
+    {
+      "case_id": "humanize-254",
+      "cli_exit_code": 0,
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "accepted_candidate_id": "candidate-d11b314aa4184b849639fdc7dd5dc6cf",
+      "stop_reason": "",
+      "uncertainties": [],
+      "duration_seconds": 36.19,
+      "model_calls": 10,
+      "prompt_tokens": 43557,
+      "completion_tokens": 5560,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\historical-verified\\humanize-254",
+      "buggy_commit": "58d10b43175a22eb9ece2c6f3dcff6b6b681e2df",
+      "fixed_commit": "0f5d2948d674a88a611f8e341c0df520767b1b80",
+      "issue_url": "https://github.com/python-humanize/humanize/issues/14",
+      "issue_hash": "83da144a5565d17033bbf2843a951712eb0df5385a18c9263c85a91139ccc3c6",
+      "description_hash": "33451928e5728ccfd1d1f88d0ab6a5525d47e389e15aa407ce67e4c3ffa16d0f",
+      "limits": {
+        "agent_steps": 12,
+        "task_timeout_seconds": 240,
+        "command_timeout_seconds": 30
+      },
+      "human_supplements": 0,
+      "export_replayed": true,
+      "human_judgement": null,
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "contract_missing_information": [
+        []
+      ],
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "target_origins_in_fresh_copy": true,
+          "failed_call_tests": 3,
+          "passed_call_tests": 0,
+          "verified": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[31-1 month]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[92-3 months]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[32-1 month and 1 day]"
+          ],
+          "normalized_completed_nodeids": [
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[31-1 month]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[92-3 months]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[32-1 month and 1 day]"
+          ],
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\humanize-254\\independent-verified2-buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "target_origins_in_fresh_copy": true,
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[31-1 month]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[92-3 months]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[32-1 month and 1 day]"
+          ],
+          "normalized_completed_nodeids": [
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[31-1 month]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[92-3 months]",
+            "tests/test_repro.py::test_precisedelta_days_minimum_unit[32-1 month and 1 day]"
+          ],
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\humanize-254\\independent-verified2-fixed.log"
+        }
+      },
+      "candidate_files": [
+        {
+          "content_hash": "a8f43921e87ab704a9927f51b6199ccf3f3903abd98e222ec5d85adf0564e801",
+          "path": "tests/test_repro.py",
+          "role": "test",
+          "size": 476
+        }
+      ],
+      "environment_status": "runnable",
+      "manual_control": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "3 failed in 0.16s"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "3 passed in 0.05s"
+        }
+      },
+      "codex_correctness_review": {
+        "accepted": true,
+        "reviewer": "Codex",
+        "independent_human": false,
+        "notes": "Direct real target calls and assertions of sourced correct behavior; no mocks, broad exception catches, or unconditional failure. All report inputs covered. Integer reference also included for humanize-250."
+      }
+    }
+  ]
+}

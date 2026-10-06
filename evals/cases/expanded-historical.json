@@ -1,0 +1,740 @@
+{
+  "evaluation_date": "2026-10-05",
+  "additional_cases": 17,
+  "cumulative_unique_cases": 20,
+  "selection": "17 additional hand-picked historical bugs across five new repositories; selected before model runs; not a representative benchmark",
+  "cases": [
+    {
+      "case_id": "validators-432",
+      "repo": "python-validators/validators",
+      "pr": 432,
+      "url": "https://github.com/python-validators/validators/pull/432",
+      "title": "fix: reject MAC addresses with mixed separators",
+      "body": "Previously, the MAC address validator would accept invalid MAC addresses that mixed different separators, such as `aa:bb-cc-dd:ee:ff`, but a valid MAC address should use consistent separators throughout.\r\n\r\nThis PR improves the MAC address validator by adding a check to reject MAC addresses that use mixed separators (both `:` and `-` characters).\r\n",
+      "merged_at": "2025-10-03T16:26:18Z",
+      "fixed_commit": "9bc7e82f7bf0fb3990eb287e11323fb6ca1c87cf",
+      "buggy_commit": "54404420a226c2a3c1603b81cb9958ef197b52a7",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-validators/validators/pull/432",
+      "issue_hash": "5d955194918754c77cfc448dadbabf60a9360528dced88b26c162a72529b7482",
+      "buggy_archive_sha256": "59d8043e8baecbf994a42c6d66559981f72b44126690baf6e8fff6a85f33d6e1",
+      "fixed_archive_sha256": "25f24d0735feac344330a3f3c0b74220514d58ca0fe45870b60903986fba9f60",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "validators.mac_address accepts a MAC address with mixed colon and hyphen separators. For aa:bb-cc-dd:ee:ff the correct result is a validators.ValidationError, not True. Uniform aa:bb:cc:dd:ee:ff should still be accepted. This is an input-validation regression; no network requests are needed. Source: https://github.com/python-validators/validators/pull/432",
+      "description_hash": "378ac084d5b6133b44e3a89197495eddb74e511c873a3afa8c5a034791bbf43d",
+      "target_modules": [
+        "validators.mac_address"
+      ],
+      "category": "validation-false-positive",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.30s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-432\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.11s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-432\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "validators-418",
+      "repo": "python-validators/validators",
+      "pr": 418,
+      "url": "https://github.com/python-validators/validators/pull/418",
+      "title": "fix(uri): replace `lstrip(\"mailto:\")` with manual prefix removal",
+      "body": "The use of `lstrip()` here was a bit too aggressive.\r\nFor example:\r\n```\r\nIn [1]: \"mailto:maximilian.moser@tuwien.ac.at\".lstrip(\"mailto:\")\r\nOut[1]: 'ximilian.moser@tuwien.ac.at'\r\n```\r\nBut:\r\n```\r\nIn [2]: \"mailto:maximilian.moser@tuwien.ac.at\".removeprefix(\"mailto:\")\r\nOut[2]: 'maximilian.moser@tuwien.ac.at'\r\n```",
+      "merged_at": "2025-03-29T05:16:55Z",
+      "fixed_commit": "d6241fc31f6b46bf81283c6ab3cae07c370fc1f6",
+      "buggy_commit": "25fcef05c293def421fd3f6714403a54fce993cf",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-validators/validators/pull/418",
+      "issue_hash": "b9732958f91d1bd6e9ac314ba0ffa170d47a737251498d808b2446af32a0cb0e",
+      "buggy_archive_sha256": "8c6c4247f60e263c2125dbe6393f7bb575af01c04a45fe570254dbb9849bc84d",
+      "fixed_archive_sha256": "b93641abcc94d2be5c2ab0c42f73bc80abe5475920d8b55ef6ad71ce8889ae70",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "The mailto branch of validators.uri removes leading characters from the email address, rather than removing only the mailto: prefix. A valid URI mailto:m@example.com should validate as True, but the buggy version returns ValidationError after losing its single-character local part. Use the public validators.uri.uri callable (it may not be exported by validators.__init__). This is a minimized example of the reported prefix-removal bug. Source: https://github.com/python-validators/validators/pull/418",
+      "description_hash": "9b69b56c43731a57766163531510b804d39ee49bd9c1275b8f735863342d789f",
+      "target_modules": [
+        "validators.uri"
+      ],
+      "category": "prefix-handling",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.27s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-418\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.09s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-418\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "validators-405",
+      "repo": "python-validators/validators",
+      "pr": 405,
+      "url": "https://github.com/python-validators/validators/pull/405",
+      "title": "fix(url): add hashtag to allowed fragment characters",
+      "body": "Fixes #403 ",
+      "merged_at": "2024-10-07T01:34:01Z",
+      "fixed_commit": "c9585e91f8b409029b059df148da4dc52bd951e3",
+      "buggy_commit": "597a0309fc315e86685187303abc24677a32d382",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-validators/validators/issues/403",
+      "issue_hash": "e02a9c6f11f642aa455da0b6dbca3b21569a6bb576c4072a7a70b3448b62d84b",
+      "buggy_archive_sha256": "b80818b5f16db7c16fcfb71a5cce1dd472073c9c9d2dbd39a8373670c1fb8c39",
+      "fixed_archive_sha256": "4c28ddbb168f53b9ed56fc95e11626ffba96f2f3793a296cd9702303cfeca3db",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "validators.url rejects URLs containing a further # character inside the fragment. The reported symptom can be minimized to https://www.example.com/path#abc/#def. The correct validation result for this URL is True; the buggy version returns ValidationError. Do not fetch the URL; only run the validator. Source: https://github.com/python-validators/validators/issues/403",
+      "description_hash": "621cb60c21c1a59b89725beb1220f95f5d38f3f81ed346d015e752f85d0b6832",
+      "target_modules": [
+        "validators.url"
+      ],
+      "category": "url-fragment",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.25s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-405\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.10s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-405\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "validators-374",
+      "repo": "python-validators/validators",
+      "pr": 374,
+      "url": "https://github.com/python-validators/validators/pull/374",
+      "title": "fix(ip_address): properly handle private is false",
+      "body": "Fixes #373 \r\n\r\n- [x] Update the test docstrings",
+      "merged_at": "2024-05-17T02:15:01Z",
+      "fixed_commit": "bcb134204edcfdabf0de0e5fc0a5010105659c36",
+      "buggy_commit": "d46cd586bdd6b9946d5d421f009794a25650f72e",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-validators/validators/issues/373",
+      "issue_hash": "3f4070cfd3c3f086f6fbd82af3998658960249f984f59c293a524e98c7e35745",
+      "buggy_archive_sha256": "5ce120d5f7ec5df6b119e74c6a109bc0bae5fc7587b5c275f63e2b7e4bc77aff",
+      "fixed_archive_sha256": "36d2e2c3ef04efee9ba094dc9abcf7e851ba5e16e13c0ff39078d61198e53094",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "validators.ipv4(\"1.1.1.1\", private=False) returns ValidationError although this is a public IPv4 address. It should return True, while ipv4(\"1.1.1.1\", private=True) should return ValidationError. This report concerns the explicit False option, not networking or DNS. Source: https://github.com/python-validators/validators/issues/373",
+      "description_hash": "fb9f64aba01f3df58e1b069861ffb12228f5c3a5c62816e447084cd3ca2f30b7",
+      "target_modules": [
+        "validators.ip_address"
+      ],
+      "category": "optional-boolean",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.22s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-374\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.08s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-374\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "validators-317",
+      "repo": "python-validators/validators",
+      "pr": 317,
+      "url": "https://github.com/python-validators/validators/pull/317",
+      "title": "fix: allow pct-encoded entities in fragments",
+      "body": "Fixes #316 ",
+      "merged_at": "2023-11-07T14:03:24Z",
+      "fixed_commit": "54484c4d69dc7482018eee6ae4123a8c11c0fcb4",
+      "buggy_commit": "8f1159718f36cef59f4e647b03c43df52b50c2d1",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-validators/validators/issues/316",
+      "issue_hash": "4cb40b5ea3db297da440f0bd38226e353200174464f3f94ffdf5e9144431095c",
+      "buggy_archive_sha256": "c211cc8e65b28acc29089815a9dfe91b11920db3e4b83e61bbe1d89d7c13451d",
+      "fixed_archive_sha256": "a89929c69394d1cca59f57f28539b2c9e39b231d38bb7a57893f05f3ce1bf018",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "validators.url incorrectly rejects percent-encoded characters inside a fragment. https://example.org/path#2022%201040%20(Cornelius%20Morgan%20G).pdf is a valid URL and should return True, but returns ValidationError in the buggy version. Validate locally without requesting the URL. Source: https://github.com/python-validators/validators/issues/316",
+      "description_hash": "91899e29103c3c2955a66d78d19618e0adab9d27ae7ef92aa0bc7ca665384160",
+      "target_modules": [
+        "validators.url"
+      ],
+      "category": "url-encoding",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.21s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-317\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.09s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-317\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "pyjwt-608",
+      "repo": "jpadilla/pyjwt",
+      "pr": 608,
+      "url": "https://github.com/jpadilla/pyjwt/pull/608",
+      "title": "Validate claims if configured and verify_signature is not.",
+      "body": "Fixes #599 ",
+      "merged_at": "2021-02-15T16:40:10Z",
+      "fixed_commit": "373d4d8a45ce7071e8677d4835a46bd762fa1210",
+      "buggy_commit": "cda3ef147a6e7c12a63b761631b3f169a6827df0",
+      "review_status": "approved",
+      "issue_url": "https://github.com/jpadilla/pyjwt/issues/599",
+      "issue_hash": "b91b663d255f7827a13b8c0c8b712c80058726efee807e67037daff870486e84",
+      "buggy_archive_sha256": "2ea1c4aa0cdacf1ac9397e39a83ab0de8841d07002ca5948ef7f939be08bcfa6",
+      "fixed_archive_sha256": "b059bf2f2dc5b7e4026f61da9e2000b0a91434ff2a52e287f32a000eee46600b",
+      "source_roots": [
+        "."
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "jwt.decode skips expiration validation whenever signature verification is disabled, even if verify_exp is explicitly True. Create a local HS256 token with exp=1 and an arbitrary test secret. Decoding it with options={\"verify_signature\": False, \"verify_exp\": True} must raise jwt.ExpiredSignatureError; the buggy version returns its payload. Without explicitly enabling verify_exp, signature-disabled decode should still be permitted. The expected exception is the correct behavior, not the reported bug. Source: https://github.com/jpadilla/pyjwt/issues/599",
+      "description_hash": "0dd482559c8d462b48e7dd86d396ee38bd7ed03f942e501d0c699a6a79f8671a",
+      "target_modules": [
+        "jwt.api_jwt"
+      ],
+      "category": "independent-validation-options",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.20s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-608\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed, 1 warning in 0.06s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-608\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "pyjwt-1040",
+      "repo": "jpadilla/pyjwt",
+      "pr": 1040,
+      "url": "https://github.com/jpadilla/pyjwt/pull/1040",
+      "title": "Fixes #1039: Add iss, issuer type checks",
+      "body": "See issue for more details",
+      "merged_at": "2025-03-05T05:39:29Z",
+      "fixed_commit": "9085670a1f69de3e86c7d122317c3b2707e0123b",
+      "buggy_commit": "ebc941de508f76acaa78defb15197092458f1874",
+      "review_status": "approved",
+      "issue_url": "https://github.com/jpadilla/pyjwt/issues/1039",
+      "issue_hash": "c7df74bc637b5c2e8ee8951d522052cae127723bb21cf6fb777b0f6f13225881",
+      "buggy_archive_sha256": "449919adc9ee07f3ba45d58d8ebe74bb80175d04b8ca680b7de40efc3f59502f",
+      "fixed_archive_sha256": "804108f28655b50f438cf77e91b56d225a236ba238cefd284adf4a882163e03f",
+      "source_roots": [
+        "."
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "jwt.encode allows a non-string iss claim, although the issuer must be a string. Encoding {\"iss\": 123} with a local HS256 test secret should reject the invalid input with TypeError. The buggy version instead returns a token. This report concerns encode-time input validation; there is no external issuer or service. Source: https://github.com/jpadilla/pyjwt/issues/1039",
+      "description_hash": "a1720da5622a23aa23cadbeba840543a30a6da561fcc3e84f1995c6ae2cb078d",
+      "target_modules": [
+        "jwt.api_jwt"
+      ],
+      "category": "claim-type-validation",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.18s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-1040\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.06s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-1040\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "attrs-1428",
+      "repo": "python-attrs/attrs",
+      "pr": 1428,
+      "url": "https://github.com/python-attrs/attrs/pull/1428",
+      "title": "Fixes issue #1427",
+      "body": "# Summary\r\n\r\nValues given to `__init__` should now always be propagated to `__attrs_pre_init__`, regardless of default configuration. Resolves #1427.\r\n\r\n# Pull Request Check List\r\n\r\n- [x] Do **not** open pull requests from your `main` branch \u2013 **use a separate branch**!\r\n- [x] Added **tests** for changed code.\r\n- [x] New features have been added to our [Hypothesis testing strategy](https://github.com/python-attrs/attrs/blob/main/tests/strategies.py).\r\n- [x] Changes or additions to public APIs are reflected in our type stubs (files ending in ``.pyi``).\r\n    - [x] ...and used in the stub test file `tests/typing_example.py`.\r\n    - [x] If they've been added to `attr/__init__.pyi`, they've *also* been re-imported in `attrs/__init__.pyi`.\r\n- [x] Updated **documentation** for changed code.\r\n    - [x] New functions/classes have to be added to `docs/api.rst` by hand.\r\n    - [x] Changes to the signatures of `@attr.s()` and `@attrs.define()` have to be added by hand too.\r\n    - [x] Changed/added classes/methods/functions have appropriate `versionadded`, `versionchanged`, or `deprecated` [directives](http://www.sphinx-doc.org/en/stable/markup/para.html#directive-versionadded).\r\n          The next version is the second number in the current release + 1.\r\n          The first number represents the current year.\r\n          So if the current version on PyPI is 22.2.0, the next version is gonna be 22.3.0.\r\n          If the next version is the first in the new year, it'll be 23.1.0.\r\n      - [x] If something changed that affects both `attrs.define()` and `attr.s()`, you have to add version directives to both.\r\n- [x] Documentation in `.rst` and `.md` files is written using [semantic newlines](https://rhodesmill.org/brandon/2012/one-sentence-per-line/).\r\n- [x] Changes (and possible deprecations) have news fragments in [`changelog.d`](https://github.com/python-attrs/attrs/blob/main/changelog.d).\r\n- [x] Consider granting [push permissions to the PR branch](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/allowing-changes-to-a-pull-request-branch-created-from-a-fork), so maintainers can fix minor issues themselves without pestering you.\r\n\r\n<!--\r\nIf you have *any* questions to *any* of the points above, just **submit and ask**!\r\nThis checklist is here to *help* you, not to deter you from contributing!\r\n-->\r\n",
+      "merged_at": "2025-07-27T06:10:10Z",
+      "fixed_commit": "937b1e232803cc4ec9b9375ef525fc57c24ec498",
+      "buggy_commit": "94caa57142c057ce52504cdf239ae0ed3168f9b5",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1427",
+      "issue_hash": "f960e3c71eb31d3985e6dd268d6b06ba3921be8fce08b0ebc0c18fec0ec17898",
+      "buggy_archive_sha256": "886174e796698143f1562351998d3aea65c10137e735ca9960a3fdcaf8cb685e",
+      "fixed_archive_sha256": "8608ca743d11f1c4d7af596923c0bbcfb9ef8428a9f623eb1b5180d1aa14e08e",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "An attrs.define class has an integer field value with default 100 and a __attrs_pre_init__(self, value) hook. Calling the class with value=200 must pass 200 to the hook and set the field to 200. The buggy version passes the default 100 to the hook while the field becomes 200. Use slots=False if storing the observed hook argument on the instance. This report only concerns a regular non-keyword-only default field. Source: https://github.com/python-attrs/attrs/issues/1427",
+      "description_hash": "8532c150757b472af95849587c35f369686c2e45b906fc7a04a397274e694cb1",
+      "target_modules": [
+        "attr._make"
+      ],
+      "category": "generated-init-arguments",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.20s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1428\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.03s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1428\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "attrs-1328",
+      "repo": "python-attrs/attrs",
+      "pr": 1328,
+      "url": "https://github.com/python-attrs/attrs/pull/1328",
+      "title": "Make Converter a kind of adapter, fix converters.pipe",
+      "body": "Looks like piped converters are hosed. \ud83d\ude33\r\n\r\nThere's still the issue when a Converter comes last in a pipe, but this fixes at least #1327 and that pipe used to pass nonsense into converters.",
+      "merged_at": "2024-08-06T11:49:43Z",
+      "fixed_commit": "6fda0a4e086b56d7058855e4c15112c8f58de74c",
+      "buggy_commit": "53e632c5218b729da6ac37a35b4b68379dc18999",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1327",
+      "issue_hash": "294b8d49485a5a25b240c67fc488048f2e973e7dd8df936b7e0770da32eab0f3",
+      "buggy_archive_sha256": "1c62dc43b40d2bdcba20ca569cbf1c092ad8eae4e2a120bcd12bc732351ec1b2",
+      "fixed_archive_sha256": "249f139c7b348e0502af7e9916afd0091d5780b591b74d2be04a8ad8a9cf620d",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "After defining an attrs.define class with a field using converter=[int], construction with \"1\" succeeds but assigning \"2\" to that field raises AttributeError: __call__ in the buggy version. Assignment should succeed and store integer 2. Keep the default on_setattr conversion behavior enabled; do not replace the converter or setter with a mock. Source: https://github.com/python-attrs/attrs/issues/1327",
+      "description_hash": "01efe5d56d5d5501484f6762b9c5eee186f2c949113639b6f8f5a66a6307c9ac",
+      "target_modules": [
+        "attr.setters"
+      ],
+      "category": "converter-assignment",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.26s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1328\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.03s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1328\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "attrs-1319",
+      "repo": "python-attrs/attrs",
+      "pr": 1319,
+      "url": "https://github.com/python-attrs/attrs/pull/1319",
+      "title": "Fix crash when __pre_init__, kw_only, and defaults come together",
+      "body": "Fixes #1284\r\n",
+      "merged_at": "2024-08-03T11:31:53Z",
+      "fixed_commit": "09161fc9181bf94aa3bbc5509c663d736a9553dc",
+      "buggy_commit": "689a0e64012d1e576ebd99e786a254bc537582c6",
+      "review_status": "approved",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1284",
+      "issue_hash": "c49c40001b5283dbead3400ce09355eb6e0e9f5be70dc19d9d24a389691760a8",
+      "buggy_archive_sha256": "949b95dcb052a1416dce935d1e8a9323652179a6509f8f364d2bb60c288cb490",
+      "fixed_archive_sha256": "67b8abcf572d7de6a3c83292a12a059da306edcda1dbbcd177f926860966dac8",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "An attrs.define class has a keyword-only integer field value with default 3 and a __attrs_pre_init__(self, *, value) hook. Defining and instantiating the class should succeed and pass 3 to the hook. The buggy attrs implementation produces a SyntaxError while compiling its generated __init__, even when the caller test has valid Python syntax. Define the class inside the test function so the target error occurs during test execution. Source: https://github.com/python-attrs/attrs/issues/1284",
+      "description_hash": "83bf1979593f55a610e61c4f4093c09127eebdcb2ab3d34c9fd7f3f7d9ca6a72",
+      "target_modules": [
+        "attr._make"
+      ],
+      "category": "target-generated-syntax-error",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.32s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1319\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.03s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1319\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "click-3152",
+      "repo": "pallets/click",
+      "pr": 3152,
+      "url": "https://github.com/pallets/click/pull/3152",
+      "title": "Fix handling of options which set both is_flag=False and flag_value=...",
+      "body": "Given that it's >1 month and the original contributor hasn't made changes, I've squashed #3104 and attempted to bring it up to spec so that the one-line fix itself can merge.\nTo preserve some level of attribution to the original author, I squashed those commits and added myself as a co-author on the resulting commit.\n\nThe separate \"cleanup\" commit aims to fix internal doc, presentation in the changelog, and to tidy up the new test.\nHappy to take further action if it's helpful.\n\n- Fix #3084: Correct flag optional value behavior and add comprehensive tests\n- Cleanup changes to fix flag_value bug\n\n<!--\nBefore opening a PR, open a ticket describing the issue or feature the\nPR will address. An issue is not required for fixing typos in\ndocumentation, or other simple non-code changes.\n\nReplace this comment with a description of the change. Describe how it\naddresses the linked ticket.\n-->\n\n<!--\nLink to relevant issues or previous PRs, one per line. Use \"fixes\" to\nautomatically close an issue.\n\nfixes #<issue number>\n-->\n\n<!--\nEnsure each step in CONTRIBUTING.rst is complete, especially the following:\n\n- Add tests that demonstrate the correct behavior of the change. Tests\n  should fail without the change.\n- Add or update relevant docs, in the docs folder and in code.\n- Add an entry in CHANGES.rst summarizing the change and linking to the issue.\n- Add `.. versionchanged::` entries in any relevant code docs.\n-->\n",
+      "merged_at": "2025-11-20T03:49:38Z",
+      "fixed_commit": "ebcd548d50662bc8fa4f8b9ec7fe13cb8310bfaa",
+      "buggy_commit": "7f7bbe4569ea68e8dabee232eade069ef3310aea",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pallets/click/issues/3084",
+      "issue_hash": "62a140094a1bbc5643ecaea4d71a590e59d8ed758fc36433022eff8567180afe",
+      "buggy_archive_sha256": "e152efe6cc6ab33442de9bd9fbdfea49101486bee6c9699f83241f8a0912872e",
+      "fixed_archive_sha256": "9ca88030e5cf2f618f7a9aa7eb2d0b31a4b09e6673b68489c6f5e04bfe16e4df",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "A Click command has option --name with is_flag=False, flag_value=\"Flag\", default=\"Default\", and echoes Hello, {name}!. Running it through click.testing.CliRunner with only --name should exit 0 and output \"Hello, Flag!\\n\". The buggy version exits 2 saying the option requires an argument. Omitting the option should use Default, and --name Alice should use Alice. Source: https://github.com/pallets/click/issues/3084",
+      "description_hash": "466a1ce7df45f9fdb686297f8aa2ca10475e58c28d78657b4ad623918c2a06f2",
+      "target_modules": [
+        "click.core"
+      ],
+      "category": "cli-optional-value",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.27s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3152\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.12s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3152\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "click-3079",
+      "repo": "pallets/click",
+      "pr": 3079,
+      "url": "https://github.com/pallets/click/pull/3079",
+      "title": "Fix default handling to defer `UNSET` normalization",
+      "body": "When options are being parsed, multiple options may evaluate to have defaults of `UNSET`, and some may evaluate to have explicitly set defaults of `None`. The normalization of `UNSET -> None` is now deferred until all options have been parsed, so that it is possible to accurately evaluate and save the first non-UNSET default value.\r\n\r\nA new test exercises this functionality by pointing two flags at the same parameter declaration, and showing that their behavior is not order sensitive when only one of the flags has a default.\r\n\r\nresolves #3071\r\n\r\n---\r\n\r\nThe PR template says to add a note in `CHANGES.rst` for the change, but there's no header for the next release, so I wasn't sure where to put a change note. If a maintainer gives me a pointer in terms of what to do, I'm happy to amend with a change note. :slightly_smiling_face: ",
+      "merged_at": "2025-09-24T17:07:42Z",
+      "fixed_commit": "27aaed3fe5bcd6adedd6e91de234914af9859cf1",
+      "buggy_commit": "2ed395b0b5ac4d56553ff715335f456f812cdc78",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pallets/click/issues/3071",
+      "issue_hash": "c45a34e4216c529a7795fe123f712c9ff5ef0d3d27cca92aa94349798d540452",
+      "buggy_archive_sha256": "25652bfb716fc278d8ab64102f0182e823d61a5e0d2c8cc8c2f0bb2e81065e7a",
+      "fixed_archive_sha256": "48e2738f41f59c961f4183318bf2551bbe67eec7f8a216a53f8c253ecab86709",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "Two Click flags share a parameter color. Declare --red first with flag_value=\"red\" and no default, then --green with flag_value=\"green\" and default=True. Invoking the command with no arguments should select green independently of declaration order, but the buggy version passes None. The command echoes the color. An explicit --red must still select red. Source: https://github.com/pallets/click/issues/3071",
+      "description_hash": "f8930c9f8be080d4fe87f517044f8f6530f723ab017f3e2085120e175b3a3244",
+      "target_modules": [
+        "click.core"
+      ],
+      "category": "cli-shared-default",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.27s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3079\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.12s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3079\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "click-3004",
+      "repo": "pallets/click",
+      "pr": 3004,
+      "url": "https://github.com/pallets/click/pull/3004",
+      "title": "Fix rendering of Enum choices' default",
+      "body": "This PR fix (and test) the rendering of a variety of `Enum`-based choices. Specifically their default value in the help/usgae screen.\r\n\r\nAdditionally, it adds a couple of unit tests to lock-in and document the current behavior of choices.\r\n\r\nRefs:\r\n - #2911\r\n- #2928",
+      "merged_at": "2025-07-22T07:30:29Z",
+      "fixed_commit": "eaf33a957975e7d0943fad8d2b4b905b6bd98cb9",
+      "buggy_commit": "a1235aacb1be55dc66ddcfefbf64dec44b6ab54d",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pallets/click/pull/3004",
+      "issue_hash": "828c6248813457d41ce8ecb8bcb959285b00a20a65f786192f1284427af60960",
+      "buggy_archive_sha256": "fd498364464086d47870149c6852ad78e2c2b16f5f7542d9c4006f5fe910aa39",
+      "fixed_archive_sha256": "7f4822770bea1ff4fa2dbc8dc34650f10a3dcba1937483daa08f50820b2e01cf",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "expected_behavior_basis": "merged maintainer regression on default help; linked issue concerns different choice-value behavior",
+      "allowed_description": "Click help displays the default of an Enum-valued Choice as HashType.SHA1, inconsistent with the available choice names MD5 and SHA1. Define enum.Enum HashType with members MD5 and SHA1 using enum.auto, and option --hash with type=click.Choice(HashType), default=HashType.SHA1, show_default=True. Invoking --help should exit 0 and display [default: SHA1], without HashType.SHA1. This concerns default help formatting, not changing which user input values Choice accepts. Source: https://github.com/pallets/click/pull/3004",
+      "description_hash": "73c7cb6aa5fa3dfec6b75b0ccf092c00d9e8d8f95a116169cf677cf5f6799266",
+      "target_modules": [
+        "click.core"
+      ],
+      "category": "cli-enum-help",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.23s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3004\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.13s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3004\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "click-2940",
+      "repo": "pallets/click",
+      "pr": 2940,
+      "url": "https://github.com/pallets/click/pull/2940",
+      "title": "testing/CliRunner: Fix regression related to EOF introduced in 262bdf0",
+      "body": "Commit 262bdf0 ensured to raise an `EOFError` exception on end of input to simulate tty behavior and avoid blocking prompt during tests when no more input is available.\r\n\r\nHowever the introduced implementation has a side effect when testing a click command having a `File` type option or argument and when it is set to `stdin`: the command ends up with error due to the `Abort` exception being raised when the stdin `EOFError` exception is caught.\r\n\r\nTo prevent this undesirable side effect, prefer to raise the `EOFError` exceptions directly from the prompts functions inside the `CliRunner` class instead of doing it in the method overriding the iterator protcol for the` _NamedTextIOWrapper` class.\r\n\r\nRestore previous implementation of a test broken by changes of 262bdf0.\r\n\r\nFixes #2939.\r\n\r\n<!--\r\nBefore opening a PR, open a ticket describing the issue or feature the\r\nPR will address. An issue is not required for fixing typos in\r\ndocumentation, or other simple non-code changes.\r\n\r\nReplace this comment with a description of the change. Describe how it\r\naddresses the linked ticket.\r\n-->\r\n\r\n<!--\r\nLink to relevant issues or previous PRs, one per line. Use \"fixes\" to\r\nautomatically close an issue.\r\n\r\nfixes #<issue number>\r\n-->\r\n\r\n<!--\r\nEnsure each step in CONTRIBUTING.rst is complete, especially the following:\r\n\r\n- Add tests that demonstrate the correct behavior of the change. Tests\r\n  should fail without the change.\r\n- Add or update relevant docs, in the docs folder and in code.\r\n- Add an entry in CHANGES.rst summarizing the change and linking to the issue.\r\n- Add `.. versionchanged::` entries in any relevant code docs.\r\n-->\r\n",
+      "merged_at": "2025-09-13T04:36:16Z",
+      "fixed_commit": "2a0e3ba907927ade6951d5732b775f11b54cb766",
+      "buggy_commit": "36deba8a95a2585de1a2aa4475b7f054f52830ac",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pallets/click/issues/2939",
+      "issue_hash": "445717f513e14bde98839b26ad3181473e1f4745c4c81a2e40786e2cfb8eacf4",
+      "buggy_archive_sha256": "0c9ba883b5c9acf33c514791e46cac4043701f097f5711b01730e8916b827752",
+      "fixed_archive_sha256": "bab5d33182fad9e62f61bd77a78f9d6a62168539c65a2376429f80b290088b19",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "CliRunner turns normal end-of-file into an abort when a command iterates standard input supplied through click.File(\"r\"). A command with argument file_input of type click.File(\"r\") echoes each stripped line using a for loop over file_input. CliRunner.invoke(cli,[\"-\"],input=\"test\\n\") should exit 0 and output \"test\\n\". The buggy version exits 1 with Aborted! at EOF. No real interactive input or external files are required. Source: https://github.com/pallets/click/issues/2939",
+      "description_hash": "c7e75be3541a04bcc9529ee64341c98832d0700ff13355d8408dd631cbf5f0bb",
+      "target_modules": [
+        "click.testing"
+      ],
+      "category": "cli-stdin-eof",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.24s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-2940\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.12s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-2940\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "packaging-1360",
+      "repo": "pypa/packaging",
+      "pr": 1360,
+      "url": "https://github.com/pypa/packaging/pull/1360",
+      "title": "fix(tags): preserve explicitly empty platform iterables",
+      "body": "Passing `platforms=[]` currently falls through `platforms or platform_tags()` in the three public tag generators. That silently substitutes the running host's platform tags, while an equivalent empty iterator remains empty.\n\nDistinguish an omitted `None` from an explicitly empty iterable in `cpython_tags()`, `generic_tags()`, and `compatible_tags()`. Focused regressions cover each generator, including the universal `*-none-any` tags that `compatible_tags()` should still return.\n\nTests: `PYTHONPATH=src uv run --no-project --with 'pytest>=6.2' --with pretend --with hypothesis python -m pytest -q tests/test_tags.py` (237 passed).\n",
+      "merged_at": "2026-08-08T01:39:53Z",
+      "fixed_commit": "4e79787a31c99348649bb0dafee2a5078d3595be",
+      "buggy_commit": "b097450461523502ada842f98274449ad74ff1ff",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pypa/packaging/pull/1360",
+      "issue_hash": "527c55c22402953e59002c0d36ab7dbcf6b0c9a2e385e53b624e5cee33905295",
+      "buggy_archive_sha256": "97ed324b523f675f6a728f71ace3b111559d32578bc9d8fd26f8de870b52e567",
+      "fixed_archive_sha256": "333922c646cf9c5715c0c94c22bdab8b80a359fd6db4aefc66979de8ef01cf58",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "packaging.tags treats platforms=[] as if no argument was supplied, substituting host platform tags. For cpython_tags((3,11), abis=[\"cp311\"], platforms=[]) and generic_tags(interpreter=\"custom\", abis=[\"abi\"], platforms=[]), the correct result is an empty list. compatible_tags((3,), interpreter=\"cp3\", platforms=[]) should return only Tag(\"cp3\",\"none\",\"any\") and Tag(\"py3\",\"none\",\"any\"), in that order. The buggy outputs also contain host platforms. Source: https://github.com/pypa/packaging/pull/1360",
+      "description_hash": "159330a431d9b008e4ffcc949f566b4cf13f76541d1b887b3f9c6aec36d5a4e1",
+      "target_modules": [
+        "packaging.tags"
+      ],
+      "category": "explicit-empty-iterable",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.38s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1360\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.05s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1360\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "packaging-1332",
+      "repo": "pypa/packaging",
+      "pr": 1332,
+      "url": "https://github.com/pypa/packaging/pull/1332",
+      "title": "fix(requirements): raise InvalidRequirement for malformed specifier lists",
+      "body": "## Summary\n\n- translate `SpecifierSet` validation failures into `InvalidRequirement`, matching `Requirement`'s documented exception contract\n- cover both direct construction and stable-pickle restoration with the malformed `demo===x,y` form\n\n## Why\n\nThe requirement parser accepts the arbitrary-equality token and comma, but the later `SpecifierSet` construction rejects the bare `y`. That currently leaks `InvalidSpecifier` from `Requirement(...)`, so callers cannot consistently handle malformed requirement strings via `InvalidRequirement`; the same leak also bypasses `Requirement.__setstate__`'s invalid-string conversion.\n\n## Validation\n\n- `uv run pytest -q` \u2014 62,115 passed, 1 platform skip\n- `uv run pytest tests/test_requirements.py -q` \u2014 5,322 passed\n- `uv run ruff check src/packaging/requirements.py tests/test_requirements.py`\n- `uv run ruff format --check src/packaging/requirements.py tests/test_requirements.py`\n",
+      "merged_at": "2026-07-20T16:53:22Z",
+      "fixed_commit": "fe18f139c5b3d73cd9fdd9b25f1eda1b6fd7ba15",
+      "buggy_commit": "9c652e4b4ced3c94f133a1b91c726023f0950b4f",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pypa/packaging/pull/1332",
+      "issue_hash": "e85698b2509e7422bee8ac1bece3030092502f58f8f94ff6077d950764b794bc",
+      "buggy_archive_sha256": "1e9cfee848eaac7d3ad0613f4a3c513a8ce73dd327bbdfe00eadf7a27371e031",
+      "fixed_archive_sha256": "81b4374824fd91dd091369fb747aaa52ac0338641d34f62888babf7b30e0ac3c",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "packaging.requirements.Requirement(\"demo===x,y\") leaks packaging.specifiers.InvalidSpecifier for the malformed requirement. Its public API should reject malformed requirements with packaging.requirements.InvalidRequirement so callers can catch that error consistently. The correct regression test must expect InvalidRequirement; expecting InvalidSpecifier merely accepts the bug. Source: https://github.com/pypa/packaging/pull/1332",
+      "description_hash": "7afd88d56fe0e8a16b743cfa46e8b89159dada049610b4281826c89b2c6d0bf9",
+      "target_modules": [
+        "packaging.requirements"
+      ],
+      "category": "public-exception-contract",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.24s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1332\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.10s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1332\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    },
+    {
+      "case_id": "packaging-1328",
+      "repo": "pypa/packaging",
+      "pr": 1328,
+      "url": "https://github.com/pypa/packaging/pull/1328",
+      "title": "fix: make InvalidMetadata and CyclicDependencyGroup picklable",
+      "body": "The only other exception that isn't picklable is `ParserSyntaxError`, but there's no way it could cross a multiprocessing boundary (it's internal and we reraise a different exception), so I didn't change that one.\r\n\r\n:robot: _AI text below_ :robot:\r\n\r\nA review of #1268 noted that `InvalidMetadata` cannot be unpickled. Its `__init__(field, message)` signature doesn't match `self.args` (which only holds the message), so the default exception reduction fails with a `TypeError`. A sweep of all exception classes in the package found one other case: `CyclicDependencyGroup` (new in 26.1), whose three-argument `__init__` has the same mismatch.\r\n\r\nThis matters when exceptions cross process boundaries, e.g. `concurrent.futures`/`multiprocessing` workers validating metadata or resolving dependency groups.\r\n\r\nBoth classes get a `__reduce__` that reconstructs from the original constructor arguments, preserving `str(e)` and all attributes. Regression tests were confirmed to fail before the fix.",
+      "merged_at": "2026-07-11T04:38:51Z",
+      "fixed_commit": "1a9c4cb6b6aac7fb6137fcdc4f440af912d8d87f",
+      "buggy_commit": "458b0ae53e5a4261df851657d147e590b4546eb2",
+      "review_status": "approved",
+      "issue_url": "https://github.com/pypa/packaging/pull/1328",
+      "issue_hash": "68c8857078783ce08a8189ea3c4e0cff27df09886f859f391f91e514e2c16604",
+      "buggy_archive_sha256": "55326481e7731999a9be5bddb59d2ab2156ce9cbeede7663e27c674ca2d19bde",
+      "fixed_archive_sha256": "1adbba0bcabde9c6303b71d7586a15d2caa9270a7fcda89e9abe4bc26b6cf59b",
+      "source_roots": [
+        "src"
+      ],
+      "candidate_parent": "repro_tests",
+      "allowed_description": "packaging.metadata.InvalidMetadata cannot complete a pickle round trip because its exception constructor requires field and message. Create InvalidMetadata(\"version\", \"bad version\"); pickle.loads(pickle.dumps(error)) should return the same exception type, field=\"version\", and identical string/message. The buggy version raises TypeError during unpickling. This is local serialization of a self-created trusted object, not deserialization of external data. Source: https://github.com/pypa/packaging/pull/1328",
+      "description_hash": "90707953a49499f6886ede07eb945c692299a2621e078f7429e409caf823852a",
+      "target_modules": [
+        "packaging.metadata"
+      ],
+      "category": "exception-pickle-roundtrip",
+      "description_method": "researcher-authored behavioral summary/minimized inputs, checked against source and merged upstream behavior",
+      "preflight": {
+        "buggy": {
+          "exit_code": 1,
+          "summary": "1 failed in 0.28s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1328\\controls\\buggy.log"
+        },
+        "fixed": {
+          "exit_code": 0,
+          "summary": "1 passed in 0.17s",
+          "log": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1328\\controls\\fixed.log"
+        }
+      },
+      "target_environment": {
+        "python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+        "additional_test_dependency": "hypothesis required by attrs root conftest"
+      }
+    }
+  ]
+}

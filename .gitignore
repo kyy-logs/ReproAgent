@@ -1,0 +1,16 @@
+.venv/
+.local/
+.tmp/
+.superpowers/
+.pytest_cache/
+__pycache__/
+*.egg-info/
+build/
+dist/
+repro-results/
+*.pyc
+outputs/
+work/
+.env
+.env.*
+*.key

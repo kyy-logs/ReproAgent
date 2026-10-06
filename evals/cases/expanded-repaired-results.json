@@ -1,0 +1,3071 @@
+{
+  "evaluation_date": "2026-10-05",
+  "iteration": "expanded-repaired",
+  "selection": "Same 20 hand-picked diagnostic cases, one attempt per case per round; no best-of-round selection. Not a representative benchmark.",
+  "input_method": "Unchanged researcher-authored descriptions and minimized inputs; fixed materials and preflight controls excluded from generation input.",
+  "summary": {
+    "cases": 20,
+    "repositories": 7,
+    "controller_done": 20,
+    "differential_validated": 18,
+    "export_replayed": 18,
+    "complete_pipeline": 18,
+    "statuses": {
+      "DONE": 20
+    },
+    "agent_steps": 91,
+    "actions": {
+      "read_file": 12,
+      "write_candidate": 25,
+      "run_candidate": 20,
+      "submit_candidate": 20,
+      "search_code": 9,
+      "invalid_json": 5
+    },
+    "action_responses_missing_from_trace": 0,
+    "model_calls": 151,
+    "prompt_tokens": 588305,
+    "completion_tokens": 86721,
+    "total_tokens": 675026,
+    "cost_kind": "unknown",
+    "cost_value": null,
+    "codex_correctness_reviewed": 0,
+    "independent_human_reviewed": 0,
+    "effective_reproductions": null,
+    "effective_reproduction_status": "pending_independent_human_review"
+  },
+  "evaluation_lock": {
+    "evaluation_date": "2026-10-05",
+    "case_ids": [
+      "validators-432",
+      "validators-418",
+      "validators-405",
+      "validators-374",
+      "validators-317",
+      "pyjwt-608",
+      "pyjwt-1040",
+      "attrs-1428",
+      "attrs-1328",
+      "attrs-1319",
+      "click-3152",
+      "click-3079",
+      "click-3004",
+      "click-2940",
+      "packaging-1360",
+      "packaging-1332",
+      "packaging-1328",
+      "more-itertools-645",
+      "humanize-250",
+      "humanize-254"
+    ],
+    "baseline_paths_sha256": {
+      "evals/cases/expanded-historical-results.json": "f44fb369064a78af6159fc5ecd18702c6daaf21cfbf4d53b6178583a5e79d926",
+      "evals/cases/historical-smoke-verified-results.json": "6656d47d9f174e9367776bf11e224c7c5f7f24c291e0059fb84a279b6fd091a6",
+      "evals/cases/expanded-historical.json": "6c84bdfa127dd63284e31374b8a022caeddadc3abc35e8a7b9d87f7ccf7f5682"
+    },
+    "product_source_sha256": {
+      "src/reproagent/app.py": "a56bbbde2f7f6fa42c0aebdeccc3a49aed6f6b3e3b85d023f67df095b26c14de",
+      "src/reproagent/cli.py": "c62b7e52d9d0683b2f453562332102ec480e817c2cb2abe0a946aec770d02e80",
+      "src/reproagent/exporter.py": "69c92c8a52643f15c119fba5004df202daff6d0a6e86862a3f3e42391c88e12f",
+      "src/reproagent/runner.py": "3e2d2065bb182a4ed5442f9ffa9a36c90cfc7cef254bc6de9c08fc641dc93dc9",
+      "src/reproagent/store.py": "d26457153d2a9d5c9fd9d12a2c63b4bd5c88a3e93f3bf5e5a018b6e2a6407c17",
+      "src/reproagent/workspace.py": "a7eb6ba1a2e8fc5b65ff917cdfc91169afdd11816aac272aa0ca57359602670a",
+      "src/reproagent/__init__.py": "82e9075d19eed7dd58c2550b4640730d02e4b205bde4dbed239e02b7fa84ba0f",
+      "src/reproagent/__main__.py": "79ee6f134c5c5193377cf9b189cbdcc3e2095e49ba9cec310114441c15a917c4",
+      "src/reproagent/adapters/__init__.py": "683faeea2c5952becd6b96081a14d57867a9a3d6836f3d098f96403366837c54",
+      "src/reproagent/core/agent.py": "f08f99488b72fd6791d1625feb2d5a5614d1c7e8979387cbddf25d6e2301e433",
+      "src/reproagent/core/budget.py": "31114f28ce57d3db76da30796cc1f073e15093fa77f56dec7759afd3e2350b6f",
+      "src/reproagent/core/controller.py": "cac58f7829b9fea0b58d4e58b8bd9d749c3e39b1eefa9d287a4ea129a8951deb",
+      "src/reproagent/core/failure_signature.py": "12435d69281910bcaebb97a2f1069098304f8db8101d7dab6954e09306ef01a7",
+      "src/reproagent/core/models.py": "8cf91a790f0ebda407234c4a237ce68f438561e4fe0123ec0dd3103ac7e1e4f6",
+      "src/reproagent/core/ports.py": "6d4595ae93d9a31b0bbb48d8f0d5512b944e2f9e675befe1e43bc54f2d6c6aad",
+      "src/reproagent/core/protocol.py": "4f11e5507c6a7348b63135fd2c1bf106f8648c1084f8214b17928330e6ee2dd9",
+      "src/reproagent/core/serialization.py": "73a91618d6fbe057b355c3aca0e7fc20a31e282d6618a77f37f594016d5ccdd9",
+      "src/reproagent/core/tools.py": "a7901283a2b937152d049d03f8aa3ce5a90731f489389c2a92d22eedd6944cea",
+      "src/reproagent/core/verifier.py": "27f9202ef7b7bfc72bf745f295bbee7795aef831d1f4e676f41bd9e4a6cfe59a",
+      "src/reproagent/core/__init__.py": "54406312e6c89a89c7230d6b9e7083e76e10f995d461b8d1ebf0c38af76f4e39",
+      "src/reproagent/resources/replay.py": "464ec6183b4f8f4f0c9a8f661bab9fbe0f327f0970a6b9f27b38a5c601461233",
+      "src/reproagent/adapters/languages/__init__.py": "fe713d19ff0f129a3a7d77792d35c5400e6cd73bcec31ab8ef4fc4e54b31bec8",
+      "src/reproagent/adapters/models/provider.py": "d707af876b90eadd72d31b8015e1c10817c684ef88843841c1082d70c7b5bdd5",
+      "src/reproagent/adapters/models/__init__.py": "516daf8b38954e612b8957b319d87b33b914a88ebbc19d5976c1e2f5e2ba4971",
+      "src/reproagent/adapters/runtimes/local.py": "4db83e9b5dfa72da4178f4f034d6c05608d0abdf4bdadc35054c670df02f97f0",
+      "src/reproagent/adapters/runtimes/process_tree.py": "593655f7e285215c10d92d02fa1136bd65c0482e192e14e02bfb75d27fe41e45",
+      "src/reproagent/adapters/runtimes/__init__.py": "1340d82324d4e136c08040f534c804e0dd806a88df5982633d70abc64bf0e379",
+      "src/reproagent/adapters/languages/python_pytest/adapter.py": "d0736d928ce2c10e7f372feeae82b6a9a273fff0ae5cbb792a54957217ac3456",
+      "src/reproagent/adapters/languages/python_pytest/collector.py": "849acf354f4df30945da5a0e2d1c2c8bed30a87ba8592f6bc719971954d988ce",
+      "src/reproagent/adapters/languages/python_pytest/__init__.py": "04f55008ae2ef8130534a9c76a163fa8a8406e573643b8c8ce35e8090c33a2af",
+      "src/reproagent/adapters/languages/python_pytest/probe/reproagent_pytest_probe.py": "3f15873e9bc860f8d058984ab11101d60e3c85f7438e46cde877161e8e788115"
+    },
+    "prompt_sha256": {
+      "analyze_issue.md": "033ae21469d549057b9a92a05c355c3effb296b5e2485c2aa7c78ef5f0b64180",
+      "explore.md": "46c97046f5edc2d6bd4c8d5d3679bfbd591fab6eac3b7e0ab5a01e718e95ad70",
+      "review_evidence.md": "99aec0fd5a9697a45d2fff467af67ad404135437a6653b5f2d21ac123559a3ef"
+    },
+    "model_config": {
+      "base_url": "https://api.deepseek.com",
+      "model": "deepseek-flash",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "max_output_tokens": 4096,
+      "output_limit_field": "max_tokens",
+      "input_cost_per_million": null,
+      "output_cost_per_million": null
+    },
+    "target_environment_packages": {
+      ".local/expanded-cases/target-env": [
+        {
+          "name": "colorama",
+          "version": "0.4.6"
+        },
+        {
+          "name": "hypothesis",
+          "version": "6.168.4"
+        },
+        {
+          "name": "iniconfig",
+          "version": "2.3.0"
+        },
+        {
+          "name": "packaging",
+          "version": "26.3"
+        },
+        {
+          "name": "pip",
+          "version": "25.0.1"
+        },
+        {
+          "name": "pluggy",
+          "version": "1.6.0"
+        },
+        {
+          "name": "Pygments",
+          "version": "2.21.0"
+        },
+        {
+          "name": "pytest",
+          "version": "9.1.1"
+        },
+        {
+          "name": "sortedcontainers",
+          "version": "2.4.0"
+        }
+      ],
+      ".tmp/package-envs/target": [
+        {
+          "name": "colorama",
+          "version": "0.4.6"
+        },
+        {
+          "name": "iniconfig",
+          "version": "2.3.0"
+        },
+        {
+          "name": "packaging",
+          "version": "26.3"
+        },
+        {
+          "name": "pip",
+          "version": "25.0.1"
+        },
+        {
+          "name": "pluggy",
+          "version": "1.6.0"
+        },
+        {
+          "name": "Pygments",
+          "version": "2.21.0"
+        },
+        {
+          "name": "pytest",
+          "version": "9.1.1"
+        }
+      ]
+    },
+    "concurrency": 2,
+    "comparison": "same 20 inputs, commits, interpreters, source roots, test parents and limits; one attempt each after source/prompt repairs"
+  },
+  "offline_tests": {
+    "passed": 146,
+    "skipped": 1,
+    "seconds": 99.15
+  },
+  "results": [
+    {
+      "case_id": "validators-432",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "SINGLE_OBSERVATION",
+      "status": "DONE",
+      "evidence_level": "REPEATED_OBSERVATION",
+      "stop_reason": "",
+      "uncertainties": [
+        "Fixed-version validation failed or was incompatible."
+      ],
+      "accepted_candidate_id": "candidate-d619a77934d948eb90b4a53dd2327b03",
+      "export_state": "published",
+      "duration_seconds": 37.08,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 24615,
+      "completion_tokens": 3914,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\validators-432",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-432",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "378ac084d5b6133b44e3a89197495eddb74e511c873a3afa8c5a034791bbf43d",
+      "buggy_commit": "54404420a226c2a3c1603b81cb9958ef197b52a7",
+      "fixed_commit": "9bc7e82f7bf0fb3990eb287e11323fb6ca1c87cf",
+      "issue_url": "https://github.com/python-validators/validators/pull/432",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": false,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the expected correct behavior: validators.mac_address(\"aa:bb-cc-dd:ee:ff\") must raise validators.ValidationError, while uniform colon and hyphen forms must return True (repro_tests/test_repro.py). Execution shows the target was really invoked (target_calls.validators.mac_address = 4, target_origins binding to src/validators/mac_address.py, source_binding_ok true, no mocks), and the test_mixed_separators_rejected case failed at call time with 'Failed: DID NOT RAISE ValidationError' — i.e. the mixed-separator input was accepted as valid, exactly the reported actual behavior. The two control tests (uniform colon and hyphen) passed, confirming the assertion is specifically about the mixed-separator property. The failure is not a broad catch, mock substitution, or an assertion expecting the undesired exception; it is the regression assertion of the expected behavior failing. The only caveat is that the probe.jsonl line cited as actual-failure evidence was supplied unchallenged and its raw text is not independently visible here, but the structured test results unambiguously report the DID NOT RAISE failure."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the contract's expected correct behavior: validators.mac_address(\"aa:bb-cc-dd:ee:ff\") must raise validators.ValidationError, while uniform colon/hyphen forms return True. Real target execution occurred (target_origins binds validators.mac_address to src/validators/mac_address.py; target_calls count is 4), and the observed failure is exactly the issue's reported actual: test_mixed_separators_rejected failed with 'Failed: DID NOT RAISE ValidationError' because the mixed-separator MAC was accepted (returned True) rather than rejected. The passing uniform-separator tests confirm the failure is specific to the mixed-separator input, not a general import/collection problem. This satisfies the regression assertion, target execution, and matching failure criteria."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_mixed_separators_rejected",
+            "repro_tests/test_repro.py::test_uniform_colon_separators_accepted",
+            "repro_tests/test_repro.py::test_uniform_hyphen_separators_accepted"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.mac_address": 4
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 2,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_mixed_separators_rejected",
+            "repro_tests/test_repro.py::test_uniform_colon_separators_accepted",
+            "repro_tests/test_repro.py::test_uniform_hyphen_separators_accepted"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.mac_address": 4
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 2,
+          "verified": false
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "混用 MAC 分隔符仍被接受",
+      "complete_pipeline": false,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/validators-432/request.json": "d6915055e88cc98052aad54aea153e2e131c5f6336245224571724892218b120",
+        "repro-results/expanded-repaired/validators-432/task.json": "62d6f3f0a11c09d9d5d1e4fbca7d3a171d222826b865af905ea2c64263f3661e",
+        "repro-results/expanded-repaired/validators-432/events.jsonl": "625cc9044d6554f9ffc4be12cf4eaa7da5d129ac960076e3648afacfa0a56239",
+        "repro-results/expanded-repaired/validators-432/input/issue.md": "378ac084d5b6133b44e3a89197495eddb74e511c873a3afa8c5a034791bbf43d",
+        ".local/expanded-repaired/validators-432/trace.jsonl": "05ba214646f55054b8e6e853b0beab8e9dbae46a6a669dee020942cb9e8fcf3c",
+        ".local/expanded-repaired/validators-432/input-lock.json": "4bf16b0c9a93a44e9c9c6d4728382ead441b99257712d141bea3b91ab0479c24",
+        ".local/expanded-repaired/validators-432/result.json": "22b2554b256c3299f17b7b70c0c571eb0a5f04d2f17e39ddb0b9b76a18a3ed22",
+        ".local/expanded-repaired/validators-432/independent-replays.json": "a0ebd825d3d156d8b22e2f29788af509ade8c9a031fde5df32305952d5ecd324",
+        ".local/expanded-repaired/validators-432/standalone-buggy.log": "3b5eedb5ddc37d4b8475285e1b75664b7ce23d1ddcc3deadf06255356d2bb4ad",
+        ".local/expanded-repaired/validators-432/standalone-fixed.log": "74dfc77c955572cfbb754e7ba22d691d89305d342c815393ff7cbdfa43ccd8fd",
+        "repro-results/expanded-repaired/validators-432/verdicts/verdict-run-a6f4c9e1ea814abdbf3bc21b776ad23b.json": "c57ed4d7f69feab6d741ccb8cbcfb183b5ff98a28a7c9ea1330b528a62aeb79b",
+        "repro-results/expanded-repaired/validators-432/verdicts/verdict-run-c73b454a3f1e48dfb5b7fc2c3e47ff83.json": "8bc7b9923b7a002195ce7bb1b14ef2b6cb14610f43c53fc0482b603deba24467",
+        "repro-results/expanded-repaired/validators-432/contracts/contract-5d430d943b98408c8fd87302a33a94f1-v1.json": "27309e990f572972e2362daa69a7a0be1ad08cbee9fe3452df11395dc82e7eb0",
+        "repro-results/expanded-repaired/validators-432/candidates/candidate-d619a77934d948eb90b4a53dd2327b03/manifest.json": "48d22144ad4d70362bffd03b8617544e14e39fbd9c4a404bc30c964be932ce9d",
+        "repro-results/expanded-repaired/validators-432/candidates/candidate-d619a77934d948eb90b4a53dd2327b03/files/repro_tests/test_repro.py": "aa22b197cfa3c90ad8c073c51aea2fe672012f73b2df4c26ffd5bc6ed763b78e",
+        "repro-results/expanded-repaired/validators-432/runs/run-5182027a0a57400a831849243295774e/execution.json": "220c3cd34bbd098b3e0be8a7b1bcad44ea13659097cf34eac847967d035854e4",
+        "repro-results/expanded-repaired/validators-432/runs/run-a6f4c9e1ea814abdbf3bc21b776ad23b/execution.json": "a3ee5fc1446e8f6a95cc0be5520b20955f61a99ac64f7efd990ff0c0b54739c2",
+        "repro-results/expanded-repaired/validators-432/runs/run-c73b454a3f1e48dfb5b7fc2c3e47ff83/execution.json": "629d0e45e420321c7a00a840220588a84e3fbf5f6f7633d441d47f67d6faa0c5",
+        "repro-results/expanded-repaired/validators-432/runs/run-5182027a0a57400a831849243295774e/probe.jsonl": "2d433dfbbc330b998dbc5a34d06a62025ee1da529cfa0a6b19d0659b5256c6c9",
+        "repro-results/expanded-repaired/validators-432/runs/run-a6f4c9e1ea814abdbf3bc21b776ad23b/probe.jsonl": "7dd5d96c9b7375262b1e7a14deac2d86d516a586d2ce7706500de67fcecce64f",
+        "repro-results/expanded-repaired/validators-432/runs/run-c73b454a3f1e48dfb5b7fc2c3e47ff83/probe.jsonl": "762030f4a99d835a04f3a783ac8f3ab61b465cf34ffa0c5806654e1d669002ce",
+        "repro-results/expanded-repaired/validators-432/artifacts/reproduction/manifest.json": "de609cc0fd908889f31771e40db8cc3bf16aff4f0a5079b620f5e94cc9d204eb"
+      }
+    },
+    {
+      "case_id": "validators-418",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-cc23c958a5404a5e8b84b5511c97f554",
+      "export_state": "published",
+      "duration_seconds": 33.69,
+      "agent_steps": 5,
+      "model_calls": 8,
+      "prompt_tokens": 29495,
+      "completion_tokens": 3627,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\validators-418",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-418",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "9b69b56c43731a57766163531510b804d39ee49bd9c1275b8f735863342d789f",
+      "buggy_commit": "25fcef05c293def421fd3f6714403a54fce993cf",
+      "fixed_commit": "d6241fc31f6b46bf81283c6ab3cae07c370fc1f6",
+      "issue_url": "https://github.com/python-validators/validators/pull/418",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 5,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 1,
+          "write_candidate": 2,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the expected correct behavior from the issue: validators.uri.uri(\"mailto:m@example.com\") should be True. The probe shows real execution of validators.uri (target_calls validators.uri = 15) from the target origin src/validators/uri.py, and the test failed with ValidationError(func=uri, args={'value': 'mailto:m@example.com'}) is not True. This matches the reported prefix-removal bug, where the mailto branch incorrectly strips characters from the email local part and causes the single-character local part to be lost. The expectation source and actual failure are both cited."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test directly calls the public validators.uri.uri callable with the valid mailto URI 'mailto:m@example.com' and asserts the correct behavior (return True), which is exactly the expectation in the issue contract. The real target was executed (target_origins shows validators.uri resolved to src/validators/uri.py, and target_calls recorded 15 calls to validators.uri, with no mocks). The observed outcome is a genuine failure of that correct-behavior assertion: uri('mailto:m@example.com') returned ValidationError(func=uri, args={'value': 'mailto:m@example.com'}) instead of True, i.e. the valid single-character local part was lost, matching the issue's reported prefix-removal bug. The assertion does not merely expect the undesired exception, it expects True, so it is a valid regression assertion. Both the expectation source (input/issue.md) and the actual failure (probe.jsonl line 6) are cited."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_mailto_single_char_local_part"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.uri": 15
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_mailto_single_char_local_part"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.uri": 15
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "mailto 前缀移除误删用户名",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/validators-418/request.json": "979bc230af4fed94f1564fa17aef2fd99f4da196def543af3f0fedfc573f990a",
+        "repro-results/expanded-repaired/validators-418/task.json": "89676268d8520062aac8df396dd5f65c27728c5a8723e7bf2b6ba31fc336b9d0",
+        "repro-results/expanded-repaired/validators-418/events.jsonl": "c43c89400215e1d46c1051af7431b913ab458c9159572a0b4d1e00a897366669",
+        "repro-results/expanded-repaired/validators-418/input/issue.md": "9b69b56c43731a57766163531510b804d39ee49bd9c1275b8f735863342d789f",
+        ".local/expanded-repaired/validators-418/trace.jsonl": "02a4225abb2be09e549f4318ae2efd7b1375e5879f299214e3270e61c557c813",
+        ".local/expanded-repaired/validators-418/input-lock.json": "5c45a400116a5d017d59dd4dc6cb638c336ba8af9bad2806e0b746f0d590e52a",
+        ".local/expanded-repaired/validators-418/result.json": "1deef713a6815dd62476e4fd90102bbe3e2c4438e342378e4cdbc609e95cf966",
+        ".local/expanded-repaired/validators-418/independent-replays.json": "0ad16cb04b1cf217a2fc291d047a4da41efaf4d7ce05d1be8ddd75a515dd924f",
+        ".local/expanded-repaired/validators-418/standalone-buggy.log": "a4b7af9a1d95b65a1d334b68daf09d691b6b5516023fac817d0564067ce59989",
+        ".local/expanded-repaired/validators-418/standalone-fixed.log": "b12e2a73d84d814528b4d6d01e360ddb8405c76fc1c543c044a7d96c73905b00",
+        "repro-results/expanded-repaired/validators-418/verdicts/verdict-run-860d43d45e80489bb2a8545ae47705f4.json": "bd282842122e8e6cfec6d2db84a68233b3329ef19acce445ada4822ab77bd208",
+        "repro-results/expanded-repaired/validators-418/verdicts/verdict-run-eaf9e63554594835a8c1af93b955d0ca.json": "7df82b16283c82981acf0164966a2425f6d68d93ba29df2ed7244949e7e5e3af",
+        "repro-results/expanded-repaired/validators-418/contracts/contract-45b9a63fdd7e4e379f246e78b6e20ecc-v1.json": "ee043bd28a6d898af5e870f187b80e22e5b6e33bdae4514d6f95f4e8c8cafc7a",
+        "repro-results/expanded-repaired/validators-418/candidates/candidate-cc23c958a5404a5e8b84b5511c97f554/manifest.json": "fe0f5a79b2bcff20c9ee36b179cd22217c6aaef69fca06a3400a9e5687b05a13",
+        "repro-results/expanded-repaired/validators-418/candidates/candidate-cc23c958a5404a5e8b84b5511c97f554/files/repro_tests/test_repro.py": "6b9a8d14f64807c4a06d09261a45812ddb74e23892685e7022e1716de8cd03ad",
+        "repro-results/expanded-repaired/validators-418/runs/run-860d43d45e80489bb2a8545ae47705f4/execution.json": "1be4ba633d99c0130485649708edb7730ca667c22927646b00b9720f3268f346",
+        "repro-results/expanded-repaired/validators-418/runs/run-a258618c82dc46ab96a7460297c1589c/execution.json": "9be8cceda398d518e9c21d044813d66dda65c3c532928846f2b9d143bf349be6",
+        "repro-results/expanded-repaired/validators-418/runs/run-eaf9e63554594835a8c1af93b955d0ca/execution.json": "c51153f8ce196aff73bcb2b5521281cb9fa0840eb74d866d6f8e1fda5551974a",
+        "repro-results/expanded-repaired/validators-418/runs/run-860d43d45e80489bb2a8545ae47705f4/probe.jsonl": "dd23c292606ac6ca4c98fd9a51fd1f208ea3223cea51fee12c38306c9a9687f5",
+        "repro-results/expanded-repaired/validators-418/runs/run-a258618c82dc46ab96a7460297c1589c/probe.jsonl": "566618d8af796ac24120de81fd3a7ed9ff97856d132ec88edd54b99b8edaeb82",
+        "repro-results/expanded-repaired/validators-418/runs/run-eaf9e63554594835a8c1af93b955d0ca/probe.jsonl": "5a1d8d2fec6bb9c55dbb00dfc86d873869c34c460c00f3aa71ba5e83cc346dd7",
+        "repro-results/expanded-repaired/validators-418/artifacts/reproduction/manifest.json": "591edf25a52d376d8d06e8caea045a0f750313e9472a96d03f0b5fc95ca8ef4e"
+      }
+    },
+    {
+      "case_id": "validators-405",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-6457d3db191640348eba103b7526f45c",
+      "export_state": "published",
+      "duration_seconds": 29.83,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 24366,
+      "completion_tokens": 2633,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\validators-405",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-405",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "621cb60c21c1a59b89725beb1220f95f5d38f3f81ed346d015e752f85d0b6832",
+      "buggy_commit": "597a0309fc315e86685187303abc24677a32d382",
+      "fixed_commit": "c9585e91f8b409029b059df148da4dc52bd951e3",
+      "issue_url": "https://github.com/python-validators/validators/issues/403",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test calls the real target validators.url (target_origins shows the call resolving to the repository's src/validators/url.py, and target_calls records 8 invocations) with the exact minimized URL from the issue, \"https://www.example.com/path#abc/#def\", and asserts the correct behavior `result is True`. The run executed and the call-phase result failed with `AssertionError: assert ValidationError(func=url, args={'value': 'https://www.example.com/path#abc/#def'}) is True`, i.e. the buggy validator rejected the URL with ValidationError instead of returning True. This is precisely the symptom described in the issue, so the regression assertion matches the expected correct behavior, the real target was exercised, and the observed failure matches the reported issue."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate regression test calls validators.url(\"https://www.example.com/path#abc/#def\") and asserts the correct result is True, matching the issue contract. The observed test failure shows the function actually returned ValidationError for that exact URL, matching the reported bug. The target was executed in the project source, not mocked, and the assertion compares against the expected correct behavior rather than merely accepting the undesired exception."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_url_with_hash_inside_fragment_is_valid"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 8
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_url_with_hash_inside_fragment_is_valid"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 8
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "合法 URL fragment 被拒绝",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/validators-405/request.json": "5564c6c7d350c628441400faa72d92acc06c3b4b17074b161457c692a328b347",
+        "repro-results/expanded-repaired/validators-405/task.json": "28fee3bc1e62dc8f7b1ad8ef83a6d0410b546d4396dee40170a4f9e83f881b3d",
+        "repro-results/expanded-repaired/validators-405/events.jsonl": "f6f74418b2b6e2311116867bee5bfdb84fdb37225e72334be458b4eb79017801",
+        "repro-results/expanded-repaired/validators-405/input/issue.md": "621cb60c21c1a59b89725beb1220f95f5d38f3f81ed346d015e752f85d0b6832",
+        ".local/expanded-repaired/validators-405/trace.jsonl": "90002ee53d45facb08cfc2e3cef4c3b2f970fe1b09d668efe3a36f261ab1e299",
+        ".local/expanded-repaired/validators-405/input-lock.json": "963249d4ce50cdf11144c70e9c2263443f28537e9bc9d26c757ecf8aa808e00d",
+        ".local/expanded-repaired/validators-405/result.json": "2f5f7118077bef2b213e7c86f863b6d88bdc63c13c9ed8f684fcac5392157380",
+        ".local/expanded-repaired/validators-405/independent-replays.json": "b59001e7bdf88d8e5dca2c7dfceef380e1aadd721d522b2ea3366f4b9ad31145",
+        ".local/expanded-repaired/validators-405/standalone-buggy.log": "201d7f84e5175705dc252f6f6941b5d1c620d91e0a80619073d8a5e9d77c9189",
+        ".local/expanded-repaired/validators-405/standalone-fixed.log": "ef72a13f9958b536e504227b8820285bd090a9dcf888ae1b2c3c702c477036cf",
+        "repro-results/expanded-repaired/validators-405/verdicts/verdict-run-444dc64f4db34861bab9a99b7bc9e4b7.json": "f0804f0c08e4923b30d60781432b403c220f3824285714ee75462d3fa3aec0f0",
+        "repro-results/expanded-repaired/validators-405/verdicts/verdict-run-6550721b68924fb589450c978fd2b932.json": "40cc3714e14e105a8045e68acf2e1dea7c9b958a1ca099c8fc14a73bce166870",
+        "repro-results/expanded-repaired/validators-405/contracts/contract-fd670b8ca75c42d7bff46e4c6daec592-v1.json": "c7bb22e3f92d1eba6427db16b68625c06c906b5be21f710814ef5864042beb84",
+        "repro-results/expanded-repaired/validators-405/candidates/candidate-6457d3db191640348eba103b7526f45c/manifest.json": "cc9fec562166b1555613e71cab0c8f9ee613b68f07d6f23d7cd4174a3460d51c",
+        "repro-results/expanded-repaired/validators-405/candidates/candidate-6457d3db191640348eba103b7526f45c/files/repro_tests/test_repro.py": "c83590f43611b80dadb40f60f4ea639317ed2ca663fa7bc2d005183a98bb1c94",
+        "repro-results/expanded-repaired/validators-405/runs/run-444dc64f4db34861bab9a99b7bc9e4b7/execution.json": "422b6b7fbb16e39f07f52028e85ac916f783e6288772da3626f6c760809baba5",
+        "repro-results/expanded-repaired/validators-405/runs/run-6550721b68924fb589450c978fd2b932/execution.json": "92507b5c287016a04b4d1da9b3b9f2f68567ac25455053fd373fecc2b7c43830",
+        "repro-results/expanded-repaired/validators-405/runs/run-864e34a6357f4d9893c0875d3d16d90e/execution.json": "0b4f9a4a6be89e18ffa07efae8eb038ef2867d3094fc597105d5965f60a68369",
+        "repro-results/expanded-repaired/validators-405/runs/run-444dc64f4db34861bab9a99b7bc9e4b7/probe.jsonl": "3c471bfc1114b41e889574e8612ce8e99bde4d33ced86b208d16d144dee15806",
+        "repro-results/expanded-repaired/validators-405/runs/run-6550721b68924fb589450c978fd2b932/probe.jsonl": "721ead07b115a153da0e932ea3c01b1cca19d439fbe2191bd6c94bf81cfc49a5",
+        "repro-results/expanded-repaired/validators-405/runs/run-864e34a6357f4d9893c0875d3d16d90e/probe.jsonl": "b4942a7e46ef6e5f5cdfd6da90ddd8c9b8816561569721abecaa98cc07956617",
+        "repro-results/expanded-repaired/validators-405/artifacts/reproduction/manifest.json": "4f5a7c1a21bee7c60d0b3c42bcfeb5f1a01f2105cf316ab456a7b4205d58b102"
+      }
+    },
+    {
+      "case_id": "validators-374",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "REPEATED_OBSERVATION",
+      "stop_reason": "",
+      "uncertainties": [
+        "Fixed-version validation failed or was incompatible."
+      ],
+      "accepted_candidate_id": "candidate-6c9e9a72607944409f975e6bba18811c",
+      "export_state": "published",
+      "duration_seconds": 40.53,
+      "agent_steps": 5,
+      "model_calls": 8,
+      "prompt_tokens": 32958,
+      "completion_tokens": 5554,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\validators-374",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-374",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "fb9f64aba01f3df58e1b069861ffb12228f5c3a5c62816e447084cd3ca2f30b7",
+      "buggy_commit": "d46cd586bdd6b9946d5d421f009794a25650f72e",
+      "fixed_commit": "bcb134204edcfdabf0de0e5fc0a5010105659c36",
+      "issue_url": "https://github.com/python-validators/validators/issues/373",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": false,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 5,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 1,
+          "write_candidate": 1,
+          "search_code": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate contains a regression assertion for the expected correct behavior: it calls the real validators.ipv4(\"1.1.1.1\", private=False) and asserts the result is True (repro_tests/test_repro.py, test_ipv4_public_address_with_private_false). The run executed the real target (target_origins maps validators.ip_address to src/validators/ip_address.py; target_calls=11, source_binding_ok=true), and the test failed with 'AssertionError: assert ValidationError(func=ipv4, args={\\'value\\': \\'1.1.1.1\\', \\'private\\': False}) is True', i.e., the public address 1.1.1.1 was rejected with ValidationError instead of returning True. That failure is exactly the behavior reported in the issue ('validators.ipv4(\"1.1.1.1\", private=False) returns ValidationError although this is a public IPv4 address'). The companion check also failed with 'DID NOT RAISE ValidationError' for private=True, consistent with the same inverted private-flag logic, and this expectation is also stated in the issue/contract. Thus the expected assertion holds, the target was genuinely triggered, and the observed failure matches the issue."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate contains a genuine regression assertion of the issue's expected behavior: test_ipv4_public_address_with_private_false asserts `ipv4(\"1.1.1.1\", private=False) is True` (issue.md states it should return True because 1.1.1.1 is public). The real target was executed (framework_details.target_calls shows validators.ip_address called 11 times, target origin src/validators/ip_address.py, source_binding_ok true, no mocks), and test 1 failed at repro_tests/test_repro.py:12 with `AssertionError: assert ValidationError(func=ipv4, args={'value': '1.1.1.1', 'private': False}) is True`, i.e. ipv4('1.1.1.1', private=False) returned a ValidationError instead of True - exactly the reported actual behavior ('validators.ipv4(\"1.1.1.1\", private=False) returns ValidationError even though 1.1.1.1 is a public IPv4 address'). The companion test 2 also fails (DID NOT RAISE ValidationError) which is consistent with the private flag semantics being inverted; although its pytest.raises style assumes raising rather than returning an error object, the failing test 1 alone is a direct, correctly-scoped reproduction of the issue, so the reproduction stands."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_ipv4_public_address_with_private_false",
+            "repro_tests/test_repro.py::test_ipv4_public_address_with_private_true"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.ip_address": 11
+          },
+          "failed_call_tests": 2,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_ipv4_public_address_with_private_false",
+            "repro_tests/test_repro.py::test_ipv4_public_address_with_private_true"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.ip_address": 17
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 1,
+          "verified": false
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "private=False 错拒公共 IPv4",
+      "complete_pipeline": false,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/validators-374/request.json": "14bd9295d1d1370ca281bc23a56294d4cddc36293b2a15c16a2cfb1487486409",
+        "repro-results/expanded-repaired/validators-374/task.json": "1ce4654b72fcc74314beacf0e57a548dea3dbff0dc7fe4091bca2f280f794a47",
+        "repro-results/expanded-repaired/validators-374/events.jsonl": "594ea52f7102c6a9c932891be922441a41651c9a9dede3f65c81bd3dfc36fcc8",
+        "repro-results/expanded-repaired/validators-374/input/issue.md": "fb9f64aba01f3df58e1b069861ffb12228f5c3a5c62816e447084cd3ca2f30b7",
+        ".local/expanded-repaired/validators-374/trace.jsonl": "10cec1ccc60788f2c6e701f82704ef97c382091d66a6486e037a3c75e3badfc4",
+        ".local/expanded-repaired/validators-374/input-lock.json": "05727e2c952c3444c8eb7186688a41d307e9403717bfa8547cb7894a854ee857",
+        ".local/expanded-repaired/validators-374/result.json": "7b8e196a725dab3ecb15d0114050c0cc81e0a4e87da4466b51a239798ba055af",
+        ".local/expanded-repaired/validators-374/independent-replays.json": "37717aa8b74a7dfbf27174413323e86e72fac2ed1324adf1ae6f32ee99f01c31",
+        ".local/expanded-repaired/validators-374/standalone-buggy.log": "5035b042a443f26a1607efc846c17c65f795e0c70cc38ea6380ebc645d411f63",
+        ".local/expanded-repaired/validators-374/standalone-fixed.log": "18d4a8033ab5af86cac9fdfbcfc41abfcdfe0fbf385ff82e6ad4b03958f4f335",
+        "repro-results/expanded-repaired/validators-374/verdicts/verdict-run-5ffdb55d585348d4a8b49398e3f6729e.json": "1bc483cb14a5efb50efb7168942bf31f9e0c418807814e9c0a0709fda4bc1b08",
+        "repro-results/expanded-repaired/validators-374/verdicts/verdict-run-a8b5725815bc4c89ad71e822c04c62be.json": "7f93943540f55cb3de7e0a0138a7cd0c70a144ae403a528ed33763c450d67ce8",
+        "repro-results/expanded-repaired/validators-374/contracts/contract-ef64918a3947425ca7fed30c8953e1de-v1.json": "66f6676d62f5b899a473dc6637b9976182a21946362a6c161502fd422de83f5f",
+        "repro-results/expanded-repaired/validators-374/candidates/candidate-6c9e9a72607944409f975e6bba18811c/manifest.json": "7b42943bff5f296cd8df3aeed7329ca9e66fb87a302e173f0fd425e0b3e479e8",
+        "repro-results/expanded-repaired/validators-374/candidates/candidate-6c9e9a72607944409f975e6bba18811c/files/repro_tests/test_repro.py": "2f39b8fbd6cb8d667d578eeb07983e1ee3fe801791095ddac43d4c085595adcb",
+        "repro-results/expanded-repaired/validators-374/runs/run-5ffdb55d585348d4a8b49398e3f6729e/execution.json": "35e521fcee45834e6f658f850bdfea8c1f24aafb8ea7d72f16c2202316bf8816",
+        "repro-results/expanded-repaired/validators-374/runs/run-7f6067892b1844ccba113a5a19f57037/execution.json": "413dd80072d1ac6fb82b7d40b0ef9d2aa547b3299898dbe41b88906a969e43aa",
+        "repro-results/expanded-repaired/validators-374/runs/run-a8b5725815bc4c89ad71e822c04c62be/execution.json": "d23aaa4a82d99a0a92f28c2274080fe59fc4eff5727bc2700d14d52e8980f326",
+        "repro-results/expanded-repaired/validators-374/runs/run-5ffdb55d585348d4a8b49398e3f6729e/probe.jsonl": "dab3dbb12f43f891f4602da8648662b92aeb6ecd4a81c57558a291be18187476",
+        "repro-results/expanded-repaired/validators-374/runs/run-7f6067892b1844ccba113a5a19f57037/probe.jsonl": "554dcd19659fee77a370b5a88cd07ff26c6ad6ee3a3e8feef3af092ccca98f02",
+        "repro-results/expanded-repaired/validators-374/runs/run-a8b5725815bc4c89ad71e822c04c62be/probe.jsonl": "087b28a388040dedee518903e065c585e9f0ffa24122b2a828ae3307e1a654c9",
+        "repro-results/expanded-repaired/validators-374/artifacts/reproduction/manifest.json": "432c70d2a3ccf07904ba7b0d7e44c311c7f69c7a4fe1402d85c6e5ec87c11c5d"
+      }
+    },
+    {
+      "case_id": "validators-317",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-1eae9d6191464b4a91a8d85d9c478cfa",
+      "export_state": "published",
+      "duration_seconds": 33.47,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 23183,
+      "completion_tokens": 4579,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\validators-317",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\validators-317",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "91899e29103c3c2955a66d78d19618e0adab9d27ae7ef92aa0bc7ca665384160",
+      "buggy_commit": "8f1159718f36cef59f4e647b03c43df52b50c2d1",
+      "fixed_commit": "54484c4d69dc7482018eee6ae4123a8c11c0fcb4",
+      "issue_url": "https://github.com/python-validators/validators/issues/316",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the expected correct behavior: validators.url('https://example.org/path#2022%201040%20(Cornelius%20Morgan%20G).pdf') is True. The real target was executed (validators.url called 8 times), and the test failed because the call produced a ValidationError result for that valid URL instead of returning True. This matches the issue's report that percent-encoded characters inside the fragment are incorrectly rejected. The contract text says the buggy behavior raises ValidationError, while the observed failure shows a returned ValidationError object, but the substantive failure is the same: the valid URL is not accepted as True."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test invokes the real target validators.url (target_origins binds it to src/validators/url.py, target_calls=8) with the exact issue URL and asserts the expected correct behavior that the result is True. The probe shows the test failing at repro_tests/test_repro.py:17 with 'AssertionError: assert ValidationError(func=url, args={\"value\": \"https://example.org/path#2022%201040%20(Cornelius%20Morgan%20G).pdf\"}) is True', i.e. the call produced a ValidationError instead of True for the percent-encoded-fragment URL. This matches the issue's reported actual behavior (validators.url returns ValidationError for that valid URL), and the failure is the assertion of the expected correct outcome rather than an unrelated error, mock, or broad catch."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_url_with_percent_encoded_fragment_is_valid"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 8
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_url_with_percent_encoded_fragment_is_valid"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "validators.url": 8
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "python-validators/validators",
+      "symptom": "百分号编码 fragment 被拒绝",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/validators-317/request.json": "f7f6b17053142905b3d1911661c24e3a1a65b0e39af1af8ee7d710304dbd335c",
+        "repro-results/expanded-repaired/validators-317/task.json": "8bc647f4be233d3520f6c38a3214bea6e53b580421a02402c57a40cbf516db6f",
+        "repro-results/expanded-repaired/validators-317/events.jsonl": "f0e9adeae3b5884fcbb7fc96659d355a7567113c41f66e9b6ac9d61c0f61e369",
+        "repro-results/expanded-repaired/validators-317/input/issue.md": "91899e29103c3c2955a66d78d19618e0adab9d27ae7ef92aa0bc7ca665384160",
+        ".local/expanded-repaired/validators-317/trace.jsonl": "1c325e83f9eb57f9ecfa270bebf0f243b5cca005c57293864dd973a452c7026c",
+        ".local/expanded-repaired/validators-317/input-lock.json": "389ae61f04f2f542e575017effe9c452fa8ea2898075e24bc6dedc059a9146e1",
+        ".local/expanded-repaired/validators-317/result.json": "cd675947811f35f49db7462f29f90006fb44f6f56575bc9736979b30da81bbab",
+        ".local/expanded-repaired/validators-317/independent-replays.json": "3c646fea12e33ae4e99f31ca5fb1488f69d7e004344e768b2c1346016705e005",
+        ".local/expanded-repaired/validators-317/standalone-buggy.log": "943d253faafa76b193c0ae04a79151e5ba0e747a0ed9d35dbf36e17acb95f939",
+        ".local/expanded-repaired/validators-317/standalone-fixed.log": "ef72a13f9958b536e504227b8820285bd090a9dcf888ae1b2c3c702c477036cf",
+        "repro-results/expanded-repaired/validators-317/verdicts/verdict-run-8dbc4075117c41f2a89704c707ed3780.json": "08da4d7ef79a8400a9ef046bdf9fbdbcac86af15ca1cbb8da3576a2ec0c73bc0",
+        "repro-results/expanded-repaired/validators-317/verdicts/verdict-run-ac747f23746d46889ddd4364fdf9a9ea.json": "24eb64467bc9d0bed272c611e9cd9b068e016ee1a8ee58023a7b8d13cd8c33dc",
+        "repro-results/expanded-repaired/validators-317/contracts/contract-785f0db05c6e439080735b6a349a80fc-v1.json": "3cc2fd7073c757530fe8679cc91730c0a70e808e1c4e1e731a163ad6b9061c47",
+        "repro-results/expanded-repaired/validators-317/candidates/candidate-1eae9d6191464b4a91a8d85d9c478cfa/manifest.json": "7788dd6ba3c5a5d2d6beba9bb5f732d2627d630e2379c4c484d48c5b448974b8",
+        "repro-results/expanded-repaired/validators-317/candidates/candidate-1eae9d6191464b4a91a8d85d9c478cfa/files/repro_tests/test_repro.py": "124ae8fb63f1306ab0dc0787894a662e2e44d6924c3a38950803927fd73480f5",
+        "repro-results/expanded-repaired/validators-317/runs/run-4dc4d884328f4bd383850225d46c2f35/execution.json": "74d35a2a5ccd37adad6e36683872017ce6b8f0d4ebf5e1e0628d753f01ad8a95",
+        "repro-results/expanded-repaired/validators-317/runs/run-8dbc4075117c41f2a89704c707ed3780/execution.json": "d123088616377aa8e89e668693dd8446de4c60be28e65b2dc98e68e8d0056bf0",
+        "repro-results/expanded-repaired/validators-317/runs/run-ac747f23746d46889ddd4364fdf9a9ea/execution.json": "07e1ac5558cfe677fc8119b2b9e863b5d191ede2cdce0df857ec47805d2ef9f6",
+        "repro-results/expanded-repaired/validators-317/runs/run-4dc4d884328f4bd383850225d46c2f35/probe.jsonl": "3c91d52644898125c9894adf938fda8973a76eb444501606edb03ebcee3ec6d0",
+        "repro-results/expanded-repaired/validators-317/runs/run-8dbc4075117c41f2a89704c707ed3780/probe.jsonl": "8692c6333ff132656e94d1d46fc4be8f2e11e605ff8b5f03f7fb62dc4dafa1cb",
+        "repro-results/expanded-repaired/validators-317/runs/run-ac747f23746d46889ddd4364fdf9a9ea/probe.jsonl": "dbb238941edeb7c4a6ea214b710d0b5bedc621ad281d6427398e35a11a07c2fd",
+        "repro-results/expanded-repaired/validators-317/artifacts/reproduction/manifest.json": "0e966d5b6e38962797c490c80c5bcf73a797d310108aee9b14324f14179e30bc"
+      }
+    },
+    {
+      "case_id": "pyjwt-608",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-8fbe70954556432585a01730d5b10bbb",
+      "export_state": "published",
+      "duration_seconds": 25.72,
+      "agent_steps": 3,
+      "model_calls": 6,
+      "prompt_tokens": 17514,
+      "completion_tokens": 3171,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\pyjwt-608",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-608",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "0dd482559c8d462b48e7dd86d396ee38bd7ed03f942e501d0c699a6a79f8671a",
+      "buggy_commit": "cda3ef147a6e7c12a63b761631b3f169a6827df0",
+      "fixed_commit": "373d4d8a45ce7071e8677d4835a46bd762fa1210",
+      "issue_url": "https://github.com/jpadilla/pyjwt/issues/599",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 3,
+          "verdict": 2
+        },
+        "actions": {
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test test_verify_exp_true_raises_even_without_signature_verification asserts the contract's expected correct behavior: it builds an HS256 token with exp=1 and calls jwt.decode(token, SECRET, options={\"verify_signature\": False, \"verify_exp\": True}) inside pytest.raises(jwt.ExpiredSignatureError). The pytest observations show this call was actually made against the real target (target_calls jwt.api_jwt:10, source_binding_ok true), and it failed with 'Failed: DID NOT RAISE ExpiredSignatureError' at repro_tests/test_repro.py:15, i.e. the buggy version returned the payload instead of raising. This directly matches the reported actual behavior (expiration validation skipped whenever signature verification is disabled), and the second test confirms the complementary expected behavior (signature-disabled decode without explicit verify_exp returns the payload). The assertion is a regression assertion of the expected correct behavior, not an assertion expecting the undesired exception, and it is not masked by mocks or broad exception catches."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate directly exercises jwt.decode with options={\"verify_signature\": False, \"verify_exp\": True} on an expired HS256 token and expects jwt.ExpiredSignatureError, matching the contract's required correct behavior. The real pytest run shows this test failed with 'DID NOT RAISE ExpiredSignatureError', and execution reached the real target jwt.api_jwt with no mocks replacing it. This matches the reported bug that expiration validation is skipped when signature verification is disabled. The second test also passes, confirming ordinary signature-disabled decode remains allowed."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_verify_exp_true_raises_even_without_signature_verification",
+            "repro_tests/test_repro.py::test_signature_disabled_decode_without_verify_exp_returns_payload"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "jwt.api_jwt": 10
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 1,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_verify_exp_true_raises_even_without_signature_verification",
+            "repro_tests/test_repro.py::test_signature_disabled_decode_without_verify_exp_returns_payload"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "jwt.api_jwt": 15
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "jpadilla/pyjwt",
+      "symptom": "显式 verify_exp=True 仍跳过过期校验",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/pyjwt-608/request.json": "927fddf2cf16323cc89896aff411fa66650ebca5ff5981fe387ce64fc97f3be9",
+        "repro-results/expanded-repaired/pyjwt-608/task.json": "cdd19f12e592e007cf53a37c7d0f4e17125237ea8e0cb82ec2d70cde50377fa5",
+        "repro-results/expanded-repaired/pyjwt-608/events.jsonl": "0a60c2982768bd9d3c0bf0570e06695422e4705310c7cc0f4c9919d83372b58d",
+        "repro-results/expanded-repaired/pyjwt-608/input/issue.md": "0dd482559c8d462b48e7dd86d396ee38bd7ed03f942e501d0c699a6a79f8671a",
+        ".local/expanded-repaired/pyjwt-608/trace.jsonl": "a99ff0810c4536c421645ecc8ab26487aac89a4034e3068997ca72863faaccbc",
+        ".local/expanded-repaired/pyjwt-608/input-lock.json": "f1108dbfd5eb63ec086a83a126de819f1c49e8dafd08e3f7db31cfe0b55313e6",
+        ".local/expanded-repaired/pyjwt-608/result.json": "64b625e648db4703e9caf69bf0f995c2bda0d17e3582808d4a94c2e232019de0",
+        ".local/expanded-repaired/pyjwt-608/independent-replays.json": "1c13b4a19d33819e4be87bb5126f976bdb34f5cb5b2d1f8e2cce96c1a3d72d68",
+        ".local/expanded-repaired/pyjwt-608/standalone-buggy.log": "357ba76eda3241a0b489b35b7bbd6996f4f07c6df5f1b89ba8a3f6976833591f",
+        ".local/expanded-repaired/pyjwt-608/standalone-fixed.log": "d0273aca95c72c41a7dade5bc714983671f80b663a90accf35965617e60efd29",
+        "repro-results/expanded-repaired/pyjwt-608/verdicts/verdict-run-069c453fce3a4e9f870eb0142f7a1afd.json": "8997fde54b84187d08755fe24be2b12805561584fab93a9824c914aeaf4dadea",
+        "repro-results/expanded-repaired/pyjwt-608/verdicts/verdict-run-f998c10a2ef94821a05f1e13e4beb44e.json": "1327ec7dcf80c57679c86f302d90154bf4d2baf4280968a73aefb5002e3ea47a",
+        "repro-results/expanded-repaired/pyjwt-608/contracts/contract-e34c7872601245a083b4f492f160cc83-v1.json": "712cb9106bc013f8c1af074e4e30e2020beb8ec80acc0a89c7c55c4194ee8997",
+        "repro-results/expanded-repaired/pyjwt-608/candidates/candidate-8fbe70954556432585a01730d5b10bbb/manifest.json": "fa0d6165a49ba0d68afb06c1e6b386710081a531faae52a683658a23db7ae165",
+        "repro-results/expanded-repaired/pyjwt-608/candidates/candidate-8fbe70954556432585a01730d5b10bbb/files/repro_tests/test_repro.py": "c90c2aa3897a3404e3fcbd406684e846d516a7b25edd8f8154b4b805ccf60a51",
+        "repro-results/expanded-repaired/pyjwt-608/runs/run-069c453fce3a4e9f870eb0142f7a1afd/execution.json": "1a72d815870245cd8fe4e95a6228fda88514edb2ec2c54f1b36d54c0f7e76016",
+        "repro-results/expanded-repaired/pyjwt-608/runs/run-a4ac71df8ba54f379641f07d0ec746f8/execution.json": "02116a212ff603876005a554c17c0c850b38bd936556365ca76f0d7550af7a12",
+        "repro-results/expanded-repaired/pyjwt-608/runs/run-f998c10a2ef94821a05f1e13e4beb44e/execution.json": "4d2891bf0c9183512b1ff464d4b5d482c31701f126ba4a654ebefbb03bc41672",
+        "repro-results/expanded-repaired/pyjwt-608/runs/run-069c453fce3a4e9f870eb0142f7a1afd/probe.jsonl": "ec9f281c5663c2bb654c5bd1a72e941402e829a0914cb12cc0f791ba11db4c51",
+        "repro-results/expanded-repaired/pyjwt-608/runs/run-a4ac71df8ba54f379641f07d0ec746f8/probe.jsonl": "1d787d070acbcad3a1b2d82aac8808de13539f6f1bab310cbf2c1bdc3aa2fe11",
+        "repro-results/expanded-repaired/pyjwt-608/runs/run-f998c10a2ef94821a05f1e13e4beb44e/probe.jsonl": "af5d0e72206a0baa1893a39f1de52d88c9733ea8c5668437e1063749e217e5b6",
+        "repro-results/expanded-repaired/pyjwt-608/artifacts/reproduction/manifest.json": "279993d764c85cb3e7f6bcf9c9dcbdc35a722a5eb9c0c92ec317e2beff94d9e9"
+      }
+    },
+    {
+      "case_id": "pyjwt-1040",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-8abdd237cd2147b499d484ee6664176d",
+      "export_state": "published",
+      "duration_seconds": 36.91,
+      "agent_steps": 7,
+      "model_calls": 10,
+      "prompt_tokens": 52737,
+      "completion_tokens": 5154,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\pyjwt-1040",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\pyjwt-1040",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "a1720da5622a23aa23cadbeba840543a30a6da561fcc3e84f1995c6ae2cb078d",
+      "buggy_commit": "ebc941de508f76acaa78defb15197092458f1874",
+      "fixed_commit": "9085670a1f69de3e86c7d122317c3b2707e0123b",
+      "issue_url": "https://github.com/jpadilla/pyjwt/issues/1039",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 7,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 2,
+          "write_candidate": 3,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 1,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The issue states that jwt.encode must reject a non-string iss claim with TypeError instead of returning a token. The regression test asserts jwt.encode({\"iss\": 123}, \"secret\", algorithm=\"HS256\") raises TypeError, which is an assertion of the expected correct behavior rather than expecting the undesired result. Real target execution is confirmed: target_origins binds jwt.api_jwt to the local code snapshot and target_calls records jwt.api_jwt invoked 8 times. The observed failure matches the reported actual behavior: test_encode_rejects_non_string_iss_claim failed with 'Failed: DID NOT RAISE TypeError', and test_encode_does_not_return_token_for_non_string_iss_claim failed with 'AssertionError: jwt.encode returned a token for non-string iss claim: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...', i.e. a token was returned for the invalid payload. This matches the contract's reported_actual (buggy version returns a token instead of raising TypeError), so all three checks hold."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate regression test exercises the real local PyJWT target (target_calls shows jwt.api_jwt invoked 8 times, source_binding_ok=true, target origin is the local jwt/api_jwt.py) and asserts the expected correct behavior: jwt.encode({\"iss\": 123}, \"secret\", algorithm=\"HS256\") must raise TypeError and must not return a token. Execution produced failures matching the issue exactly: test_encode_rejects_non_string_iss_claim failed with 'Failed: DID NOT RAISE TypeError', and test_encode_does_not_return_token_for_non_string_iss_claim failed with 'AssertionError: jwt.encode returned a token for non-string iss claim'. This matches the reported actual (buggy version returns a token instead of rejecting the invalid input). The tests are true regression assertions of correct behavior (not assertions that merely expect the undesired exception or unrelated failures), the target was really executed rather than mocked, and no broad exception catch replaces the check."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_encode_rejects_non_string_iss_claim",
+            "repro_tests/test_repro.py::test_encode_does_not_return_token_for_non_string_iss_claim"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "jwt.api_jwt": 8
+          },
+          "failed_call_tests": 2,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_encode_rejects_non_string_iss_claim",
+            "repro_tests/test_repro.py::test_encode_does_not_return_token_for_non_string_iss_claim"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "jwt.api_jwt": 6
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 2,
+          "verified": true
+        }
+      },
+      "repository": "jpadilla/pyjwt",
+      "symptom": "非字符串 iss 编码未拒绝",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/pyjwt-1040/request.json": "8b09e4b2aa96c66fd51f4446de34c8ea18da3db4b130b2fee29c9723dc971588",
+        "repro-results/expanded-repaired/pyjwt-1040/task.json": "9fd5a6c53e091f6a43f659fd2dd9da824c50c29630b89fbe0c6fdcdd0fc57587",
+        "repro-results/expanded-repaired/pyjwt-1040/events.jsonl": "514e5458e4ddee03e716505fc68a341449341df68050425132a1b4986787643b",
+        "repro-results/expanded-repaired/pyjwt-1040/input/issue.md": "a1720da5622a23aa23cadbeba840543a30a6da561fcc3e84f1995c6ae2cb078d",
+        ".local/expanded-repaired/pyjwt-1040/trace.jsonl": "d81f833b852d3d0a3b5d91416a17a05c9a052cc22c31fbc42ab55ce3e96a59de",
+        ".local/expanded-repaired/pyjwt-1040/input-lock.json": "f83f5aceb77a4d2ed0b00ae58533d446c4a5c9c1206d5c7d03383f1a5bbda3ff",
+        ".local/expanded-repaired/pyjwt-1040/result.json": "1dc3644a118f1f49a7ad7d2f6ab5edb9c22885b6912b3802e4687cd119fd9739",
+        ".local/expanded-repaired/pyjwt-1040/independent-replays.json": "51585b597718e802fa5dd996d47ec711162972e8f0f805afe58f5e86a6ccd627",
+        ".local/expanded-repaired/pyjwt-1040/standalone-buggy.log": "bb639f1b9fdda0eddb71cc36260ec1f8091cf8edddb20d4e6d715528e2ac2c36",
+        ".local/expanded-repaired/pyjwt-1040/standalone-fixed.log": "fd6f2f9fe355ca4d307a2f885253d64e78215ad3cbbd807717ea7d19f1a906f7",
+        "repro-results/expanded-repaired/pyjwt-1040/verdicts/verdict-run-5563f0acf21645868b18a1368a1113ef.json": "26e7df760e94e1ef2af7107464f35a6b1dbc7679049009103c7c0a007e917fd1",
+        "repro-results/expanded-repaired/pyjwt-1040/verdicts/verdict-run-ebd29b719be549f4b453c202e8f7099e.json": "fb3bcf7bb3e8e1a77a4b849e155205a1156020e33c8b75a7c5adf5a8e134ff2f",
+        "repro-results/expanded-repaired/pyjwt-1040/contracts/contract-511a9d8ef26946c5b293a2760104af8a-v1.json": "94180e9995a6cea352d9d1f0bdf723acf1c4d59bf6ad2e6a4f09444461d56c46",
+        "repro-results/expanded-repaired/pyjwt-1040/candidates/candidate-8abdd237cd2147b499d484ee6664176d/manifest.json": "d67c4e69716413c867306526937af60cc49c3eb16d6df7c7561e4c49c8fcdd32",
+        "repro-results/expanded-repaired/pyjwt-1040/candidates/candidate-8abdd237cd2147b499d484ee6664176d/files/repro_tests/test_repro.py": "6c16917ad2cd8b22169bd59bc33fd4aea41d760c3040a61cd848b9805f077b62",
+        "repro-results/expanded-repaired/pyjwt-1040/runs/run-09b775aaff7249f2874168dd511b9db9/execution.json": "72bc2c46fbc9f65fed65dbcba21630c901de31cd54ff26bcf0e58003d1a88457",
+        "repro-results/expanded-repaired/pyjwt-1040/runs/run-5563f0acf21645868b18a1368a1113ef/execution.json": "0413d11f8f7bf37bd685403efa2aab4e179c7373f243544e3f3817525dfe9e3c",
+        "repro-results/expanded-repaired/pyjwt-1040/runs/run-ebd29b719be549f4b453c202e8f7099e/execution.json": "ae7663d0a795fdcea4932157302cb89b197735b484ac3757fc668db0046b7fdb",
+        "repro-results/expanded-repaired/pyjwt-1040/runs/run-09b775aaff7249f2874168dd511b9db9/probe.jsonl": "8a8ac6e488abed9a583c4632973119d1ec9f13f699077c8208693eee309c1e61",
+        "repro-results/expanded-repaired/pyjwt-1040/runs/run-5563f0acf21645868b18a1368a1113ef/probe.jsonl": "c684e6abf5a29f8e48adb94f51a15222beac8b734c1e21f532eef466e182ccf5",
+        "repro-results/expanded-repaired/pyjwt-1040/runs/run-ebd29b719be549f4b453c202e8f7099e/probe.jsonl": "dd6741b04f105dc209f442cbf67e3d392f1fd4d76c0e072912b3aa011463801a",
+        "repro-results/expanded-repaired/pyjwt-1040/artifacts/reproduction/manifest.json": "bcb8a69c83ace7461fdae377852ab11e9978c7b7b56d8313320625cd499ea183"
+      }
+    },
+    {
+      "case_id": "attrs-1428",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-1e2be866060849b783f1c6bcd265dd96",
+      "export_state": "published",
+      "duration_seconds": 44.53,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 26753,
+      "completion_tokens": 5930,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\attrs-1428",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1428",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "8532c150757b472af95849587c35f369686c2e45b906fc7a04a397274e694cb1",
+      "buggy_commit": "94caa57142c057ce52504cdf239ae0ed3168f9b5",
+      "fixed_commit": "937b1e232803cc4ec9b9375ef525fc57c24ec498",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1427",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate defines an attrs.define(slots=False) class with a regular field `value: int = 100` and an `__attrs_pre_init__(self, value)` hook, then instantiates it with value=200 and asserts the correction behavior: the hook must see 200 (`c.seen == 200`) and the field must be 200 (`c.value == 200`). The real target was executed (target_calls attr._make: 64; target_origins maps attr._make to the run's src/attr/_make.py, no mocks), and the test failed at the expected assertion with `assert 100 == 200` where `100 = C(value=200).seen`, i.e. the hook received the default 100 exactly as the issue reports. The failure-time repr `C(value=200)` also shows the field itself was set to 200, matching the reported actual 'hook receives the default 100, while the instance's value field is set to 200.' The assertion is a genuine regression assertion of the expected correct behavior, not a check for an undesired exception, and the failure is directly attributable to the target code path. Note the run never reached the second assertion because the first failed, so the field value is established by the failure repr rather than by a completed assertion, but this does not change the match."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test instantiates a real attrs.define class (slots=False) with an integer field value defaulting to 100 and a __attrs_pre_init__(self, value) hook, then calls C(value=200) and asserts the hook observed 200. The target library was actually executed (attr._make imported from src/attr/_make.py, 64 target calls, source_binding_ok=true, no mocks). The test failed with AssertionError: assert 100 == 200, where 100 = C(value=200).seen — i.e. the hook received the default 100 instead of the passed argument 200, exactly the reported bug behavior. The assertion checks the expected correct behavior rather than expecting the buggy exception, and the failure directly matches the contract's reported_actual (hook sees default 100 while the field is set to 200)."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_pre_init_receives_passed_argument_not_default"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "attr._make": 64
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_pre_init_receives_passed_argument_not_default"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "attr._make": 64
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "python-attrs/attrs",
+      "symptom": "pre_init 收到默认值而非传入值",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/attrs-1428/request.json": "8951896104db2bec1317235814f2a9be4962218973a55af9af5c9411f764a519",
+        "repro-results/expanded-repaired/attrs-1428/task.json": "ad81a6faa7c7dc27a536f0598c605c9469c39345b62ef9d7f590cadb3be0ae4e",
+        "repro-results/expanded-repaired/attrs-1428/events.jsonl": "01e7735a74ae30527cec1ba874ec21fa91ff8e48078def44718b1050943b3810",
+        "repro-results/expanded-repaired/attrs-1428/input/issue.md": "8532c150757b472af95849587c35f369686c2e45b906fc7a04a397274e694cb1",
+        ".local/expanded-repaired/attrs-1428/trace.jsonl": "e1d5d3d1df5b65a0611993ba72431b779b3ebd485a675f99da29b4953ab903d5",
+        ".local/expanded-repaired/attrs-1428/input-lock.json": "99764b11651d2a8db1ad23fef7d796f76ed4ffd2ba5567291936c4ca49815296",
+        ".local/expanded-repaired/attrs-1428/result.json": "01e3c0fcfad54f6636f6200aba8f862616eb5c0ec8a16f66b0bdb587952754b6",
+        ".local/expanded-repaired/attrs-1428/independent-replays.json": "e4487c916a433c361596e56b176a0af50df3517489d173867a58cd881a9bc12c",
+        ".local/expanded-repaired/attrs-1428/standalone-buggy.log": "f9f207b42ff0be81402645510640f2dab4fcc707b1053c85cd16fdc9ea962afc",
+        ".local/expanded-repaired/attrs-1428/standalone-fixed.log": "97f5adfb2ec9975df6d998bc11af616286bd89a5feba3be34a12c5039d829f43",
+        "repro-results/expanded-repaired/attrs-1428/verdicts/verdict-run-0fdd402e526a40019158664a2b0e2be0.json": "313210d54ed361a2e379514935a1f814250e98a724cac8b89bbde8f2851b33ea",
+        "repro-results/expanded-repaired/attrs-1428/verdicts/verdict-run-63861e3033514047839c09a66d99f649.json": "f58539d43128ff89b7375a04d6d50b4defccc665d290daaca661965fee0eb4fb",
+        "repro-results/expanded-repaired/attrs-1428/contracts/contract-61965db94a184f789f6f9a7ca18f7a89-v1.json": "508523c6897a1f950ebb1d0f7bac144b7721a23bf992fddd108690c9cc00e3b0",
+        "repro-results/expanded-repaired/attrs-1428/candidates/candidate-1e2be866060849b783f1c6bcd265dd96/manifest.json": "9cf71ca4112cb181c15cac13791c4342db8fd05f21448019556421a4297df220",
+        "repro-results/expanded-repaired/attrs-1428/candidates/candidate-1e2be866060849b783f1c6bcd265dd96/files/repro_tests/test_repro.py": "508047a5a18364bbc7369a32d84813592d3d09773407ed324f29c8500118f89e",
+        "repro-results/expanded-repaired/attrs-1428/runs/run-0fdd402e526a40019158664a2b0e2be0/execution.json": "606685e24d25ec50da6ff762f6b87420dbfc56134c70f0206a4d4c0fffc6210e",
+        "repro-results/expanded-repaired/attrs-1428/runs/run-63861e3033514047839c09a66d99f649/execution.json": "5644c7cc9b913cf06cc233d4f2870677df8814608cddd94fd0550bef28b40508",
+        "repro-results/expanded-repaired/attrs-1428/runs/run-935b457496d14e16b8547240a920c032/execution.json": "8c3129f2b8aecfe0ab02da10b0067ccbc36f24683f5c5e9b57a6e4c13362fcc9",
+        "repro-results/expanded-repaired/attrs-1428/runs/run-0fdd402e526a40019158664a2b0e2be0/probe.jsonl": "34bfb80651d355715a8d62b41a24ec6989918d0f9c0c68cb61e9042280c7130b",
+        "repro-results/expanded-repaired/attrs-1428/runs/run-63861e3033514047839c09a66d99f649/probe.jsonl": "63fd897ed254cc5a3f093eae50c18794436c1a9210ea2f08e645c6fc58c1cb43",
+        "repro-results/expanded-repaired/attrs-1428/runs/run-935b457496d14e16b8547240a920c032/probe.jsonl": "77565149e73943dc48a6c0297a6638cd66290b49c8af080029f7a3853bc43974",
+        "repro-results/expanded-repaired/attrs-1428/artifacts/reproduction/manifest.json": "66a5910ca745f68be643f128e8c989651275b54a7a4dd8f551817f8b5bd50c25"
+      }
+    },
+    {
+      "case_id": "attrs-1328",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-700e168e159c48cab304de1ac2245e7b",
+      "export_state": "published",
+      "duration_seconds": 35.16,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 22227,
+      "completion_tokens": 3864,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\attrs-1328",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1328",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "01efe5d56d5d5501484f6762b9c5eee186f2c949113639b6f8f5a66a6307c9ac",
+      "buggy_commit": "53e632c5218b729da6ac37a35b4b68379dc18999",
+      "fixed_commit": "6fda0a4e086b56d7058855e4c15112c8f58de74c",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1327",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "write_candidate": 2,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test exercises the contract trigger: it defines an attrs.define class with converter=[int], constructs with \"1\", then assigns \"2\" using default on_setattr conversion without mocks. The real target attr.setters was executed (target_calls attr.setters) and the assignment failed with AttributeError: 'Converter' object has no attribute '__call__' in attr/setters.py convert, exactly matching the reported actual failure and not an unrelated or expected exception. The test asserts the correct behavior that assignment should store integer 2 and type int, so it is a regression assertion of expected correct behavior."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test uses attrs.define with a field converter=[int], successfully constructs C(\"1\") and verifies c.x == 1 and type int, then assigns c.x = \"2\" under default on_setattr behavior without mocks. The real target execution fails at that assignment with AttributeError: 'Converter' object has no attribute '__call__' in attr/setters.py:66, exactly matching the issue's reported actual behavior that assignment should succeed and store integer 2 instead of raising. The expectation is cited from the supplied issue text, and the observed failure is cited from the probe output."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_converter_list_on_setattr"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "attr.setters": 2
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_converter_list_on_setattr"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "attr.setters": 3
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "python-attrs/attrs",
+      "symptom": "列表 converter 在赋值时出错",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/attrs-1328/request.json": "964ac9d9e44e6460b2fa5f1418f616c05da047bd2b991b3dd25cbde288f02a12",
+        "repro-results/expanded-repaired/attrs-1328/task.json": "ae6020322b2f1b9f0160eba0aebdd85cf6a32eb8c02a03f931e2a394784876e8",
+        "repro-results/expanded-repaired/attrs-1328/events.jsonl": "9b4b19aadc41d28ebc51c249e383b09ae6cf51e004aa2723d12aea8404669140",
+        "repro-results/expanded-repaired/attrs-1328/input/issue.md": "01efe5d56d5d5501484f6762b9c5eee186f2c949113639b6f8f5a66a6307c9ac",
+        ".local/expanded-repaired/attrs-1328/trace.jsonl": "eccfd72779f74ba6df168eb58e05c2d79b59ed897eda6b9a0e9a9aa5fc3e4881",
+        ".local/expanded-repaired/attrs-1328/input-lock.json": "b4dc2ddca4146fd5bc62cf25cc7c252c2e611569d4f8981fe2a04b97a48e091f",
+        ".local/expanded-repaired/attrs-1328/result.json": "ca0859da9333d69d8d7fb1f618eb8c00fb0fbf9c53db95f2ae3dcf192bf2c531",
+        ".local/expanded-repaired/attrs-1328/independent-replays.json": "fb255d63aae8fceb2fd60994bd0c049591eee1ce2655978a078bb41016799c7d",
+        ".local/expanded-repaired/attrs-1328/standalone-buggy.log": "569c76ab80254d631c6df6a0a9857d3bf509c217da7046657d768f77fa451f0c",
+        ".local/expanded-repaired/attrs-1328/standalone-fixed.log": "84e0eed98ec19324a3df0de6397f3383390b1f80a178e943c0a12ab064d5d12f",
+        "repro-results/expanded-repaired/attrs-1328/verdicts/verdict-run-3daee27e51754c139e85bed931d3f94f.json": "e48d9b58e5f6282d565b60479d3b39b3aa9655b33425e14b6a06ed7b15f35090",
+        "repro-results/expanded-repaired/attrs-1328/verdicts/verdict-run-94ccb88f9c7748a3b0032c2cbb29bd49.json": "c091b72f4ccad6b8731b709c63c47dbdaa1513f5be629da9f2c03c3476ff2207",
+        "repro-results/expanded-repaired/attrs-1328/contracts/contract-bb788f6a79774c42af82f86f77bdcd45-v1.json": "6df55dec6ee8834260549cce1635a3acab62eb213bdf2dce67ecf6e7c1f1a188",
+        "repro-results/expanded-repaired/attrs-1328/candidates/candidate-700e168e159c48cab304de1ac2245e7b/manifest.json": "7e6c0c49eac4c433187c1ed691a15bbe6277f9be56b724646bf0c380a28ad569",
+        "repro-results/expanded-repaired/attrs-1328/candidates/candidate-700e168e159c48cab304de1ac2245e7b/files/repro_tests/test_repro.py": "21abf461732414287aa186ad56f57618314033eef9a14b3a17e25c844ef0b0d9",
+        "repro-results/expanded-repaired/attrs-1328/runs/run-3daee27e51754c139e85bed931d3f94f/execution.json": "b5fc5281fec598522abd417344fa4105b803178cfc0c2054695c7a073d4a5eed",
+        "repro-results/expanded-repaired/attrs-1328/runs/run-94ccb88f9c7748a3b0032c2cbb29bd49/execution.json": "d5c9b82c3b40c6bcb40e889bca416d95c934498980b53248174b583071287f7a",
+        "repro-results/expanded-repaired/attrs-1328/runs/run-ff06d60c02024958850bbd5475c50941/execution.json": "87fd1e91510b69d6db12273c1241619955fbe7528c85d1105b35c37ac841f6eb",
+        "repro-results/expanded-repaired/attrs-1328/runs/run-3daee27e51754c139e85bed931d3f94f/probe.jsonl": "065850632c0b9e1608028c4b626e616ac97516b34ad92b3024fec6a3fd13046a",
+        "repro-results/expanded-repaired/attrs-1328/runs/run-94ccb88f9c7748a3b0032c2cbb29bd49/probe.jsonl": "22fc4283ffb37ed77cb2e92b9e48f75de43a38ea3e66a28dc6db8af69dbb26a5",
+        "repro-results/expanded-repaired/attrs-1328/runs/run-ff06d60c02024958850bbd5475c50941/probe.jsonl": "5e632289d8e9a97cffd0170a38f2e67cd56851744d3aecf615e68f4acc6eb44d",
+        "repro-results/expanded-repaired/attrs-1328/artifacts/reproduction/manifest.json": "a0817d9ce09df7bdf82dd691a8570252f462182f75b9e82964e51b48ab49a8fc"
+      }
+    },
+    {
+      "case_id": "attrs-1319",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-f926056c96d546bfa17b02ad636fc350",
+      "export_state": "published",
+      "duration_seconds": 46.61,
+      "agent_steps": 8,
+      "model_calls": 11,
+      "prompt_tokens": 55293,
+      "completion_tokens": 5173,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\attrs-1319",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\attrs-1319",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "83bf1979593f55a610e61c4f4093c09127eebdcb2ab3d34c9fd7f3f7d9ca6a72",
+      "buggy_commit": "689a0e64012d1e576ebd99e786a254bc537582c6",
+      "fixed_commit": "09161fc9181bf94aa3bbc5509c663d736a9553dc",
+      "issue_url": "https://github.com/python-attrs/attrs/issues/1284",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 8,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 1,
+          "invalid_json": 1,
+          "read_file": 3,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test defines an @attr.define class inside the test function with a keyword-only field `value: int = attr.field(default=3, kw_only=True)` and a `__attrs_pre_init__(self, *, value)` hook, then instantiates it and asserts the correct behavior (c.value == 3 and seen == {\"value\": 3}). Real target code executed: the failure traceback and target_calls show attr._make (and attr._next_gen) were actually invoked (target_calls: {\"attr._make\": 88}), not mocked. The failure matches the issue exactly: attrs generated the invalid line `self.__attrs_pre_init__(value=attr_dict['value'].default=value=attr_dict['value'].default)` and hit `SyntaxError: invalid syntax` at src/attr/_make.py:211 in `_compile_and_eval`, even though the caller test is valid Python. This is the reported SyntaxError during compilation of the generated __init__, while the expected correct behavior (successful definition/instantiation and hook receiving value=3) is asserted. All three checks are true with citations to the expectation source and the actual failure."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test defines the attrs class inside the test function, instantiates it, and asserts the expected correct behavior: the keyword-only field retains default 3 and __attrs_pre_init__ receives value=3. Execution runs the real attrs target (attr._make calls observed, source binding OK) and fails with the issue's reported SyntaxError while attrs compiles its generated __init__, specifically from the malformed pre-init call expression. This is a real target failure matching the issue, not an assertion merely expecting an exception."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_pre_init_with_kw_only_field_default"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "attr._make": 88
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_pre_init_with_kw_only_field_default"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "attr._make": 96
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "python-attrs/attrs",
+      "symptom": "生成的初始化代码出现 SyntaxError",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/attrs-1319/request.json": "b4bab6505dc8523c681293500f8d68e97ec6f67c5674fbac0344e000017021dc",
+        "repro-results/expanded-repaired/attrs-1319/task.json": "90cb6419e83cf4f32451a6c89b4916fc8881a484551b11bd860054c3cbcffc3e",
+        "repro-results/expanded-repaired/attrs-1319/events.jsonl": "28ad0621805320eb6d92df7ce456247a4010dad047dff60936290d79ca101e33",
+        "repro-results/expanded-repaired/attrs-1319/input/issue.md": "83bf1979593f55a610e61c4f4093c09127eebdcb2ab3d34c9fd7f3f7d9ca6a72",
+        ".local/expanded-repaired/attrs-1319/trace.jsonl": "d43ec97adcd4dbb68fd3efb000bf41553c0bf580fd3e795fd6a7ae295f3e81f1",
+        ".local/expanded-repaired/attrs-1319/input-lock.json": "8954e0ed7fb33af96e4470977bf2fe257518cd968bff2a532da4e47372455e02",
+        ".local/expanded-repaired/attrs-1319/result.json": "7ec8c98ce8bb3763937d2f3c3ada07bb7be69679676766c0ca2b4319f6c9a8ce",
+        ".local/expanded-repaired/attrs-1319/independent-replays.json": "77389126aede293f5678c0c755ce4e36a412a7752fcfcbfd59a18d689338f89d",
+        ".local/expanded-repaired/attrs-1319/standalone-buggy.log": "7c94bb2bcf514cc9603a533652513468f34657cbd07602929043d445691ed9ca",
+        ".local/expanded-repaired/attrs-1319/standalone-fixed.log": "97f5adfb2ec9975df6d998bc11af616286bd89a5feba3be34a12c5039d829f43",
+        "repro-results/expanded-repaired/attrs-1319/verdicts/verdict-run-70f0df37ee6848aa91c39180393ad132.json": "288c01706ef16675a4ee86523c5d30f2f10d1c7853affdc95fa542ab0999ed7b",
+        "repro-results/expanded-repaired/attrs-1319/verdicts/verdict-run-d9fd381e557c4634bacbcb51986eca85.json": "456a408cc12dd799ca3aba7fdcfea7f112bcc68ccbd9b3ea471050c7efb69ec6",
+        "repro-results/expanded-repaired/attrs-1319/contracts/contract-4cb8e6916a2249c9a8bd2bab7a399d5f-v1.json": "8baf75323fcd874988003ef77a314b49ad26f366e8571b5f566d61cab469d506",
+        "repro-results/expanded-repaired/attrs-1319/candidates/candidate-f926056c96d546bfa17b02ad636fc350/manifest.json": "797adfc61dfb090a390a19a7e1120b2f88e9e6fac7284b5b553e1f1389739f54",
+        "repro-results/expanded-repaired/attrs-1319/candidates/candidate-f926056c96d546bfa17b02ad636fc350/files/repro_tests/test_repro.py": "7f35fd607b97a1be7029b03f7ac80478d89e206ec223a22d7ca382c34cf38b17",
+        "repro-results/expanded-repaired/attrs-1319/runs/run-70f0df37ee6848aa91c39180393ad132/execution.json": "7869c31014c1ca6308e204a8b8dbd9683d8949801e9ff0bf162cdccb7ac9333a",
+        "repro-results/expanded-repaired/attrs-1319/runs/run-a2620f87479b4f3b9929d56e05771aed/execution.json": "8d61ba74c1acc128df1ed4fa21d1051a5acdde709b18d3334492b4fb9a3ccea6",
+        "repro-results/expanded-repaired/attrs-1319/runs/run-d9fd381e557c4634bacbcb51986eca85/execution.json": "bdc968f155f5079ef82f7aac0f022a9cb7865a6563dd781b1b394710be199bca",
+        "repro-results/expanded-repaired/attrs-1319/runs/run-70f0df37ee6848aa91c39180393ad132/probe.jsonl": "b30f59d8d132ac7a4b499faaab952cf964bad5a923db499ef0fcefb2ee773ed3",
+        "repro-results/expanded-repaired/attrs-1319/runs/run-a2620f87479b4f3b9929d56e05771aed/probe.jsonl": "6f107ace98c49dd69fbee0e2ae6f5793cfb943b2a43ca6b4c839d26abf791372",
+        "repro-results/expanded-repaired/attrs-1319/runs/run-d9fd381e557c4634bacbcb51986eca85/probe.jsonl": "48439afa020e1f579bacacbc12da7fd15297d9b450fad33c7524ae862130ed13",
+        "repro-results/expanded-repaired/attrs-1319/artifacts/reproduction/manifest.json": "6ae3f399ef76b91e8cc41852a3d47eb3e8d6d612798f0c67184a81a6b38af241"
+      }
+    },
+    {
+      "case_id": "click-3152",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-1d22c219a54843c685c09d881d47dd9c",
+      "export_state": "published",
+      "duration_seconds": 31.38,
+      "agent_steps": 3,
+      "model_calls": 6,
+      "prompt_tokens": 20089,
+      "completion_tokens": 3249,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\click-3152",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3152",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "466a1ce7df45f9fdb686297f8aa2ca10475e58c28d78657b4ad623918c2a06f2",
+      "buggy_commit": "7f7bbe4569ea68e8dabee232eade069ef3310aea",
+      "fixed_commit": "ebcd548d50662bc8fa4f8b9ec7fe13cb8310bfaa",
+      "issue_url": "https://github.com/pallets/click/issues/3084",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 3,
+          "verdict": 2
+        },
+        "actions": {
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test test_flag_value_used_when_option_given_alone asserts the expected correct behavior (exit code 0 and output exactly 'Hello, Flag!\\n') for a CliRunner invocation with only ['--name'], and the real target (click.core) executed. It failed with the exact reported symptom: 'AssertionError: Error: Option \\'--name\\' requires an argument.' and assert 2 == 0, i.e., the buggy version exits with code 2 because the option demands an argument. The contract's other observable checks (default 'Default' when omitted, explicit 'Alice') passed, so only the flag_value path is broken, matching the issue. The assertion is a regression assertion of the desired behavior, not an expectation of the undesired exception, and no mocking replaced the target."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test exercises a real Click command through click.testing.CliRunner with only [\"--name\"] and asserts the correct behavior: exit_code == 0 and output exactly \"Hello, Flag!\\n\" (regression assertion, not an expectation of the undesired error). The probe shows the target was actually executed (target_calls for click.core = 181, source_binding_ok true, target_origins pointing to the local click/core.py), so no mocks replaced the target. The observed failure is exactly the bug described in the issue: `result.exit_code == 2` with `Error: Option '--name' requires an argument.` at repro_tests/test_repro.py:14, matching the reported_actual (\"exits with code 2 and reports that the --name option requires an argument when only --name is supplied\"). The companion checks for the omitted default and for an explicit value also passed, confirming the failure is specific to the flag_value path rather than a broadly broken environment. All three checks (correct-behavior assertion, real target execution, matching failure) hold, so the issue is reproduced."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_flag_value_used_when_option_given_alone",
+            "repro_tests/test_repro.py::test_default_used_when_option_omitted",
+            "repro_tests/test_repro.py::test_explicit_value_used_when_provided"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 181
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 2,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_flag_value_used_when_option_given_alone",
+            "repro_tests/test_repro.py::test_default_used_when_option_omitted",
+            "repro_tests/test_repro.py::test_explicit_value_used_when_provided"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 227
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true
+        }
+      },
+      "repository": "pallets/click",
+      "symptom": "可选参数缺值时未使用 flag_value",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/click-3152/request.json": "6ea20c553a2e383f337fb37c4f8c26bdb39bd7074e1141fedf2ba041294dff71",
+        "repro-results/expanded-repaired/click-3152/task.json": "a02b7c1fe94b80a44b45e318bf67c700d05cba7b0e37e6146960e79a88038004",
+        "repro-results/expanded-repaired/click-3152/events.jsonl": "0949594b323e6a15907d39a28083f9d4e5467222e1bf2dfa0e1edf775188fa4b",
+        "repro-results/expanded-repaired/click-3152/input/issue.md": "466a1ce7df45f9fdb686297f8aa2ca10475e58c28d78657b4ad623918c2a06f2",
+        ".local/expanded-repaired/click-3152/trace.jsonl": "59d53fb8919f0d3ac5c394ebd4a028749ef5fcec06e151393fc1ae9b215c9f6a",
+        ".local/expanded-repaired/click-3152/input-lock.json": "a18a88bedf264e3f6a3c77f0f10c930996d18f22fb34920dc574884fe1ddcd7a",
+        ".local/expanded-repaired/click-3152/result.json": "0c31dfe877331008232ac1ed545dc0612468a61ba76abbd63d6edaed55ba9cc6",
+        ".local/expanded-repaired/click-3152/independent-replays.json": "c2be3086f51548cc16e0ca67764fa7f10f1939c1c3715387686f27c0594f8c71",
+        ".local/expanded-repaired/click-3152/standalone-buggy.log": "b5f27da56482acbced28eb1ea351d977c62f69f231d5112856336f3332ddb915",
+        ".local/expanded-repaired/click-3152/standalone-fixed.log": "5fc7ce8151c9417273d916259f79ee68d5f60e54c2397e6fca4549e7b3fd0a3f",
+        "repro-results/expanded-repaired/click-3152/verdicts/verdict-run-23a7cef296424c3f979f7d79a567a7db.json": "27187bcaa7f4680d63b503a0d6b7e8a131334a8baf8822a00537979af905a8b0",
+        "repro-results/expanded-repaired/click-3152/verdicts/verdict-run-80ae3f13505a41fe9839cbfae352a2d5.json": "dd2fd747f0154505b6504c03d81210b0fadcd67f0bbc3a7ea7b2969008c7fe8b",
+        "repro-results/expanded-repaired/click-3152/contracts/contract-0b37826f74cd434299b2d12380599605-v1.json": "7b17ece697ba123b478b43677ec1fd986116e88faff2f09f0e23e1584e00868a",
+        "repro-results/expanded-repaired/click-3152/candidates/candidate-1d22c219a54843c685c09d881d47dd9c/manifest.json": "e791c3943cce2185a8e60f78f7ce145e02eaa5d4d75bdddadfff0c90865f9b7d",
+        "repro-results/expanded-repaired/click-3152/candidates/candidate-1d22c219a54843c685c09d881d47dd9c/files/repro_tests/test_repro.py": "990913ae22d355e1d6d81ca636c93512b95826ddc1b4c9110d7617ccb4a0e629",
+        "repro-results/expanded-repaired/click-3152/runs/run-23a7cef296424c3f979f7d79a567a7db/execution.json": "aa4393df574d459a3455dbe78682c4ccd7dd3b2e299b8a2fe36d8a763f9f4842",
+        "repro-results/expanded-repaired/click-3152/runs/run-80387d6abe6e416b945cf975aefb91eb/execution.json": "577f43be687bdfe292a0044e96ac8e1811d5315660ea00b9dc6328ffca12bda0",
+        "repro-results/expanded-repaired/click-3152/runs/run-80ae3f13505a41fe9839cbfae352a2d5/execution.json": "efddfc05724d0178e2ea11aa16067289201c3e112fe6e7d444d6e9bb7305ecc4",
+        "repro-results/expanded-repaired/click-3152/runs/run-23a7cef296424c3f979f7d79a567a7db/probe.jsonl": "6ef80da107d522c6416d1f243e37582ca40c3506f87e79782d128ed0cb33c216",
+        "repro-results/expanded-repaired/click-3152/runs/run-80387d6abe6e416b945cf975aefb91eb/probe.jsonl": "5240ea1fea010d6b3d57f46e36c2d852397e136706aa84efd39000a361f6ed5d",
+        "repro-results/expanded-repaired/click-3152/runs/run-80ae3f13505a41fe9839cbfae352a2d5/probe.jsonl": "b28d03eb75776a59ad79cf6d63d9f6f0bf27e009e52caeb86feac5bc49a13380",
+        "repro-results/expanded-repaired/click-3152/artifacts/reproduction/manifest.json": "7bf193fd60df4a7164116bbe5d727130b53c8af19182544fb6d9d3648edf3ec1"
+      }
+    },
+    {
+      "case_id": "click-3079",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-bc3abbaf2db04cfe94a2a022754ca212",
+      "export_state": "published",
+      "duration_seconds": 43.92,
+      "agent_steps": 5,
+      "model_calls": 8,
+      "prompt_tokens": 33226,
+      "completion_tokens": 5100,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\click-3079",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3079",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "f8930c9f8be080d4fe87f517044f8f6530f723ab017f3e2085120e175b3a3244",
+      "buggy_commit": "2ed395b0b5ac4d56553ff715335f456f812cdc78",
+      "fixed_commit": "27aaed3fe5bcd6adedd6e91de234914af9859cf1",
+      "issue_url": "https://github.com/pallets/click/issues/3071",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 5,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 1,
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test constructs the exact shared-parameter scenario from the issue, runs the real click command implementation (click.core target calls were recorded), and fails on the expected correct behavior: invoking the command with no arguments should echo \"green\", but the actual output is empty because the shared color parameter resolves to None. This matches the reported bug. The explicit --red check is present in the test but was not reached because the no-argument assertion failed first; the primary reported symptom is nonetheless reproduced against the real target."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test defines the shared `color` flags in the reported order, invokes the real Click command with no arguments, and asserts the echoed value is `green`. The observed failure is at that assertion with actual `''` instead of `'green'`, matching the reported bug where no arguments select None. The target click.core was executed (target_calls click.core:123), and the test does not replace the target with a mock."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_shared_color_parameter_no_args_selects_green"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 123
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_shared_color_parameter_no_args_selects_green"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 273
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "pallets/click",
+      "symptom": "共享 flag 的默认值选错",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/click-3079/request.json": "b4484ec943f74bf616c56b708377fb54a55c323cc405ce569e4a16f65b1eb1b7",
+        "repro-results/expanded-repaired/click-3079/task.json": "3839768592173ebe2ba1a118231b0f4874117933453b65a2dec184406c1f2b45",
+        "repro-results/expanded-repaired/click-3079/events.jsonl": "65811c55ffc985c6a29df75f5ff2abec45a15604af9b209440a4c8b399acafe0",
+        "repro-results/expanded-repaired/click-3079/input/issue.md": "f8930c9f8be080d4fe87f517044f8f6530f723ab017f3e2085120e175b3a3244",
+        ".local/expanded-repaired/click-3079/trace.jsonl": "b0dad2da11ea8065f66b7e39fec058d0813a452b1e8f2c37789dd09ae2d6e25f",
+        ".local/expanded-repaired/click-3079/input-lock.json": "17984e3291c7e60fa4db46ac8305672e1cf09ab00f6b19ac61d54a3fe1f1284b",
+        ".local/expanded-repaired/click-3079/result.json": "27b9e449b8d9809b3f13aef254d6a279965408ec741e0969ed89e71750ffc07b",
+        ".local/expanded-repaired/click-3079/independent-replays.json": "f52dd98f6a0257913920f58ba01960cfea5b837b7b697e674e4d92d82f85c003",
+        ".local/expanded-repaired/click-3079/standalone-buggy.log": "6b949261c68eb8ac1c7c276f40adfc73c51207af8d8ed8fa2cbf9281b8a7f69f",
+        ".local/expanded-repaired/click-3079/standalone-fixed.log": "1b6d285e9bf8c2d7876becb3febd98832a4a060079ff2e22611ccc00af141ee5",
+        "repro-results/expanded-repaired/click-3079/verdicts/verdict-run-34fa8d1f647a42b28d765cc479d827b3.json": "1434b10128214578f0182acc7bfcab20875ea19bd5bb736c60147dcb7ade18e3",
+        "repro-results/expanded-repaired/click-3079/verdicts/verdict-run-d8f7a5711c3946849540c6318e125876.json": "163996b6333ec15647b7ee88b8859ae9e0ef6ed3fcdd5df40721e22eab30f5c5",
+        "repro-results/expanded-repaired/click-3079/contracts/contract-dc465b22736d47d6b2a5647162c91da0-v1.json": "e10de040cad1ef1cc54dba73cdcb6a458556789633423a5d6345df3a1429670e",
+        "repro-results/expanded-repaired/click-3079/candidates/candidate-bc3abbaf2db04cfe94a2a022754ca212/manifest.json": "039bfe1e9974515de0dba5801c78353da36d3f541e8c60f6574eb7fa5defc6e2",
+        "repro-results/expanded-repaired/click-3079/candidates/candidate-bc3abbaf2db04cfe94a2a022754ca212/files/repro_tests/test_repro.py": "17e2aa2fc718e1e9abcf3c82dfdefbe95144c04cddb00a1f1f6e27054b0b9007",
+        "repro-results/expanded-repaired/click-3079/runs/run-1d34f7e5fdfb44f9b92404778756e033/execution.json": "adfdf0226f0ed3ed66af1701759dd36424b3a5a0199f1cf84c687c7ef8971a92",
+        "repro-results/expanded-repaired/click-3079/runs/run-34fa8d1f647a42b28d765cc479d827b3/execution.json": "8879dab5f2bd7550b36382d5e04afb5cd4330b27fe036780b6fc6c47db3d0256",
+        "repro-results/expanded-repaired/click-3079/runs/run-d8f7a5711c3946849540c6318e125876/execution.json": "d0091a0790d8c373c8d89933b4b0f9ba13a8f04e74765ac2e09e6dc14fb2cafb",
+        "repro-results/expanded-repaired/click-3079/runs/run-1d34f7e5fdfb44f9b92404778756e033/probe.jsonl": "107f3b08ca5132520476cc391f04091d6fb34b5d7aca659518dfba6e268a32b1",
+        "repro-results/expanded-repaired/click-3079/runs/run-34fa8d1f647a42b28d765cc479d827b3/probe.jsonl": "77a41ecdfc2f153045f1d3f5fe3ff670eeedc0e4741706b5c86f5224a42224eb",
+        "repro-results/expanded-repaired/click-3079/runs/run-d8f7a5711c3946849540c6318e125876/probe.jsonl": "e615be561e7467ae83d3fb7c35454ff8268eb6c0ca8cee75f53eb73a0d8e3ef5",
+        "repro-results/expanded-repaired/click-3079/artifacts/reproduction/manifest.json": "ee923c02942bf266a1d33a6e602147e30a7d9002249a023ed957a0ad33bfeba4"
+      }
+    },
+    {
+      "case_id": "click-3004",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-3c3259bec9bc4985916747b5931cc58d",
+      "export_state": "published",
+      "duration_seconds": 40.58,
+      "agent_steps": 5,
+      "model_calls": 8,
+      "prompt_tokens": 25791,
+      "completion_tokens": 4362,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\click-3004",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-3004",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "73c7cb6aa5fa3dfec6b75b0ccf092c00d9e8d8f95a116169cf677cf5f6799266",
+      "buggy_commit": "a1235aacb1be55dc66ddcfefbf64dec44b6ab54d",
+      "fixed_commit": "eaf33a957975e7d0943fad8d2b4b905b6bd98cb9",
+      "issue_url": "https://github.com/pallets/click/pull/3004",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 5,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 1,
+          "write_candidate": 2,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the expected behavior from the issue: --help exits 0 and shows '[default: SHA1]' without 'HashType.SHA1'. The real target was executed (click.core called 101 times) and the test failed because Click output '[default: HashType.SHA1]', matching the reported issue exactly."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the expected correct behavior: invoking --help with a click.Choice(HashType) default and show_default=True should exit 0 and show '[default: SHA1]' without 'HashType.SHA1'. The real pytest run executed the target click.core code and the call failed at the assertion checking for '[default: SHA1]', because the actual output contained '[default: HashType.SHA1]'. This matches the issue's reported actual behavior and confirms the defect in default help formatting."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_enum_choice_show_default"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 101
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_enum_choice_show_default"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.core": 101
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "pallets/click",
+      "symptom": "Enum 默认值 help 显示错误",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/click-3004/request.json": "299f2397e6c3db785b5ad57851e30a9d8354d487ac68e864e23aa8184e07ac25",
+        "repro-results/expanded-repaired/click-3004/task.json": "7ce0a459879a90641849d75d69be6ddff4c65f84b8b0df4d39cbb26c46f0dc80",
+        "repro-results/expanded-repaired/click-3004/events.jsonl": "717d4546dbf83680d2f167977b6cc3cc86930e9b91be020518f70bce49b7d8b3",
+        "repro-results/expanded-repaired/click-3004/input/issue.md": "73c7cb6aa5fa3dfec6b75b0ccf092c00d9e8d8f95a116169cf677cf5f6799266",
+        ".local/expanded-repaired/click-3004/trace.jsonl": "9de4eef4d766c5b613e6dc114a44275db3c2ec9a62d342477468d1d08955f00d",
+        ".local/expanded-repaired/click-3004/input-lock.json": "c123d4d8e5557b8cf3fd7c7f43137ecb21f9bc2d0df7a0a3018059386ed57b9e",
+        ".local/expanded-repaired/click-3004/result.json": "8834104ad9d9d0732053dd6ed80f95a31b00ae40fb9713d3e89624798acee6b7",
+        ".local/expanded-repaired/click-3004/independent-replays.json": "49dea2f215f69d10050f05234ce38343027bc043f291f915850721162c746499",
+        ".local/expanded-repaired/click-3004/standalone-buggy.log": "7bd1113f55f793859a6cc3f53d0114ee636b5a8a9bc3aadfba8b88e393a628da",
+        ".local/expanded-repaired/click-3004/standalone-fixed.log": "d821f20c04a12f9d1bd510aef0cb4b1ab9c00a29682deb7187f6986b6fb8ecfe",
+        "repro-results/expanded-repaired/click-3004/verdicts/verdict-run-08aaa2d720954ce68fd583ab16491dc3.json": "55e1cb9bcb43203f08acb5fe6d29391feb2e75fc475059be41ab3fef3d1a493f",
+        "repro-results/expanded-repaired/click-3004/verdicts/verdict-run-1fbe0e6c360c469883f6eee214095b89.json": "1599f20c44162431d5798715e888347911b5f7a783ac9c2cf1c4d66d24631dc8",
+        "repro-results/expanded-repaired/click-3004/contracts/contract-ed9fe11ee4bb4b2c9bc4c7d366b2592f-v1.json": "60c1e9ecb1c2315080b2bb6c4e17e42c2b28e26c7e5e35b2371e48122777998d",
+        "repro-results/expanded-repaired/click-3004/candidates/candidate-3c3259bec9bc4985916747b5931cc58d/manifest.json": "0e152c0be975c1e02c7f3b26d61e1980e44d91c4b1d42f8734d7c4243f5a5e77",
+        "repro-results/expanded-repaired/click-3004/candidates/candidate-3c3259bec9bc4985916747b5931cc58d/files/repro_tests/test_repro.py": "00192cb4c019de3a7a041833fe9dccb93012a5beeef90d0636276d45ab83ce30",
+        "repro-results/expanded-repaired/click-3004/runs/run-08aaa2d720954ce68fd583ab16491dc3/execution.json": "c248fa2c0d47ad0d08e234c4a04352b9de90e930ef59c1214a999453aa8cc84b",
+        "repro-results/expanded-repaired/click-3004/runs/run-1fbe0e6c360c469883f6eee214095b89/execution.json": "5f2a1ff47137a1965663617e73595933a7304b2e18b93af65a274fea0cf877e4",
+        "repro-results/expanded-repaired/click-3004/runs/run-9e3c7d72f2a5498981c77d7a882fb794/execution.json": "6e764a5ae6583b754a82de2622cb7f722f0352b0ada753becf74d07e4280b253",
+        "repro-results/expanded-repaired/click-3004/runs/run-08aaa2d720954ce68fd583ab16491dc3/probe.jsonl": "8ea32bf3d60f78e048543396c56ee4eecf6231d49edc988fecae66fdb839f88c",
+        "repro-results/expanded-repaired/click-3004/runs/run-1fbe0e6c360c469883f6eee214095b89/probe.jsonl": "bde4f3ea63aeed6c1cd4def050b510d63c03fd52975da8f887b5c23d3dbd632d",
+        "repro-results/expanded-repaired/click-3004/runs/run-9e3c7d72f2a5498981c77d7a882fb794/probe.jsonl": "a9e0415c1bcae7322cb673c0ba129aad63387760b3c5ebc05f5fbe53240fe820",
+        "repro-results/expanded-repaired/click-3004/artifacts/reproduction/manifest.json": "6e6d052c3a6943af6df43949e7e0726329adb802a732af3c2ae8cdc171b7338a"
+      }
+    },
+    {
+      "case_id": "click-2940",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "NONE",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-1e0611e963d5460a82d298fd8cc05799",
+      "export_state": "published",
+      "duration_seconds": 31.61,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 22183,
+      "completion_tokens": 3748,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\click-2940",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\click-2940",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "c7e75be3541a04bcc9529ee64341c98832d0700ff13355d8408dd631cbf5f0bb",
+      "buggy_commit": "36deba8a95a2585de1a2aa4475b7f054f52830ac",
+      "fixed_commit": "2a0e3ba907927ade6951d5732b775f11b54cb766",
+      "issue_url": "https://github.com/pallets/click/issues/2939",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test is a regression assertion for the expected correct behavior: it invokes a Click command whose click.File(\"r\") argument is iterated to EOF via CliRunner.invoke(cli, [\"-\"], input=\"test\\n\"), then asserts result.exit_code == 0, output == \"test\\n\", and no \"Aborted!\" (repro_tests/test_repro.py lines 14-17). Execution is real, not mocked: the observation reports click.testing being called 37 times with its origin bound to the workspace source at runs/run-17112a82b0054b799756c2bde9835b52/code/src/click/testing.py, so the target CliRunner executes. The test fails at the first check with AssertionError: assert 1 == 0, where 1 = <Result SystemExit(1)>.exit_code, i.e. the invoked command exits 1 instead of 0, which matches the contract's reported actual behavior (the buggy version exits with code 1 and aborts when standard input reaches normal end-of-file). The later output assertions (\"test\\n\", no \"Aborted!\") were not reached because the run stops at the exit-code assert, so the exact \"Aborted!\" text is inferred from the contract rather than directly observed, but the primary exit-code mismatch is matched and the failure is not an unrelated error, mock replacement, or the test merely printing words."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test exercises real Click code (target_origins shows click.testing loaded from the run's src/click/testing.py, with 37 recorded click.testing calls), defines the exact trigger described in the issue (a command with a click.File(\"r\") argument iterated in a for loop, invoked via CliRunner.invoke(cli, [\"-\"], input=\"test\\n\")), and asserts the expected correct behavior: exit_code == 0, output == \"test\\n\", and no \"Aborted!\". The real run failed at that regression assertion with `assert 1 == 0` where `1 = <Result SystemExit(1)>.exit_code`, i.e. the invocation exited with code 1 exactly as the issue's reported_actual states (buggy version exits 1 with Aborted! at EOF). The failure is a genuine assertion on the expected correct outcome, not an expectation of the undesired exception, and no mocks replace the target. The assertion is the sound regression assertion required for REPRODUCED."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_stdin_file_reaches_eof_cleanly"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.testing": 37
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_stdin_file_reaches_eof_cleanly"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "click.testing": 30
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "pallets/click",
+      "symptom": "stdin 行迭代错误中止",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/click-2940/request.json": "ecb8addbc027b1b1f3adb9e65bd461c5d8d9ce7b84a106df79c282c0a0307bd8",
+        "repro-results/expanded-repaired/click-2940/task.json": "abfc47ef2ee846ec1c52fed99417a69a9611645aa1c751ef204257ed7f659d8f",
+        "repro-results/expanded-repaired/click-2940/events.jsonl": "ea87a7c04ad9ad999e5d06608af33d4f2a1750a1dfc721f37f6a815e2b7b24f4",
+        "repro-results/expanded-repaired/click-2940/input/issue.md": "c7e75be3541a04bcc9529ee64341c98832d0700ff13355d8408dd631cbf5f0bb",
+        ".local/expanded-repaired/click-2940/trace.jsonl": "16894b9d296900a39f53e21f494330635f8826e8491ff3b51afa149567d80534",
+        ".local/expanded-repaired/click-2940/input-lock.json": "ade04a15bc4580ed3cd5a1e77b17cd340349b75881ff26df63c4bb62a65d06f4",
+        ".local/expanded-repaired/click-2940/result.json": "d711c17c71909f5b87f3e71ff5c8cc74c21a1bc096c50671d1147662ae6fd70d",
+        ".local/expanded-repaired/click-2940/independent-replays.json": "9ed4a5df3b6ca47a2d44523359af004bb6e348fcb5aea0678b0910bbbb84f684",
+        ".local/expanded-repaired/click-2940/standalone-buggy.log": "73275d832f3f8ecde3912076677e9864dc4f55ceff2265a24101d000f3acd6a2",
+        ".local/expanded-repaired/click-2940/standalone-fixed.log": "b12e2a73d84d814528b4d6d01e360ddb8405c76fc1c543c044a7d96c73905b00",
+        "repro-results/expanded-repaired/click-2940/verdicts/verdict-run-17112a82b0054b799756c2bde9835b52.json": "6cfec9f40bd82131b14f0643fa10f989429f7a8b740f76f2851c06f28aac99fb",
+        "repro-results/expanded-repaired/click-2940/verdicts/verdict-run-73a453ac49a741a3ab7407ff731cbce0.json": "9ece31f79e4d08e6aa18c711262f5c49dc0945994dc16324908ee009a593d2f1",
+        "repro-results/expanded-repaired/click-2940/contracts/contract-49f533d12dc44039b329e9decdc32091-v1.json": "2f09f66242bf5970755e925427258901c166327ee72fcfd3ec03ea73fc773c21",
+        "repro-results/expanded-repaired/click-2940/candidates/candidate-1e0611e963d5460a82d298fd8cc05799/manifest.json": "914166997bf9bb7186ffaaec47659a345efc8512907e7d9e5e04b1be9735dbaa",
+        "repro-results/expanded-repaired/click-2940/candidates/candidate-1e0611e963d5460a82d298fd8cc05799/files/repro_tests/test_repro.py": "e28278e3dc250d720f9c148ff5eb5a3e71b153e9ccb346b0f9bea109e99cc4f7",
+        "repro-results/expanded-repaired/click-2940/runs/run-17112a82b0054b799756c2bde9835b52/execution.json": "518bd134a6d839569000c27d685c5c8853dc49b087d8eac1a02b13a1ed73165b",
+        "repro-results/expanded-repaired/click-2940/runs/run-5b02d145e7f0422799c34dca311809dc/execution.json": "80d5ab78ac1c2a49e7baf90a6c0cd50b991c7d94eba291fd5af1066f165e39ec",
+        "repro-results/expanded-repaired/click-2940/runs/run-73a453ac49a741a3ab7407ff731cbce0/execution.json": "fb1d70137d2e34155124a34828438f0cd964b70ce50b1480d6663092de571dd5",
+        "repro-results/expanded-repaired/click-2940/runs/run-17112a82b0054b799756c2bde9835b52/probe.jsonl": "5887fb234256bc1751e759584bce3c1a96bb58bb91afe4e5ab77cd04c6548609",
+        "repro-results/expanded-repaired/click-2940/runs/run-5b02d145e7f0422799c34dca311809dc/probe.jsonl": "b4602222f6a2ca64dc0de1bed22bca823156ec4a83e2c6e76eccf8da4bbc2492",
+        "repro-results/expanded-repaired/click-2940/runs/run-73a453ac49a741a3ab7407ff731cbce0/probe.jsonl": "bbc8736774124140e67494b1a3934b175ee89459949119242acd518b8d6891be",
+        "repro-results/expanded-repaired/click-2940/artifacts/reproduction/manifest.json": "97f18dc42bdc0b29b38ceaada42d718086602f82a4820966641364cc8c83e075"
+      }
+    },
+    {
+      "case_id": "packaging-1360",
+      "baseline_status": "EXHAUSTED",
+      "baseline_evidence_level": "SINGLE_OBSERVATION",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-f3b5b4e3b85f486397b5ae4a0e2c2e86",
+      "export_state": "published",
+      "duration_seconds": 41.36,
+      "agent_steps": 5,
+      "model_calls": 8,
+      "prompt_tokens": 39847,
+      "completion_tokens": 5478,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\packaging-1360",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1360",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "159330a431d9b008e4ffcc949f566b4cf13f76541d1b887b3f9c6aec36d5a4e1",
+      "buggy_commit": "b097450461523502ada842f98274449ad74ff1ff",
+      "fixed_commit": "4e79787a31c99348649bb0dafee2a5078d3595be",
+      "issue_url": "https://github.com/pypa/packaging/pull/1360",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 5,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 1,
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test module exercises the real target (origin: code/src/packaging/tags.py, target_calls packaging.tags x241), with no mocks substituting the target, and each assertion encodes the expected correct behavior from the issue contract (cpython_tags/generic_tags must return [] and compatible_tags must return only cp3-none-any then py3-none-any). All three tests were collected and executed and failed under 'call' with AssertionError directly on those assertions: cpython_tags((3,11), abis=['cp311'], platforms=[]) returned 12 host win_amd64 tags including cp311-cp311-win_amd64 instead of []; generic_tags(interpreter='custom', abis=['abi'], platforms=[]) returned [custom-abi-win_amd64, custom-none-win_amd64] instead of []; compatible_tags((3,), interpreter='cp3', platforms=[]) returned [py3-none-win_amd64, cp3-none-any, py3-none-any], i.e. host platform tags in addition to the two expected 'none-any' tags. This is exactly the reported bug (platforms=[] treated as no argument, substituting host platform tags). Minor uncertainty: the contract lists the expected compatible_tags order as cp3-none-any then py3-none-any while the buggy output interleaves an extra host tag first, but this still matches the reported_actual that host platform tags are added on top of the expected tags, so the mismatch is the issue-caused failure."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate supplies three regression tests asserting the issue's expected correct behavior: cpython_tags((3,11), abis=['cp311'], platforms=[]) == [], generic_tags(interpreter='custom', abis=['abi'], platforms=[]) == [], and compatible_tags((3,), interpreter='cp3', platforms=[]) == [Tag('cp3','none','any'), Tag('py3','none','any')]. The contract source (input/issue.md) states exactly this expected behavior. The probe executed the real target: target_origins binds packaging.tags to the run's src/packaging/tags.py and target_calls records 241 calls into packaging.tags, with no mocks or host-package substitution indicated. All three tests failed on their 'call' phase with genuine AssertionErrors whose actual values contain host platform tags (e.g. win_amd64) instead of the expected empty/no-host-platform results: cpython_tags returned 12 cp311-*-win_amd64 tags, generic_tags returned [custom-abi-win_amd64, custom-none-win_amd64], and compatible_tags returned [py3-none-win_amd64, cp3-none-any, py3-none-any] rather than the two expected 'any'-platform tags. This matches the reported buggy behavior ('packaging.tags treats platforms=[] as if no argument was supplied, substituting host platform tags'), so the failure is not unrelated and is not a test merely asserting an undesired exception. Note the compatible_tags order in the actual output already places cp3-none-any before py3-none-any; the failure is caused solely by the extra host tag at index 0, which is consistent with the contract's reported_actual."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_cpython_tags_empty_platforms",
+            "repro_tests/test_repro.py::test_generic_tags_empty_platforms",
+            "repro_tests/test_repro.py::test_compatible_tags_empty_platforms"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.tags": 241
+          },
+          "failed_call_tests": 3,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_cpython_tags_empty_platforms",
+            "repro_tests/test_repro.py::test_generic_tags_empty_platforms",
+            "repro_tests/test_repro.py::test_compatible_tags_empty_platforms"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.tags": 35
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true
+        }
+      },
+      "repository": "pypa/packaging",
+      "symptom": "显式空 platforms 被替换为宿主平台",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/packaging-1360/request.json": "d17e51a7a04ca546c4558fd2c78e5865c008d9ee8cea4c34de8804e2ad6eb9e2",
+        "repro-results/expanded-repaired/packaging-1360/task.json": "2694fdf3b31f13c4146ce5add0c52c4015a624c9940bb7e7d5a7cfc068c45390",
+        "repro-results/expanded-repaired/packaging-1360/events.jsonl": "6bb0d1d3e5bdbdb5cca441aca6f6b20e437f612374a4dd440fee8dcd707b6609",
+        "repro-results/expanded-repaired/packaging-1360/input/issue.md": "159330a431d9b008e4ffcc949f566b4cf13f76541d1b887b3f9c6aec36d5a4e1",
+        ".local/expanded-repaired/packaging-1360/trace.jsonl": "60b89d20ff1ba062f9b941ec60dac5b074b1c63944bbe226f4a0b02f807a71d2",
+        ".local/expanded-repaired/packaging-1360/input-lock.json": "d9d5fe05d48bc744cd5af51bd45df1145d332cbb5715b5c6762fe9b5767c81a5",
+        ".local/expanded-repaired/packaging-1360/result.json": "46b09ccc4b2ff5cc582027014b62b9e3e118b3ca4ff4cbfdffd2b235b20a6142",
+        ".local/expanded-repaired/packaging-1360/independent-replays.json": "0d194ec797f36c2bfff5196de037ad6845000099d112e8dd05c4a306ce06155b",
+        ".local/expanded-repaired/packaging-1360/standalone-buggy.log": "c0fbedfcbfd2d80a843b76bf58d5b852ab1b4997089a4ef1eeae0951d0b2c8ee",
+        ".local/expanded-repaired/packaging-1360/standalone-fixed.log": "e3c5e0913bcdb73b8774d7d93b44721e5a1b1530f7b11acc12be50c08b4e4cfc",
+        "repro-results/expanded-repaired/packaging-1360/verdicts/verdict-run-ba359b86282e48868e7ae9d4cc023c70.json": "1d459bb394d62f1272235a7076f9f5758e73e11efeb362f6f1eae7ffa9667990",
+        "repro-results/expanded-repaired/packaging-1360/verdicts/verdict-run-fc7f7677dfa3497a90b0238f2308f3b5.json": "b0cf6a699c500fbee1501aaddacccb9c53177d9ac6229f655a510639874034ee",
+        "repro-results/expanded-repaired/packaging-1360/contracts/contract-6bf58091f57444898cab762fff420521-v1.json": "7e4c1265404abd5388bf8839ef82929e70a96eafb62ab4f5bcc732f8984a1e2b",
+        "repro-results/expanded-repaired/packaging-1360/candidates/candidate-f3b5b4e3b85f486397b5ae4a0e2c2e86/manifest.json": "31486984939c24416282f8ac9a3712066116744c2ee20d39b882615bcebd6ad5",
+        "repro-results/expanded-repaired/packaging-1360/candidates/candidate-f3b5b4e3b85f486397b5ae4a0e2c2e86/files/repro_tests/test_repro.py": "06bcf024191a206c81d1f43c0472856a378dc16fcbba34d4b1208c083c7c68eb",
+        "repro-results/expanded-repaired/packaging-1360/runs/run-a2ebb58521484751b4c494f98630ed2f/execution.json": "61aa5f96521a57ccda1e1182c6c0dd3760391b47fd5449819b0de7285edbd0d8",
+        "repro-results/expanded-repaired/packaging-1360/runs/run-ba359b86282e48868e7ae9d4cc023c70/execution.json": "70bbdf556d163caa22ee9a7e6d85f5389f0863735f5e035f76a9d099079e5557",
+        "repro-results/expanded-repaired/packaging-1360/runs/run-fc7f7677dfa3497a90b0238f2308f3b5/execution.json": "44b6de4823de0bf5df3e152f130263d2d854274564edd734c14828dc883d26db",
+        "repro-results/expanded-repaired/packaging-1360/runs/run-a2ebb58521484751b4c494f98630ed2f/probe.jsonl": "c5c48687e233a8f21d6df06e162c7a812f90176611c5fde7884aa3c2c13b0019",
+        "repro-results/expanded-repaired/packaging-1360/runs/run-ba359b86282e48868e7ae9d4cc023c70/probe.jsonl": "6aae5b0250060ecb9739ed5b6a80b4e18689b7aeb81c2132b7bd7477a839461a",
+        "repro-results/expanded-repaired/packaging-1360/runs/run-fc7f7677dfa3497a90b0238f2308f3b5/probe.jsonl": "8913c098af9bb9934206403398d52b6fc5f004bdbf3bb625d4f8775dbfb80b02",
+        "repro-results/expanded-repaired/packaging-1360/artifacts/reproduction/manifest.json": "4fef1ee516a820b38ee3b28a4f90a9542882516f475e003403988cbce6b0b1b5"
+      }
+    },
+    {
+      "case_id": "packaging-1332",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-fdde0beb08eb43d6aea9d0d5b91aa9ab",
+      "export_state": "published",
+      "duration_seconds": 38.62,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 26639,
+      "completion_tokens": 5508,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\packaging-1332",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1332",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "7afd88d56fe0e8a16b743cfa46e8b89159dada049610b4281826c89b2c6d0bf9",
+      "buggy_commit": "9c652e4b4ced3c94f133a1b91c726023f0950b4f",
+      "fixed_commit": "fe18f139c5b3d73cd9fdd9b25f1eda1b6fd7ba15",
+      "issue_url": "https://github.com/pypa/packaging/pull/1332",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate regression test asserts the correct expected behavior: `pytest.raises(packaging.requirements.InvalidRequirement)` around `packaging.requirements.Requirement(\"demo===x,y\")`, then verifies the raised exception is not a specifier-layer error. The test executes the real target: probe.jsonl records the call chain through `src/packaging/requirements.py:85` (`SpecifierSet(parsed.specifier)`) into `src/packaging/specifiers.py:813`/`:369`, and the failure is `packaging.specifiers.InvalidSpecifier: Invalid specifier: 'y'` — exactly the leaked exception described in the issue. Because the actual exception is InvalidSpecifier (not a subclass of InvalidRequirement), the `pytest.raises(InvalidRequirement)` context fails, so the observed failure matches the reported bug rather than merely accepting it. The expectation source (issue.md, same hash as contract source) and the actual failure (probe.jsonl) are both cited."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the contract's expected correct behavior: pytest.raises(packaging.requirements.InvalidRequirement) around the exact trigger packaging.requirements.Requirement(\"demo===x,y\"). This is a genuine regression expectation of the public API's malformed-requirement error, not an expectation of the undesired exception, and it is not a broad catch. The real target was executed: observations show the target module resolved to code/src/packaging/requirements.py, the call is present at test_repro.py:17, and the traceback runs through requirements.py:85 (SpecifierSet(parsed.specifier)) into specifiers.py:813 and specifiers.py:369. The observed failure is packaging.specifiers.InvalidSpecifier (\"Invalid specifier: 'y'\"), which is exactly the leak reported in the issue (InvalidSpecifier instead of InvalidRequirement); InvalidSpecifier and InvalidRequirement are sibling ValueError subclasses, so the asserted InvalidRequirement is not satisfied and the test fails. Thus the expectation assertion is meaningful, the target was truly triggered, and the failure matches the reported defect."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_malformed_requirement_raises_invalid_requirement"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.requirements": 8
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_malformed_requirement_raises_invalid_requirement"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.requirements": 4
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "pypa/packaging",
+      "symptom": "公开 API 泄漏 InvalidSpecifier",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/packaging-1332/request.json": "bb9b6782e8d623f9932bc091bca5d171f30279dd0a6561155eff951423e8263d",
+        "repro-results/expanded-repaired/packaging-1332/task.json": "7159950ccc07db7ef88d84cf233d8d8b3236830ceec8080ee83b197fab53ddc2",
+        "repro-results/expanded-repaired/packaging-1332/events.jsonl": "b9afeedfeeaf49b7815909bd6135bfd155cc10774934bee60012130549da5cbf",
+        "repro-results/expanded-repaired/packaging-1332/input/issue.md": "7afd88d56fe0e8a16b743cfa46e8b89159dada049610b4281826c89b2c6d0bf9",
+        ".local/expanded-repaired/packaging-1332/trace.jsonl": "fa49dcce3cfbda4dd942d42a7c177ffcd440b2f8d9505cf194fcd3408d75553d",
+        ".local/expanded-repaired/packaging-1332/input-lock.json": "c42fe68f67d7421194e454997b09228b7258edb4204a86070f12d9e3ada8900d",
+        ".local/expanded-repaired/packaging-1332/result.json": "75e6e6ede66c88f9eea3a48bc31a8772ab5125fbd3725d266a583ebc0264fe36",
+        ".local/expanded-repaired/packaging-1332/independent-replays.json": "1195081b4acdfd418944373d4c235c90829a68d6db61663d163e152cc9082990",
+        ".local/expanded-repaired/packaging-1332/standalone-buggy.log": "4dd2824de19ac16df22af657505d1ec4125069838f3e7722a2d8d61aca4ab13b",
+        ".local/expanded-repaired/packaging-1332/standalone-fixed.log": "c650684da631a53569764f5af8f60c3e0d0a19a4321a45fbbac8d3f55d3a7118",
+        "repro-results/expanded-repaired/packaging-1332/verdicts/verdict-run-4e1e9c3e021b43e09af5a140b9f00f44.json": "e78086d5ef3804674a6ef1c06bb83b4a26d6805f4126caedd4d7a533d28abf51",
+        "repro-results/expanded-repaired/packaging-1332/verdicts/verdict-run-6630cba2d4ff4e4eb8c6d0b5e4303eef.json": "c7d634585a98fe4d006c3cbe1c10cdee91f68bfbb9027a028bea4544a9fb41cd",
+        "repro-results/expanded-repaired/packaging-1332/contracts/contract-dfa17ffcb1fb40fca74ed8739b1fa7bc-v1.json": "ceae7e1915d93c72ef014cf83ffd28582087db19948e035e1861d091718b7701",
+        "repro-results/expanded-repaired/packaging-1332/candidates/candidate-fdde0beb08eb43d6aea9d0d5b91aa9ab/manifest.json": "02e6a2e5bbfd1936e8a4073533bc3ab8ef670c1b65202d9c1225bf99c49ba9dd",
+        "repro-results/expanded-repaired/packaging-1332/candidates/candidate-fdde0beb08eb43d6aea9d0d5b91aa9ab/files/repro_tests/test_repro.py": "685ec6df62e221eaa28dc552248d8058b75559b0d2d9debf94eb24636c1852e4",
+        "repro-results/expanded-repaired/packaging-1332/runs/run-4e1e9c3e021b43e09af5a140b9f00f44/execution.json": "12235973ab3afa31c15844db1d5cfba4ca722adb2e7e9c032796e687c5267529",
+        "repro-results/expanded-repaired/packaging-1332/runs/run-6630cba2d4ff4e4eb8c6d0b5e4303eef/execution.json": "b73d01d61a3810b324dafb0dbad255e61acc229f84412da3354bfea2541006ee",
+        "repro-results/expanded-repaired/packaging-1332/runs/run-c8f7448850cf454bb415f0278bdaccca/execution.json": "ceda4f8184a25b412a6b76a353cf14a84c9dde2c0f8361d45375d048aad07de3",
+        "repro-results/expanded-repaired/packaging-1332/runs/run-4e1e9c3e021b43e09af5a140b9f00f44/probe.jsonl": "d688f9c08f395c2fde8190693a7c773481f13faf2173dad497af788decbfcaf8",
+        "repro-results/expanded-repaired/packaging-1332/runs/run-6630cba2d4ff4e4eb8c6d0b5e4303eef/probe.jsonl": "a0d9979287124e37910498bdeb0338508a2ba1da75f69466f79a501ee90fa4df",
+        "repro-results/expanded-repaired/packaging-1332/runs/run-c8f7448850cf454bb415f0278bdaccca/probe.jsonl": "e27b5ae1f1d97aedc10701ec6c41fc6094934f37bea053e0aa1e54b351a2b3ff",
+        "repro-results/expanded-repaired/packaging-1332/artifacts/reproduction/manifest.json": "92f5e03d99ab3ced8d94cbb27c57421d28439490eedc9cc8c839fc8937b8158e"
+      }
+    },
+    {
+      "case_id": "packaging-1328",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-34da08678d4f401e8cc77ddf0332182c",
+      "export_state": "published",
+      "duration_seconds": 39.44,
+      "agent_steps": 7,
+      "model_calls": 10,
+      "prompt_tokens": 44476,
+      "completion_tokens": 4787,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\packaging-1328",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\packaging-1328",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\expanded-cases\\target-env\\Scripts\\python.exe",
+      "description_hash": "90707953a49499f6886ede07eb945c692299a2621e078f7429e409caf823852a",
+      "buggy_commit": "458b0ae53e5a4261df851657d147e590b4546eb2",
+      "fixed_commit": "1a9c4cb6b6aac7fb6137fcdc4f440af912d8d87f",
+      "issue_url": "https://github.com/pypa/packaging/pull/1328",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 7,
+          "verdict": 2
+        },
+        "actions": {
+          "invalid_json": 2,
+          "search_code": 1,
+          "read_file": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate is a genuine regression test that imports the real target (packaging.metadata.InvalidMetadata, confirmed by target_origins and target_calls of 75) and asserts the correct post-pickle behavior: no TypeError from pickle.loads(pickle.dumps(error)), type(restored) is InvalidMetadata, restored.field == \"version\", and str(restored) == \"bad version\". All four call-phase tests failed exactly as the issue reports, with 'TypeError: InvalidMetadata.__init__() missing 1 required positional argument: message' raised at the pickle.loads line during unpickling (err shown as InvalidMetadata('bad version')), and collection completed with no errors or deselections, so there is no environment blockage. The failure is the precise reported defect rather than an unrelated or expected-exception assertion, and it is cited against the issue's stated expectation."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate tests assert the contract's expected correct behavior for a local pickle round trip of packaging.metadata.InvalidMetadata: no TypeError, same InvalidMetadata type, field == \"version\", and same message. The real pytest probe executed the packaging.metadata target and all four tests failed during pickle.loads(pickle.dumps(err)) with TypeError: InvalidMetadata.__init__() missing 1 required positional argument: 'message', which directly matches the issue's reported buggy behavior of a TypeError during unpickling. Thus the regression assertion is present, the target was actually executed, and the observed failure matches the issue."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_does_not_raise",
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_preserves_type",
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_preserves_field",
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_preserves_message"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.metadata": 75
+          },
+          "failed_call_tests": 4,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_does_not_raise",
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_preserves_type",
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_preserves_field",
+            "repro_tests/test_repro.py::test_invalid_metadata_pickle_round_trip_preserves_message"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "packaging.metadata": 83
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 4,
+          "verified": true
+        }
+      },
+      "repository": "pypa/packaging",
+      "symptom": "InvalidMetadata pickle 重建失败",
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/packaging-1328/request.json": "5d733c830b8770f1f3cac7f14939e834fd791beccdd3fb0198a4ba4088cc5717",
+        "repro-results/expanded-repaired/packaging-1328/task.json": "a2e0d392839bf8d6020fb5ad922f734187bb1c8701f101d6d31e6effab79f754",
+        "repro-results/expanded-repaired/packaging-1328/events.jsonl": "0bf1449f882a311d1a8c143465931b130e74bedb0e427dea3a89cb1af92189bf",
+        "repro-results/expanded-repaired/packaging-1328/input/issue.md": "90707953a49499f6886ede07eb945c692299a2621e078f7429e409caf823852a",
+        ".local/expanded-repaired/packaging-1328/trace.jsonl": "03e2124a9d2e95ac555748616d9c1b4aca4d8a00820b7140ebc97cf2ea0f546e",
+        ".local/expanded-repaired/packaging-1328/input-lock.json": "5f05c714ae3cab53bf6a8bc6cc794295e05b07e285f3aeed9f8e8cfecb86ed69",
+        ".local/expanded-repaired/packaging-1328/result.json": "96c08b6caef68fb319be13e25babe4c2fc50c5a31842714d5525c34d37385f79",
+        ".local/expanded-repaired/packaging-1328/independent-replays.json": "9b2513eed18795ba2bc8d683d2b5fa8049a20b73ce82c61d12786e1bd6237cab",
+        ".local/expanded-repaired/packaging-1328/standalone-buggy.log": "45ef1887f3879317d0aa8466a787e48f9e5d37649953d6544075d83b7b6243d7",
+        ".local/expanded-repaired/packaging-1328/standalone-fixed.log": "d846baf326ecfd8acc8a7ecab89daafb4202cb0138e5263c799b6c65111d0024",
+        "repro-results/expanded-repaired/packaging-1328/verdicts/verdict-run-66c0b974e51d4f9d8d5c9eaa4b13165c.json": "747c44d21b6332e1f2c4d0efa6e96b9d13492a8e96410e8b54cbf1363fa62499",
+        "repro-results/expanded-repaired/packaging-1328/verdicts/verdict-run-eea8d8d45ee54ea7912afe8b9dbed728.json": "f663580a6807ec30646d8fc9ade7eb2623402ef5941478b0f564db40a8d99f3e",
+        "repro-results/expanded-repaired/packaging-1328/contracts/contract-524133aa6e5647ad8aed3785efd72610-v1.json": "122dcd18deb0b94387dc5e454541e9c52a17f1654dbadefecadf2ec9f17fb871",
+        "repro-results/expanded-repaired/packaging-1328/candidates/candidate-34da08678d4f401e8cc77ddf0332182c/manifest.json": "1d8b07dd3d48ac1f126839cd3073739cb8d773c7bc9a47c636ed4977f99844e4",
+        "repro-results/expanded-repaired/packaging-1328/candidates/candidate-34da08678d4f401e8cc77ddf0332182c/files/repro_tests/test_repro.py": "f52bc560d885117f9b1e08b5e4ae5bdf1f56e7749357832d3d0fcfe6fabe2ff6",
+        "repro-results/expanded-repaired/packaging-1328/runs/run-30e8d10309e64bca9a51fac8d732e93c/execution.json": "f08e22cb2dff26a1d5e3f6f2bbbfe827c35b85107e251be57249b85fa025ff1f",
+        "repro-results/expanded-repaired/packaging-1328/runs/run-66c0b974e51d4f9d8d5c9eaa4b13165c/execution.json": "94148c9df9ad117fb760c1b9f1dca4079f1d99d977a9bb4e9139d488b85d971f",
+        "repro-results/expanded-repaired/packaging-1328/runs/run-eea8d8d45ee54ea7912afe8b9dbed728/execution.json": "c1025de405517ab7516b8b5ffa313e93c3d44e4b3c6c32a2a5885f0162c8e03a",
+        "repro-results/expanded-repaired/packaging-1328/runs/run-30e8d10309e64bca9a51fac8d732e93c/probe.jsonl": "25c5e20da471fcbccd643c05e0230d390a9edd93efa02b57a829ea87877f43f1",
+        "repro-results/expanded-repaired/packaging-1328/runs/run-66c0b974e51d4f9d8d5c9eaa4b13165c/probe.jsonl": "4167a1ea47f46c03ef1b27430bba077527198987d052e340a38275198e348ce7",
+        "repro-results/expanded-repaired/packaging-1328/runs/run-eea8d8d45ee54ea7912afe8b9dbed728/probe.jsonl": "62b525f8e8f9c8d767b89f27164386768193d9a457bfa7332a7f71965784957e",
+        "repro-results/expanded-repaired/packaging-1328/artifacts/reproduction/manifest.json": "e79a8a5fd6c0a67a7f55662dd2ff357c624a74208e7df97a5bcb9a078cc49134"
+      }
+    },
+    {
+      "case_id": "more-itertools-645",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-068f6cd5d345429cb9904067974a2e29",
+      "export_state": "published",
+      "duration_seconds": 23.16,
+      "agent_steps": 3,
+      "model_calls": 6,
+      "prompt_tokens": 15058,
+      "completion_tokens": 2646,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\more-itertools-645",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\more-itertools-645",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.tmp\\package-envs\\target\\Scripts\\python.exe",
+      "description_hash": "a47c74aefc35d3c042ba09bcbaa974bb69e3eaac2aed01681e41082e1da50984",
+      "buggy_commit": "8a27da60d70fbfc348b124ce89733d8a7104977a",
+      "fixed_commit": "9a1168a13e38e35396d1f4722f4a204f585cdda1",
+      "issue_url": "https://github.com/more-itertools/more-itertools/issues/462",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 3,
+          "verdict": 2
+        },
+        "actions": {
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test directly triggers the reported path by calling list(more_itertools.windowed((), 2)) and asserts the expected correct behavior (result == [], length 0, no (None, None) tuple). The probe executed the real target (target_calls shows more_itertools.more 15 times, source binding ok, target_origins pointing at more_itertools/more.py), and the recorded failure at tests/test_repro.py:6 is `assert [(None, None)] == []` with the message noting the extra (None, None) item. This exactly matches the issue's reported actual behavior of returning one all-None window instead of no windows, and contradicts the issue's expected output of []. The assertion is a genuine regression assertion for correct behavior, not an expectation of the undesired exception, and no mock replaced the target."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test exercises the real more_itertools.more.windowed target with an empty iterable and positive window size 2, and its assertion result == [] encodes the issue's expected correct behavior. pytest executed and failed at tests/test_repro.py line 6 with actual result [(None, None)], which exactly matches the reported buggy behavior of producing one all-None window. The expectation source and the observed failure are both cited."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_windowed_empty_iterable_positive_size"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "more_itertools.more": 15
+          },
+          "failed_call_tests": 1,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_windowed_empty_iterable_positive_size"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "more_itertools.more": 14
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 1,
+          "verified": true
+        }
+      },
+      "repository": "more-itertools/more-itertools",
+      "symptom": null,
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/more-itertools-645/request.json": "0e24ab63461d3ff5cbb128b5cce423f3481d9216e6b90eab1348e2b3124e91ac",
+        "repro-results/expanded-repaired/more-itertools-645/task.json": "0cbc3652783d03b2d308ed1c653d5e8fabcd80437d1f38078fcb1d3a3214e814",
+        "repro-results/expanded-repaired/more-itertools-645/events.jsonl": "6d00d74b167e3f19afbfbf14e903ed36cd74c6ffdc067b0a0acc0ab019868ae1",
+        "repro-results/expanded-repaired/more-itertools-645/input/issue.md": "a47c74aefc35d3c042ba09bcbaa974bb69e3eaac2aed01681e41082e1da50984",
+        ".local/expanded-repaired/more-itertools-645/trace.jsonl": "2b9d93ae162d23e6001245aa4e4f1663ed7cb9c30b292100b9b4f1b4240e524e",
+        ".local/expanded-repaired/more-itertools-645/input-lock.json": "ffc5985d4152b9e3905f50991808cee4388974bb0fb9c7a8af00c48e2e785905",
+        ".local/expanded-repaired/more-itertools-645/result.json": "a8d54f9e3403b1f67af238548fc2b26e1e5233d6559e935d8adbbd547dbf6000",
+        ".local/expanded-repaired/more-itertools-645/independent-replays.json": "da159238bdd2bd45b1984d7edc4a7b74e725a092612a28d7e8b7d3a238100d5e",
+        ".local/expanded-repaired/more-itertools-645/standalone-buggy.log": "e489d74a4f45cf1fb9a8167c0dabd41b5176cf1350cd6a9f55695cf9797ea67c",
+        ".local/expanded-repaired/more-itertools-645/standalone-fixed.log": "04b5920db66f102066227aaf163735208769e10c8ff47d8d6e76b73a85efc3cb",
+        "repro-results/expanded-repaired/more-itertools-645/verdicts/verdict-run-de447faf180f4433849df5533f677f64.json": "f2c6042ad4aeb5b5e5bfb90923c66fd8453a92e49f429e58e4067715b924222c",
+        "repro-results/expanded-repaired/more-itertools-645/verdicts/verdict-run-dfcb13ec1fc54801b32fb1ae697a0e03.json": "1606a2823afae8b01cea4bc8854add1d07c707afe157f35645f33025b01ead82",
+        "repro-results/expanded-repaired/more-itertools-645/contracts/contract-fe4c77ef9136405695137655afc08652-v1.json": "a5e792fe618dd4ab26d6ab7a397c053f10fcc7209639722b709f9bada414513d",
+        "repro-results/expanded-repaired/more-itertools-645/candidates/candidate-068f6cd5d345429cb9904067974a2e29/manifest.json": "e0c9a1e79501f88fcbf03d33e10f607eaeadb3220a1ef4d7c2f07554c7da482c",
+        "repro-results/expanded-repaired/more-itertools-645/candidates/candidate-068f6cd5d345429cb9904067974a2e29/files/tests/test_repro.py": "847dc2cb583bc918863804ec033a88d7a706c77019f85ce7cec5283c2c2b1eed",
+        "repro-results/expanded-repaired/more-itertools-645/runs/run-9d274405baf84d6db7f01fbd5e6fd259/execution.json": "42d260e697078e11123a50107f3f3e154feb01c1cd82cd55d65d5475986ae076",
+        "repro-results/expanded-repaired/more-itertools-645/runs/run-de447faf180f4433849df5533f677f64/execution.json": "823388cd99ef0592c9bfa92fa69218f344eb49aaf915ec2887577bb941745802",
+        "repro-results/expanded-repaired/more-itertools-645/runs/run-dfcb13ec1fc54801b32fb1ae697a0e03/execution.json": "2435ba63dec710b25343a95960708a206b207178517fc65a61c72d27afd53224",
+        "repro-results/expanded-repaired/more-itertools-645/runs/run-9d274405baf84d6db7f01fbd5e6fd259/probe.jsonl": "5250663b0db8545b0ceef1c4d9e3c6424438d3618edbca77b821bebe2fb1f51b",
+        "repro-results/expanded-repaired/more-itertools-645/runs/run-de447faf180f4433849df5533f677f64/probe.jsonl": "34ac365269fd8035d7c4a40f9e72dc14d678f78b99b6fcc49f365c7d9686c80a",
+        "repro-results/expanded-repaired/more-itertools-645/runs/run-dfcb13ec1fc54801b32fb1ae697a0e03/probe.jsonl": "7f4d2d3a3ffa4de642550e70928124f229ed19d7a93875940a6611d68782413f",
+        "repro-results/expanded-repaired/more-itertools-645/artifacts/reproduction/manifest.json": "3dd7263c3465ce2438f0085052fe88c7355034d31dd90c99d46ea50a600725e2"
+      }
+    },
+    {
+      "case_id": "humanize-250",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-41a1d27a52d64c0596eb3c1a096a098a",
+      "export_state": "published",
+      "duration_seconds": 33.16,
+      "agent_steps": 4,
+      "model_calls": 7,
+      "prompt_tokens": 26024,
+      "completion_tokens": 3763,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\humanize-250",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\humanize-250",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.tmp\\package-envs\\target\\Scripts\\python.exe",
+      "description_hash": "40cf8bc7e3009b405fc797f62658e9b0b48e29ea7ed461a56acd0e3c71579707",
+      "buggy_commit": "8059ebe1732c89177709476165f6e87cc76fe1b7",
+      "fixed_commit": "2968d44280a68f775db73ddeb2f2fc6c05edac84",
+      "issue_url": "https://github.com/python-humanize/humanize/pull/250",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 4,
+          "verdict": 2
+        },
+        "actions": {
+          "search_code": 1,
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The contract expects naturalsize(1.0, gnu=False) and naturalsize(\"1\", gnu=False) to both return \"1 Byte\", matching naturalsize(1, gnu=False). The candidate tests assert exactly that expected-correct behavior (not the undesired exception). Real execution shows the target was exercised (humanize.filesize entered 4 times, origin src/humanize/filesize.py, no mocks), and the two float/str tests failed with the exact reported symptom: AssertionError '1.0 Byte' == '1 Byte' at tests/test_repro.py lines 7 and 11, while the integer reference test passed. This matches the reported actual behavior ('1.0 Byte' for float/numeric-string one-byte inputs) and the issue expectation, so the regression is reproduced."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the expected correct behavior for both reported inputs: naturalsize(1.0, gnu=False) and naturalsize(\"1\", gnu=False) should equal \"1 Byte\". Execution against the local snapshot triggered the real target and failed on both inputs with actual value '1.0 Byte', exactly matching the reported actual behavior; the integer reference case passed as expected."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_naturalsize_float_one_gnu_false",
+            "tests/test_repro.py::test_naturalsize_str_one_gnu_false",
+            "tests/test_repro.py::test_naturalsize_int_one_gnu_false_reference"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "humanize.filesize": 4
+          },
+          "failed_call_tests": 2,
+          "passed_call_tests": 1,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_naturalsize_float_one_gnu_false",
+            "tests/test_repro.py::test_naturalsize_str_one_gnu_false",
+            "tests/test_repro.py::test_naturalsize_int_one_gnu_false_reference"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "humanize.filesize": 4
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true
+        }
+      },
+      "repository": "python-humanize/humanize",
+      "symptom": null,
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/humanize-250/request.json": "fefa8c335f4361419eac89b60c998b4923cc05054d62a1e3f06f318d14ff18ea",
+        "repro-results/expanded-repaired/humanize-250/task.json": "82574e94269b75c4a2f93142c8c216ceb3a3d0ca27c0cc99ad4eae9912f7a230",
+        "repro-results/expanded-repaired/humanize-250/events.jsonl": "f7fb0b198d09f8580adcfffc1d2c24d24d444c8a060b9a883445b1303c2bf497",
+        "repro-results/expanded-repaired/humanize-250/input/issue.md": "40cf8bc7e3009b405fc797f62658e9b0b48e29ea7ed461a56acd0e3c71579707",
+        ".local/expanded-repaired/humanize-250/trace.jsonl": "6d178a7bdeec020473a1402571ca928c3b72ba71d904fcf2ef592b245ade6bf9",
+        ".local/expanded-repaired/humanize-250/input-lock.json": "c12510172105ac3a26b3d461236efb4977583fb893df832f4bd15958e5b424ee",
+        ".local/expanded-repaired/humanize-250/result.json": "0b5da01e159c990a590d312ac1fccca66fdb797e4e3104541693b85a7b3afadb",
+        ".local/expanded-repaired/humanize-250/independent-replays.json": "ddba50560607e3c0470cb0f7fefd6fab5aef6b6c016e241b9593db3e82f04374",
+        ".local/expanded-repaired/humanize-250/standalone-buggy.log": "8f67eaa2ce7258f82c7c43bb8425df1bdd69828df3a6009e675e74fd67226834",
+        ".local/expanded-repaired/humanize-250/standalone-fixed.log": "1c4a6ca9167b86a83a4b29e9b0e956a3ee79deca2c26df7b7898c1a3ff5cddfa",
+        "repro-results/expanded-repaired/humanize-250/verdicts/verdict-run-2bd5ddfa13c04f309b62e3fc4d5f5289.json": "bc1ba69c181001a0b3644bdc53d4eb6238a2315f0a71c96c5e2e176fd1f8c543",
+        "repro-results/expanded-repaired/humanize-250/verdicts/verdict-run-9401905c0fa849fc9fd578fb98f9d5f6.json": "f696924a60c7ab21658fc519188555e385f42320a7e855e2043dd8ff86f7f57d",
+        "repro-results/expanded-repaired/humanize-250/contracts/contract-240fd53c14394eefb001e8f831147855-v1.json": "553c56f8a45569fcab8792c95d7eb1e4888c396ab6f1daf3ab9902225c75abec",
+        "repro-results/expanded-repaired/humanize-250/candidates/candidate-41a1d27a52d64c0596eb3c1a096a098a/manifest.json": "1d31888713f7cf5edb33274200c781bd6a226e01e0fca0629cb81f0c593f6b10",
+        "repro-results/expanded-repaired/humanize-250/candidates/candidate-41a1d27a52d64c0596eb3c1a096a098a/files/tests/test_repro.py": "26d3309f2341e200928dd537fda356d6a03a093bddf141ada4e2f558aaa59a2d",
+        "repro-results/expanded-repaired/humanize-250/runs/run-2bd5ddfa13c04f309b62e3fc4d5f5289/execution.json": "c99f3d8422c90481f98ac9654ac0dbd1bf1f091e9563bd0fd812db0b7b2301ef",
+        "repro-results/expanded-repaired/humanize-250/runs/run-806afaded47845338e66a82b689e3af9/execution.json": "1f9899fbfae0fd88e7711452c94d963a3dc7f93c880ef4f8e975137c005aaeea",
+        "repro-results/expanded-repaired/humanize-250/runs/run-9401905c0fa849fc9fd578fb98f9d5f6/execution.json": "41821b413af19fb9c580493794cc23a3cc0c9d3b4153d002df5aea324c72fc9f",
+        "repro-results/expanded-repaired/humanize-250/runs/run-2bd5ddfa13c04f309b62e3fc4d5f5289/probe.jsonl": "852a628ba51eb081a8dd6dd15dcf90c97655aaa8a591f17bb92783abc77df14b",
+        "repro-results/expanded-repaired/humanize-250/runs/run-806afaded47845338e66a82b689e3af9/probe.jsonl": "85ab308bd8bb2904b2d6f91c2f0b8436faa2bfcf28225cc61c196b4004754123",
+        "repro-results/expanded-repaired/humanize-250/runs/run-9401905c0fa849fc9fd578fb98f9d5f6/probe.jsonl": "bd5ebaf1364ea18e4adc84b74309e874bf623f4c44a5aa61c91f9c8f54c460d7",
+        "repro-results/expanded-repaired/humanize-250/artifacts/reproduction/manifest.json": "a1da01e3d03f39b14528902438e7e5eeb6538540e8dcce69e7f0c12a55288ae3"
+      }
+    },
+    {
+      "case_id": "humanize-254",
+      "baseline_status": "DONE",
+      "baseline_evidence_level": "DIFFERENTIAL_VALIDATED",
+      "status": "DONE",
+      "evidence_level": "DIFFERENTIAL_VALIDATED",
+      "stop_reason": "",
+      "uncertainties": [],
+      "accepted_candidate_id": "candidate-f49d2d0ea5114864a0a2982f97c526a5",
+      "export_state": "published",
+      "duration_seconds": 34.59,
+      "agent_steps": 3,
+      "model_calls": 6,
+      "prompt_tokens": 25831,
+      "completion_tokens": 4481,
+      "cost_kind": "unknown",
+      "cost_value": null,
+      "output_dir": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\repro-results\\expanded-repaired\\humanize-254",
+      "source_folder": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.local\\historical-cases\\humanize-254",
+      "target_python": "C:\\Users\\Dell\\Documents\\Codex\\2026-10-03\\ni\\.tmp\\package-envs\\target\\Scripts\\python.exe",
+      "description_hash": "33451928e5728ccfd1d1f88d0ab6a5525d47e389e15aa407ce67e4c3ffa16d0f",
+      "buggy_commit": "58d10b43175a22eb9ece2c6f3dcff6b6b681e2df",
+      "fixed_commit": "0f5d2948d674a88a611f8e341c0df520767b1b80",
+      "issue_url": "https://github.com/python-humanize/humanize/issues/14",
+      "limits": {
+        "agent_steps": 12,
+        "command_timeout_seconds": 30.0,
+        "task_timeout_seconds": 240.0,
+        "cleanup_timeout_seconds": 10,
+        "finalize_timeout_seconds": 5,
+        "model_cost_limit": null,
+        "log_bytes": 33554432,
+        "tool_response_bytes": 32768
+      },
+      "model_config": {
+        "base_url": "https://api.deepseek.com",
+        "model": "deepseek-flash",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "max_output_tokens": 4096,
+        "output_limit_field": "max_tokens",
+        "input_cost_per_million": null,
+        "output_cost_per_million": null
+      },
+      "human_supplements": 0,
+      "human_judgement": null,
+      "export_replayed": true,
+      "generated_candidates": 1,
+      "candidate_executions": 3,
+      "analysis": {
+        "response_kinds": {
+          "contract": 1,
+          "action": 3,
+          "verdict": 2
+        },
+        "actions": {
+          "write_candidate": 1,
+          "run_candidate": 1,
+          "submit_candidate": 1
+        },
+        "tool_errors": [],
+        "identical_actions_repeated": 0,
+        "contract_missing_information": [
+          []
+        ],
+        "verdicts": [
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test calls the real target humanize.precisedelta(datetime.timedelta(days=31/92/32), minimum_unit='days', format='%d') and asserts the issue's expected exact strings, so it encodes the expected correct behavior rather than the undesired output. Target execution is confirmed: target_calls records humanize.time calls and target_origins binds humanize.time to the repo source file src/humanize/time.py, with no mocks. All three calls fail with outputs matching the reported defect: '1 month and 0 days' vs '1 month' (extra zero-value unit), '3 months and 0 days' vs '3 months' (extra zero-value unit), and '1 month and 1 days' vs '1 month and 1 day' (incorrect pluralization of the day component). The days=92 case shows '3 months and 0 days' rather than the issue's verbatim '3 month and 0 days', but this is a minor wording difference in the reported actual; the same defect (spurious 'and 0 days' component plus pluralization) is reproduced. Test outcomes for all three parametrizations are failed at the assertion line, and collection/execution completed without environment errors."
+          },
+          {
+            "classification": "REPRODUCED",
+            "reason": "The candidate test asserts the issue's expected correct behavior: precisedelta(timedelta(days=31), minimum_unit='days', format='%d') == '1 month', days=92 == '3 months', and days=32 == '1 month and 1 day'. Pytest collected and executed the real humanize.precisedelta target (target_calls humanize.time=44, source_binding_ok=true) with no mocks replacing it, and all three parametrized cases failed at tests/test_repro.py:17 with assertions comparing the actual outputs '1 month and 0 days', '3 months and 0 days', and '1 month and 1 days' to the expected strings. These failures match the issue's core defects: spurious zero-day components ('and 0 days') and the pluralization error ('1 days' instead of '1 day'). The only minor discrepancy is that the issue reported days=92 as '3 month and 0 days' while the observed output is '3 months and 0 days' (the month pluralization is already correct); this does not affect the reproduced zero-day/pluralization defect that the assertion captures."
+          }
+        ]
+      },
+      "independent_replays": {
+        "buggy": {
+          "exit_code": 1,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_precisedelta_format_no_zero_units[delta0-1 month]",
+            "tests/test_repro.py::test_precisedelta_format_no_zero_units[delta1-3 months]",
+            "tests/test_repro.py::test_precisedelta_format_no_zero_units[delta2-1 month and 1 day]"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "humanize.time": 44
+          },
+          "failed_call_tests": 3,
+          "passed_call_tests": 0,
+          "verified": true
+        },
+        "fixed": {
+          "exit_code": 0,
+          "probe_complete": true,
+          "executed": true,
+          "same_completed_nodes": true,
+          "completed_nodeids": [
+            "tests/test_repro.py::test_precisedelta_format_no_zero_units[delta0-1 month]",
+            "tests/test_repro.py::test_precisedelta_format_no_zero_units[delta1-3 months]",
+            "tests/test_repro.py::test_precisedelta_format_no_zero_units[delta2-1 month and 1 day]"
+          ],
+          "target_origins_in_fresh_copy": true,
+          "target_calls": {
+            "humanize.time": 44
+          },
+          "failed_call_tests": 0,
+          "passed_call_tests": 3,
+          "verified": true
+        }
+      },
+      "repository": "python-humanize/humanize",
+      "symptom": null,
+      "complete_pipeline": true,
+      "codex_correctness_review": {
+        "reviewed": false,
+        "independent_human": false
+      },
+      "evidence_sha256": {
+        "repro-results/expanded-repaired/humanize-254/request.json": "21d02e9347a67a47e99559e43d66b3b743b56b5b5a137c09d4997afcb6e7fb64",
+        "repro-results/expanded-repaired/humanize-254/task.json": "cd5130bfac9472b1338bb443ecee7d65d189b8dddf841d3afe52a86c7a13ef7c",
+        "repro-results/expanded-repaired/humanize-254/events.jsonl": "fc72361b0dd2e7f3b384c0a9491fc4915d816603da4a55abb106adfec3a7009f",
+        "repro-results/expanded-repaired/humanize-254/input/issue.md": "33451928e5728ccfd1d1f88d0ab6a5525d47e389e15aa407ce67e4c3ffa16d0f",
+        ".local/expanded-repaired/humanize-254/trace.jsonl": "f4a20729d50b7b06c5d36995a025c848ae2075e627c7e4d478a5f0eba8d28032",
+        ".local/expanded-repaired/humanize-254/input-lock.json": "8ae47458a35cfbea0729ee3271151d168e611b268b92383b0dfdbdd96df5c51f",
+        ".local/expanded-repaired/humanize-254/result.json": "f9f0dc2fde78ee1b7d6b2f5cd827e87457a01b3722c5a5a95d966358c695f7c9",
+        ".local/expanded-repaired/humanize-254/independent-replays.json": "ecfad9e4149b754a5f38857abb18b59dfafb3215024518240c5569eb8b59da5f",
+        ".local/expanded-repaired/humanize-254/standalone-buggy.log": "e7653605cde81fd56fa793555801b639dd76fac22b2f829751e30b0f6c74cd69",
+        ".local/expanded-repaired/humanize-254/standalone-fixed.log": "645253e0652baa9d004ad692a612ac9a984c4b52e102c34f65a9d1664611bcd9",
+        "repro-results/expanded-repaired/humanize-254/verdicts/verdict-run-21222696148f45ce9c3607068d07ca9b.json": "4a919a02fd09632627e61b0f6341ecb6c207d27e871c836f3b986b726d686daf",
+        "repro-results/expanded-repaired/humanize-254/verdicts/verdict-run-2b58c8e6f0c1438183c8726e96fe3b10.json": "d2e636dc089a75a9f38e1d062e03b287bd1023538b306b1cde93dc0442a20c97",
+        "repro-results/expanded-repaired/humanize-254/contracts/contract-5b3aba4d397d4578a195958756431138-v1.json": "8c1364cf7223797a535a96f51a8371966ec8572866c63f99913231b4d11821cd",
+        "repro-results/expanded-repaired/humanize-254/candidates/candidate-f49d2d0ea5114864a0a2982f97c526a5/manifest.json": "4a88c67e9b8fc85abc72b39b70d59134077222c5d36ec3cd010544c7480aedd1",
+        "repro-results/expanded-repaired/humanize-254/candidates/candidate-f49d2d0ea5114864a0a2982f97c526a5/files/tests/test_repro.py": "c79d4af7209e1644cc119f0f30b137d4e8ce085a991a3768389d490d4ee648a4",
+        "repro-results/expanded-repaired/humanize-254/runs/run-21222696148f45ce9c3607068d07ca9b/execution.json": "fbf0b9cc4d38906777b12dad59d5ba71e69bf30c1c152d8cd2b80a16928a024b",
+        "repro-results/expanded-repaired/humanize-254/runs/run-2b58c8e6f0c1438183c8726e96fe3b10/execution.json": "6862f25e9d224658484e91949312ed7ededf396d9d5f6eaeb6de1e7ed520ef18",
+        "repro-results/expanded-repaired/humanize-254/runs/run-ca195574961a44f7bab75148bc261d38/execution.json": "377ca355b21411ab532a8b26434d80ee1cd7c6207cd7f9589a323fea25d5ed3a",
+        "repro-results/expanded-repaired/humanize-254/runs/run-21222696148f45ce9c3607068d07ca9b/probe.jsonl": "b7e4a507a16cfb77a9c8635a70932277ce03082a84e103b2dda496ea8757a341",
+        "repro-results/expanded-repaired/humanize-254/runs/run-2b58c8e6f0c1438183c8726e96fe3b10/probe.jsonl": "b90ae48e2ef592aef15c12c32536b6ced2e2dea799c241d84638d31399b64efc",
+        "repro-results/expanded-repaired/humanize-254/runs/run-ca195574961a44f7bab75148bc261d38/probe.jsonl": "c9a5b01feefcb0b498d360e08cc7e8cb5bfb7408c6db77208ef04e7e03b2d9ce",
+        "repro-results/expanded-repaired/humanize-254/artifacts/reproduction/manifest.json": "fc8b2b16fef886de87556b5bf10e882335e2d6fb3d765dc6ba57eaa187012637"
+      }
+    }
+  ]
+}
