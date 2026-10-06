@@ -64,7 +64,7 @@ Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9 已首次执行 
 CI 同时改为安装 .[dev,agentscope]：此前不装该可选依赖时，3 个 SDK 集成模块的 module 级 importorskip 使约 22 个用例塌缩为 3 条 skip，CI 全绿也不覆盖 SDK 路径。
 验证：三类失败在本地逐一复现（含用目录 junction 复现链接解析差异；文件符号链接在 Windows 需提权，venv 后果由下述 CI 直接暴露）；克隆出无 .venv 的仓库并按 workflow 步骤安装后，全量离线测试 244 passed、1 skipped，pip check 无冲突。
 首次执行回执：https://github.com/kyy-logs/ReproAgent/actions/runs/37455797100
-第二次执行（runs/37463036547）：Windows 9/9 通过，Ubuntu 9/9 失败，失败集中在 SWT 评测链路 7 项，根因为同一 resolve 缺陷的评测绑定层实例。该失败直接证实此前只能推理的后果：解析后的解释器不在原 venv 内，`import pytest` 失败，预检报 blocked，下游用例不启动。补齐评测层修复后本地全量 244 passed、1 skipped。第三次执行结果待确认，通过前该矩阵仍不视为已验证。
+第二次执行（runs/37463036547）：Windows 9/9 通过，Ubuntu 9/9 失败，失败集中在 SWT 评测链路 7 项，根因为同一 resolve 缺陷的评测绑定层实例。该失败直接证实此前只能推理的后果：解析后的解释器不在原 venv 内，`import pytest` 失败，预检报 blocked，下游用例不启动。补齐评测层修复后本地全量 244 passed、1 skipped。第三次执行（runs/37464232536）18/18 通过：Windows 245 passed，Ubuntu 240 passed、5 skipped（仅 Windows 启动器用例），两侧 pip check 均无冲突；SDK 集成模块与 SWT 链路在两种平台均实际执行，不再塌缩为模块级 skip。该组合矩阵至此为已执行并通过；三种目标 Python 与 pytest 版本的实际运行记录以各任务日志为准。
 
 独立整体验证审查已完成，提出的 11 项重要问题已修复。
 针对这些问题新增 17 个回归场景，先全部失败后全部通过；另补充触发条件修订的来源约束测试。

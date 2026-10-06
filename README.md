@@ -79,7 +79,7 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 - xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索暂未支持。
 - 带不可重置外部前置资源的候选不能升级重复复现；运行不起来时报告环境阻塞，缩小运行范围属于后续优化。
 - 语义核对依赖模型，证据引用与硬性检查降低误报，不能替代人的审查。
-- 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1。CI 已首次执行，18 个矩阵任务全部因环境耦合失败，修复在本地复现验证，重跑结果待确认；重跑通过前不视为已验证。其他组合见 `docs/compatibility.md`。
+- 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1；CI 矩阵（Windows/Ubuntu × 目标 Python 3.10–3.12 × pytest 7.4–9）18/18 通过，含 AgentScope SDK 模块与 SWT 链路。其他组合见 `docs/compatibility.md`，首次执行的失败与修复记录见 `docs/implementation-status.md`。
 
 ## 开发与评估
 
