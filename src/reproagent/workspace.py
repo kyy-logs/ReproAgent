@@ -69,7 +69,9 @@ class Workspace:
         if not repo.is_dir():
             raise ValueError(f"repository directory does not exist: {repo}")
         output = workspace_path(request.output_dir.resolve())
-        if output == repo or repo.is_relative_to(output):
+        # Both roots are in the workspace representation, so the containment check
+        # has to compare them in one representation rather than by string.
+        if is_within(repo, output):
             raise ValueError("output directory cannot be the repository or its ancestor")
         exclusions = (self.root, output)
         for _ in range(2):

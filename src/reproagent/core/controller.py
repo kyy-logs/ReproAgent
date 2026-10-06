@@ -12,6 +12,7 @@ from .serialization import bytes_hash, canonical_hash
 from .tools import Tools
 from .protocol import ModelOutputError, ModelProtocolError
 from .workflow import WorkflowState, choose_workflow
+from reproagent.paths import relative_name
 from reproagent.store import atomic_write
 
 # Every action ends in one of these codes; none of them carries model or provider text.
@@ -133,7 +134,9 @@ class Controller:
             # repeated until the budget runs out.
             repeated, previous = None, None
             seen_sources = set()
-            original_paths = {(snapshot.root / entry.path).relative_to(self.store.root).as_posix():entry.content_hash
+            # The snapshot root can be long while the task root is not, so the
+            # stored reference path is taken in one representation, not by string.
+            original_paths = {relative_name(snapshot.root / entry.path, self.store.root):entry.content_hash
                               for entry in snapshot.files}
             def remember_original(refs):
                 seen_sources.update(ref for ref in refs if original_paths.get(ref.path) == ref.content_hash)

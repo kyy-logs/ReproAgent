@@ -1,5 +1,6 @@
 from .models import AgentAction, EvidenceRef, ToolResult
 from .serialization import bytes_hash
+from reproagent.paths import relative_name
 from reproagent.store import safe_child
 from reproagent.workspace import sensitive_path
 from .protocol import object_schema
@@ -92,7 +93,9 @@ class Tools:
         text = data.decode('utf-8')
         if '\x00' in text:
             raise ValueError('binary content excluded')
-        ref = EvidenceRef(path.relative_to(self.workspace.root).as_posix(), entry.content_hash)
+        # safe_child can return the long form for a deep snapshot or candidate
+        # root while the workspace root stays plain, so this is not a string cut.
+        ref = EvidenceRef(relative_name(path, self.workspace.root), entry.content_hash)
         return text, ref
 
     def _result(self, text, refs):

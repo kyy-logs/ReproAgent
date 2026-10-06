@@ -29,12 +29,29 @@ def long_path(path):
     return Path('\\\\?\\' + text)
 
 
+def location_key(path):
+    """Key for the location a path names, in either long-path form.
+
+    Mirrors ``reproagent.paths.identity_key``; this file runs standalone.  It is
+    used for the containment check only, never to build the path that is opened.
+    """
+    text = os.path.realpath(path)
+    if text.startswith('\\\\?\\UNC\\'):
+        text = '\\\\' + text[8:]
+    elif text.startswith('\\\\?\\'):
+        text = text[4:]
+    return os.path.normcase(text)
+
+
 def child(root, relative):
     if not relative or '\\' in relative or ':' in relative or any(p in ('', '.', '..') for p in relative.split('/')):
         raise ValueError('unsafe package path')
-    resolved = Path(os.path.realpath(root))
-    path = resolved.joinpath(*relative.split('/'))
-    if not path.is_relative_to(resolved):
+    # Resolve the entry itself: a link inside the package (or the destination
+    # repository) must not let a package file reach outside its root.  The
+    # comparison is made in one representation because the two names can differ
+    # in long-path form, not because the check was relaxed.
+    path = os.path.realpath(os.path.join(os.path.realpath(root), *relative.split('/')))
+    if not Path(location_key(path)).is_relative_to(Path(location_key(root))):
         raise ValueError('package path escapes root')
     return long_path(path)
 

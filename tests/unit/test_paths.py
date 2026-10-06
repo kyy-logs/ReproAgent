@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from reproagent.paths import (MAX_PATH, display_path, is_within, relative_name,
+from reproagent.paths import (MAX_PATH, display_path, identity_key, is_within, relative_name,
                               shared_path_form, workspace_path)
 
 WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="the long-path form is Windows-only")
@@ -88,11 +88,35 @@ def test_containment_compares_both_forms_but_still_refuses_the_outside(tmp_path)
     assert not is_within(deep, tmp_path / "another-root")
 
 
-def test_the_standalone_replay_applies_the_same_rule(tmp_path):
-    """replay.py ships inside the package and cannot import reproagent.paths."""
+def replay_module():
+    """The replay tool that ships inside an export package, loaded standalone."""
     source = Path(__file__).resolve().parents[2] / "src/reproagent/resources/replay.py"
     spec = importlib.util.spec_from_file_location("replay_under_test", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+def test_the_standalone_replay_applies_the_same_rule(tmp_path):
+    """replay.py cannot import reproagent.paths, so its copies are checked here."""
+    module = replay_module()
     for path in (tmp_path / "short", at_length(tmp_path, 300), Path("\\\\?\\C:\\already\\prefixed")):
         assert module.long_path(path) == workspace_path(path)
+        assert module.location_key(path) == identity_key(path)
+
+
+def test_the_standalone_replay_still_refuses_a_link_out_of_the_package(tmp_path):
+    """A link inside the package must not let a package file reach outside it."""
+    module = replay_module()
+    package, outside = tmp_path / "package", tmp_path / "outside"
+    (package / "candidate").mkdir(parents=True)
+    outside.mkdir()
+    (outside / "x.py").write_text("secret", encoding="utf-8")
+    try:
+        (package / "candidate" / "escape").symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("link creation needs privilege on Windows")
+    with pytest.raises(ValueError, match="escapes"):
+        module.child(package / "candidate", "escape/x.py")
+    (package / "candidate" / "x.py").write_text("installed", encoding="utf-8")
+    assert module.child(package / "candidate", "x.py").read_text(encoding="utf-8") == "installed"

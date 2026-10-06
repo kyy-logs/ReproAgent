@@ -25,12 +25,16 @@ import pytest
 
 from reproagent.adapters.languages.python_pytest.adapter import absolute_python
 from reproagent.adapters.languages.python_pytest.collector import read_probe
-from reproagent.core.models import (CandidateDraft, DraftFile, EvidenceLevel, IssueContract,
-                                    PythonPytestConfig, TaskRequest, TaskResult, TaskState)
+from reproagent.app import create_controller
+from reproagent.core.models import (CandidateDraft, DraftFile, EvidenceLevel, IssueContract, ModelConfig,
+                                    ProjectView, PythonPytestConfig, TaskRequest, TaskResult, TaskState)
+from reproagent.core.tools import Tools
 from reproagent.exporter import Exporter
+from reproagent.paths import workspace_path
 from reproagent.runner import Runner
 from reproagent.store import TaskStore, atomic_write, safe_child
 from reproagent.workspace import Workspace, inventory
+from tests.unit.test_controller import ScriptedLifecycle, action_endings, read_action
 
 MAX_PATH = 260
 WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="the long-path branch is Windows-only")
@@ -38,6 +42,10 @@ LONG_NAME = "long_" + "n" * 40 + ".py"          # a source file the repository i
 # Deep enough that the repository files the tool copies cross the file limit,
 # while every directory the tool builds stays inside the twelve-char reserve.
 DEEP = MAX_PATH - 100
+# The snapshot root is the task directory plus "/snapshots/snapshot-<32 hex>/code",
+# so this length puts the snapshot root exactly at the limit while the task root,
+# and everything that only reads the task root, is still below it.
+BAND = MAX_PATH - 57
 
 
 def deep_directory(base: Path, minimum_length: int) -> Path:
@@ -124,6 +132,68 @@ def test_deep_delivery_survives_paths_past_the_legacy_limit(tmp_path, projects, 
     assert replay.returncode == 1, replay.stderr.decode(errors="replace")
     assert (fresh / "tests/test_repro.py").read_bytes() == (candidate.storage_root / "tests/test_repro.py").read_bytes()
     assert read_probe(readable(replay_output / "probe.jsonl"), "export-replay").probe_complete
+
+
+class ReadsThenAsks(ScriptedLifecycle):
+    """Reads one snapshot file, then asks a question instead of writing a candidate."""
+
+    def __init__(self):
+        super().__init__()
+        self.reads = 0
+
+    def reply(self, request, data):
+        self.reads += 1
+        return read_action() if self.reads == 1 else {"name": "request_information",
+                                                      "parameters": {"question": "stop here"}}
+
+
+def band_workspace(tmp_path, projects):
+    """A task directory in the band below the limit: snapshot root long, task root not.
+
+    Execution cannot reach this band -- the run copy's own directory would be
+    ``task + 47`` characters, past the twelve-character directory reserve, and its
+    files are what pytest would have to open -- so the checks here stay above it.
+    """
+    repo = projects.plain(tmp_path / "repo")
+    output = deep_directory(tmp_path / "out", BAND)
+    assert len(str(workspace_path(output))) < MAX_PATH
+    assert str(workspace_path(output / "snapshots" / ("snapshot-" + "0" * 32) / "code")).startswith("\\\\?\\")
+    request = TaskRequest(repo, output, repo / "issue.md",
+                          language=PythonPytestConfig(python=sys.executable, target_modules=("example.parser",)))
+    store = TaskStore(output)
+    return request, store, Workspace(output, store)
+
+
+@WINDOWS_ONLY
+def test_a_snapshot_root_past_the_limit_does_not_abort_the_run(tmp_path, projects, facts):
+    """The run reaches the model's own end state instead of an internal error.
+
+    The package itself cannot be published at this depth -- the export build
+    directory is ``task + 53`` characters, past the Windows directory limit but
+    below the file limit -- so the run ends ``FAILED`` with an unhelpful
+    ``export_state``.  What is checked here is what the snapshot-path mapping
+    decides: the run acts on the model's choices and stops for the model's reason
+    instead of aborting on the way in.
+    """
+    request, store, _ = band_workspace(tmp_path, projects)
+    model = ReadsThenAsks()
+    controller = create_controller(request, ModelConfig(), gateway=model)
+    result = asyncio.run(controller.run(request, facts.context(limits=request.limits)))
+    assert model.kinds[:2] == ["contract", "action"]
+    assert action_endings(store.read_events()[0])[0] == ("action.completed", "read_file", "OK")
+    assert result.stop_reason == "MISSING_INFORMATION"
+
+
+@WINDOWS_ONLY
+def test_deep_tool_reads_stay_relative_to_the_workspace(tmp_path, projects, facts):
+    request, store, workspace = band_workspace(tmp_path, projects)
+    context = facts.context()
+    snapshot = workspace.freeze(request, context)
+    tools = Tools(ProjectView(snapshot), workspace, context)
+    read = tools.read_file("example/parser.py", 1, 2)
+    assert [ref.path for ref in read.evidence_refs] == [f"snapshots/{snapshot.snapshot_id}/code/example/parser.py"]
+    assert "def parse" in read.text
+    assert tools.search_code("def parse", "snapshot").text.startswith("example/parser.py:1:")
 
 
 def test_boundary_check_is_not_relaxed_by_the_path_form(tmp_path):
