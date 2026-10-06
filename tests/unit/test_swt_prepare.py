@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from dataclasses import asdict
@@ -34,6 +35,9 @@ def test_binding_isolated_and_preflight_receipt_records_actual_environment(tmp_p
     case=validate_binding(row,binding,protected_roots=(tmp_path/'gold-cache',tmp_path/'output'))
     receipt=preflight(case)
     assert receipt['status']=='ready' and receipt['python_versions']['buggy']['pytest_version']
+    # Keep the bound interpreter; resolving a venv's symlink would run the base
+    # interpreter, which has none of that venv's packages.
+    assert case.buggy_python==os.path.abspath(sys.executable)
     assert receipt['buggy_source_hash'] and receipt['fixed_source_hash']
     assert case.allowed_description=='Original issue' and case.candidate_parent=='tests'
     assert 'fixed_repo' not in __import__('evals.run',fromlist=['generation_input']).generation_input(case)

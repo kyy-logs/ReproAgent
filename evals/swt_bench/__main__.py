@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+from reproagent.adapters.languages.python_pytest.adapter import absolute_python
 from reproagent.core.models import BudgetLimits,ModelConfig
 from .io import read_json,write_json,fresh_dir
 
@@ -38,8 +39,12 @@ def main(argv=None):
             bindings={}
             for identity,binding in raw.items():
                 binding=dict(binding)
-                for key in ('buggy_repo','fixed_repo','buggy_python','fixed_python'):
+                for key in ('buggy_repo','fixed_repo'):
                     if key in binding: binding[key]=str((bindings_path.parent/binding[key]).resolve())
+                for key in ('buggy_python','fixed_python'):
+                    # Absolute relative to this file, but never link-resolved: a
+                    # prepared venv interpreter must stay inside its own environment.
+                    if key in binding: binding[key]=absolute_python(bindings_path.parent/binding[key])
                 bindings[identity]=binding
             if args.command=='preflight':
                 from .prepare import inspect_bindings,overlap

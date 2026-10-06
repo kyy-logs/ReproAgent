@@ -6,7 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from reproagent.adapters.languages.python_pytest.adapter import ALLOWED_ARGS
+from reproagent.adapters.languages.python_pytest.adapter import ALLOWED_ARGS,absolute_python
 from reproagent.core.serialization import bytes_hash,canonical_hash
 from reproagent.store import safe_child
 from reproagent.workspace import inventory,EXCLUDED_NAMES
@@ -57,8 +57,8 @@ def validate_binding(row,binding,protected_roots=()):
     if binding.get('review_status','pending')=='approved' and not binding.get('review_actor'):
         raise ValueError('approved binding requires technical review actor')
     return EvalCase(row['instance_id'],'https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite',row['description_hash'],
-        buggy,row['base_commit'],fixed,'patch:'+row['fix_patch_hash'],str(Path(binding['buggy_python']).resolve()),
-        str(Path(binding['fixed_python']).resolve()),row['problem_statement'],review_status=binding.get('review_status','pending'),
+        buggy,row['base_commit'],fixed,'patch:'+row['fix_patch_hash'],absolute_python(binding['buggy_python']),
+        absolute_python(binding['fixed_python']),row['problem_statement'],review_status=binding.get('review_status','pending'),
         target_modules=tuple(modules),source_roots=tuple(roots),candidate_parent=parent,pytest_args=tuple(args),baseline_tests=tuple(baseline),
         buggy_source_hash=source_hash(buggy),fixed_source_hash=actual_fixed)
 

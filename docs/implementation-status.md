@@ -58,12 +58,13 @@ Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9 已首次执行 
 
 2026-10-06 CI 首次执行（Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9，共 18 个矩阵任务）全部失败，合并后为三类环境耦合问题，均已定位到根因。
 其一，dev 依赖未声明 setuptools，而打包测试用 --no-build-isolation 构建 wheel；Python 3.12 的 venv 不再自带 setuptools，本地 .venv 恰有而未暴露。
-其二，目标解释器路径被 Path.resolve 解析；Linux 上 venv 与工具链的 bin/python 是指向 python3.12 的符号链接，解析后字符串与 sys.executable 不一致，且 venv 的链接间接层被替换为链接目标。导出包内的 replay.py 有同样写法。
+其二，目标解释器路径被 Path.resolve 解析；Linux 上 venv 与工具链的 bin/python 是指向基础解释器的符号链接，解析后字符串与 sys.executable 不一致，且 venv 的链接间接层被替换为链接目标。共四处同样写法：语言适配器、导出包内的 replay.py、评测绑定层 `evals/swt_bench/prepare.py` 与绑定装载 `evals/swt_bench/__main__.py`。
 其三，CI 装在 runner 全局解释器上，未创建启动器与 Skill 依赖的 <repo>/.venv，5 个启动器测试报缺工具解释器。
-修复为：dev 增加 setuptools>=68；解释器路径改为绝对但不解析链接（适配器与 replay.py）；CI 按 README 创建 .venv 并在其中安装与运行。
+修复为：dev 增加 setuptools>=68；四处解释器路径改为绝对但不解析链接；CI 按 README 创建 .venv 并在其中安装与运行。
 CI 同时改为安装 .[dev,agentscope]：此前不装该可选依赖时，3 个 SDK 集成模块的 module 级 importorskip 使约 22 个用例塌缩为 3 条 skip，CI 全绿也不覆盖 SDK 路径。
-验证：三类失败在本地逐一复现（含用目录 junction 复现链接解析差异；文件符号链接在 Windows 需提权，POSIX 侧的 venv 后果未在本机实测）；克隆出无 .venv 的仓库并按 workflow 步骤安装后，全量离线测试 244 passed、1 skipped，pip check 无冲突。
-CI 重跑结果待确认，通过前上述组合仍不视为已验证。首次执行回执：https://github.com/kyy-logs/ReproAgent/actions/runs/37455797100
+验证：三类失败在本地逐一复现（含用目录 junction 复现链接解析差异；文件符号链接在 Windows 需提权，venv 后果由下述 CI 直接暴露）；克隆出无 .venv 的仓库并按 workflow 步骤安装后，全量离线测试 244 passed、1 skipped，pip check 无冲突。
+首次执行回执：https://github.com/kyy-logs/ReproAgent/actions/runs/37455797100
+第二次执行（runs/37463036547）：Windows 9/9 通过，Ubuntu 9/9 失败，失败集中在 SWT 评测链路 7 项，根因为同一 resolve 缺陷的评测绑定层实例。该失败直接证实此前只能推理的后果：解析后的解释器不在原 venv 内，`import pytest` 失败，预检报 blocked，下游用例不启动。补齐评测层修复后本地全量 244 passed、1 skipped。第三次执行结果待确认，通过前该矩阵仍不视为已验证。
 
 独立整体验证审查已完成，提出的 11 项重要问题已修复。
 针对这些问题新增 17 个回归场景，先全部失败后全部通过；另补充触发条件修订的来源约束测试。
