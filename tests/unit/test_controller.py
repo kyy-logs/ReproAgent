@@ -44,6 +44,43 @@ class ScriptedActions:
         return ModelResponse(json.dumps(result))
 
 
+class ScriptedRevision:
+    """Reads one source, then revises the contract with a model that never returns a valid contract."""
+    def __init__(self): self.contracts = 0; self.messages = []
+    async def complete(self, request, context):
+        self.messages.extend(request.messages)
+        data = json.loads(request.messages[-1]['content'])
+        if request.response_kind == 'contract':
+            self.contracts += 1
+            if self.contracts > 1: return ModelResponse(json.dumps({'trigger':'empty list','expected':'parse([]) returns []'}))
+            return ModelResponse(json.dumps({'trigger':'empty list','expected':'parse([]) returns []','reported_actual':'IndexError',
+                'source_indices':[0],'missing_information':[],'observable_checks':[],'assumptions':[]}))
+        refs = json.loads(data['feedback'])['evidence_refs'] if data['feedback'] else []
+        action = ({'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}} if not refs
+                  else {'name':'revise_contract','parameters':{'source_refs':list(refs),'reason':'narrow the cited lines'}})
+        return ModelResponse(json.dumps(action))
+
+
+class ScriptedCandidateRun:
+    """Publishes a candidate, then keeps running it."""
+    def __init__(self): self.messages = []
+    async def complete(self, request, context):
+        self.messages.extend(request.messages)
+        data = json.loads(request.messages[-1]['content'])
+        if request.response_kind == 'contract':
+            result = {'trigger':'empty list','expected':'parse([]) returns []','reported_actual':'IndexError','source_indices':[0],
+                      'missing_information':[],'observable_checks':[],'assumptions':[]}
+        elif request.response_kind == 'verdict':
+            result = {'classification':'REPRODUCED','reason':'reported IndexError on empty input','evidence_refs':data['available_refs'],
+                      'expected_assertion':True,'target_triggered':True,'failure_matches_issue':True}
+        else:
+            candidate_id = (data['candidate_ids'] or [''])[0]
+            result = ({'name':'run_candidate','parameters':{'candidate_id':candidate_id}} if candidate_id else
+                {'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
+                    'content':'from example.parser import parse\ndef test_empty(): assert parse([]) == []\n'}],'hypothesis':'empty input'}})
+        return ModelResponse(json.dumps(result))
+
+
 def controller_for(tmp_path, projects, facts, model, limits=None):
     repo = projects.plain(tmp_path / 'repo')
     request = TaskRequest(repo, tmp_path / '任务', repo / 'issue.md', language=PythonPytestConfig(python=sys.executable, target_modules=('example.parser',)), limits=limits or BudgetLimits())
@@ -83,6 +120,8 @@ def test_cleanup_failure_overrides_cancel_with_original_reason_saved(tmp_path, p
     controller.runner.execute = failed
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.FAILED and result.stop_reason == 'CANCELLED'
+    events, _ = controller.store.read_events()
+    assert action_endings(events)[-1] == ('action.rejected', 'run_candidate', 'CLEANUP_FAILED')
 
 
 def test_missing_information_and_environment_block_have_diagnostic_packages(tmp_path, projects, facts):
@@ -109,6 +148,11 @@ def test_fixed_validation_is_separate_and_same_candidate(tmp_path, projects, fac
 
 
 def event_dump(events): return json.dumps([{'kind': event.kind, 'payload': event.payload} for event in events])
+
+
+def action_endings(events):
+    return [(event.kind, event.payload['action'], event.payload['result_code'])
+            for event in events if event.kind in ('action.completed', 'action.rejected')]
 
 
 def test_action_error_events_use_codes_not_raw_response(tmp_path, projects, facts, monkeypatch):
@@ -172,6 +216,31 @@ def test_action_interrupted_by_budget_is_not_recorded_as_completed(tmp_path, pro
     assert result.status == TaskState.EXHAUSTED
     events, errors = controller.store.read_events()
     assert not errors
-    ends = [(event.kind, event.payload['action'], event.payload['result_code'])
-            for event in events if event.kind in ('action.completed', 'action.rejected')]
-    assert ends == [('action.completed', 'write_candidate', 'OK'), ('action.rejected', 'run_candidate', 'INTERRUPTED')]
+    assert action_endings(events) == [('action.completed', 'write_candidate', 'OK'), ('action.rejected', 'run_candidate', 'INTERRUPTED')]
+
+
+def test_model_protocol_failure_in_an_action_keeps_its_own_code(tmp_path, projects, facts):
+    from reproagent.core.controller import ACTION_RESULT_CODES
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedRevision(), BudgetLimits(agent_steps=6))
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.FAILED and result.stop_reason == 'MODEL_PROTOCOL_ERROR'
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert action_endings(events) == [('action.completed', 'read_file', 'OK'), ('action.rejected', 'revise_contract', 'MODEL_PROTOCOL_ERROR')]
+    assert all(code in ACTION_RESULT_CODES for _, _, code in action_endings(events))
+
+
+def test_model_output_failure_in_an_action_keeps_its_own_code(tmp_path, projects, facts):
+    # The provider failure is injected at the verifier boundary: ReproAgent and
+    # Verifier convert provider failures themselves, and this asserts how the
+    # Controller classifies one that reaches its action handler.
+    from reproagent.core.protocol import ModelOutputError
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedCandidateRun(), BudgetLimits(agent_steps=3))
+    async def unavailable(*args, **kwargs): raise ModelOutputError('provider response is not a JSON object')
+    controller.verifier.evaluate = unavailable
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.EXHAUSTED
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert action_endings(events) == [('action.completed', 'write_candidate', 'OK'),
+        ('action.rejected', 'run_candidate', 'MODEL_OUTPUT_ERROR'), ('action.rejected', 'run_candidate', 'MODEL_OUTPUT_ERROR')]

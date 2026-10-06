@@ -10,13 +10,15 @@ from .models import (AgentContext, CandidateClass, CandidateDraft, DraftFile, Ev
                      IssueDescription, ProjectView, SourceRef, TaskResult, TaskState)
 from .serialization import bytes_hash, canonical_hash
 from .tools import Tools
-from .protocol import ModelProtocolError
+from .protocol import ModelOutputError, ModelProtocolError
 from reproagent.store import atomic_write
 
 # Every action ends in one of these codes; none of them carries model or provider text.
+# Each names a distinct failure class, so an interruption is never confused with a
+# rejected argument, a model failure or an internal error.
 ACTION_RESULT_CODES = frozenset({'OK', 'INVALID_ARGUMENT', 'MISSING_FILE', 'INVALID_ENCODING', 'UNKNOWN_CANDIDATE',
     'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF', 'REVISION_BUDGET_EXCEEDED',
-    'REPLAY_UNCONFIRMED', 'INTERRUPTED'})
+    'REPLAY_UNCONFIRMED', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR', 'MODEL_PROTOCOL_ERROR', 'INTERNAL_ERROR'})
 
 
 class CleanupFailed(Exception):
@@ -216,11 +218,24 @@ class Controller:
                                 context.budget.check()
                                 result = self.state(result, TaskState.EXPORTING)
                                 break
+                    except (BudgetStopped, asyncio.CancelledError, TimeoutError):
+                        # Only budget, cancellation and timeout interrupt an action.
+                        code = 'INTERRUPTED'
+                        raise
+                    except ModelOutputError as exc:
+                        code = 'MODEL_OUTPUT_ERROR'
+                        feedback = self.feedback({'error':str(exc)})
+                    except ModelProtocolError:
+                        code = 'MODEL_PROTOCOL_ERROR'
+                        raise
+                    except CleanupFailed:
+                        code = 'CLEANUP_FAILED'
+                        raise
                     except (ValueError, FileNotFoundError, UnicodeError) as exc:
                         code = rejection_code(exc)
                         feedback = self.feedback({'error':str(exc)})
                     except BaseException:
-                        code = 'INTERRUPTED'
+                        code = 'INTERNAL_ERROR'
                         raise
                     else:
                         history.append({'action':action.name, 'feedback':feedback.encode()[:2048].decode(errors='ignore')})
