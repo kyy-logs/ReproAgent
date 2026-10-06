@@ -52,7 +52,7 @@
 
 ### Task 1：固定评测来源与动作诊断
 
-**Files:** 新增 `evals/swt_bench/provenance.py`、`tests/unit/test_swt_provenance.py`；修改 `evals/swt_bench/run.py`、`results.py`、`src/reproagent/core/agent.py`、`controller.py`、两个 gateway；测试 `tests/integration/test_swt_batch.py`、`tests/unit/test_model_gateway.py`、`tests/unit/test_controller.py`。
+**Files:** 新增 `evals/swt_bench/provenance.py`、`tests/unit/test_swt_provenance.py`；修改 `evals/swt_bench/run.py`、`evals/swt_bench/results.py`、`src/reproagent/core/agent.py`、`src/reproagent/core/controller.py`、`src/reproagent/adapters/models/provider.py`、`src/reproagent/adapters/agentscope/gateway.py`；测试 `tests/integration/test_swt_batch.py`、`tests/unit/test_model_gateway.py`、`tests/unit/test_controller.py`。
 
 **Interfaces:** `capture_tool_source(root: Path) -> dict`、`assert_tool_source(root: Path, receipt: dict) -> None`。覆盖 `src/reproagent` 的代码/提示词/资源、`evals` 的 Python 文件和 `pyproject.toml`；不读取秘密文件。变化抛出 `ToolSourceChanged`。round 新增 `source_comparison_status`，取 `verified/changed/not_recorded`，旧轮为 not_recorded。
 
@@ -65,7 +65,7 @@
 
 ### Task 2：紧凑且可引用的语义核验上下文
 
-**Files:** 新增 `src/reproagent/core/review_context.py`、`tests/unit/test_review_context.py`；修改 `core/verifier.py`、`prompts/review_evidence.md`；测试 `tests/unit/test_verifier.py` 与新增 `tests/integration/test_large_review_context.py`。
+**Files:** 新增 `src/reproagent/core/review_context.py`、`tests/unit/test_review_context.py`；修改 `src/reproagent/core/verifier.py`、`src/reproagent/prompts/review_evidence.md`；测试 `tests/unit/test_verifier.py` 与新增 `tests/integration/test_large_review_context.py`。
 
 **Interfaces:** 定义 frozen `ReviewContext(payload: dict, available_refs: tuple[EvidenceRef,...], input_bytes: int, output_bytes: int, omitted_fields: tuple[str,...])`。`build_review_context(contract, candidate, run, *, read_ref, read_file, max_bytes: int, protocol_error: str='') -> ReviewContext`；核心放不下抛 `ReviewContextTooLarge`。`read_ref(EvidenceRef)->str` 校验全文哈希后由构建器提取引用行段；`read_file(FileEntry)->bytes` 校验候选哈希。
 
@@ -79,7 +79,7 @@
 
 ### Task 3：修复实际输出预算与模型错误分类
 
-**Files:** 新增 `src/reproagent/adapters/models/options.py`、`tests/unit/test_model_options.py`；修改 `core/models.py`、`core/protocol.py`、`core/agent.py`、`core/verifier.py`、`adapters/models/provider.py`、`adapters/agentscope/gateway.py`；测试 `tests/unit/test_model_gateway.py`、`tests/unit/test_model_protocol_regressions.py`、`tests/integration/test_agentscope_gateway.py`；新增 `examples/model.deepseek.non-thinking.json`。
+**Files:** 新增 `src/reproagent/adapters/models/options.py`、`tests/unit/test_model_options.py`；修改 `src/reproagent/core/models.py`、`src/reproagent/core/protocol.py`、`src/reproagent/core/agent.py`、`src/reproagent/core/verifier.py`、`src/reproagent/adapters/models/provider.py`、`src/reproagent/adapters/agentscope/gateway.py`；测试 `tests/unit/test_model_gateway.py`、`tests/unit/test_model_protocol_regressions.py`、`tests/integration/test_agentscope_gateway.py`；新增 `examples/model.deepseek.non-thinking.json`。
 
 **Interfaces:** `ModelRequest.max_output_tokens: int|None=None`；`ModelConfig.thinking_mode: str|None=None`，仅 enabled/disabled/None。新增 frozen `ProviderRequestOptions(output_limit: int, extra_body: dict)` 与 `resolve_model_options(config, request)->ProviderRequestOptions`。`ModelOutputError(message, code='INVALID_PROTOCOL', retryable=True)` 保持 ValueError 兼容。
 
@@ -94,9 +94,9 @@
 
 ### Task 4：确保候选执行、重复核验与提交
 
-**Files:** 新增 `src/reproagent/core/workflow.py`、`tests/unit/test_workflow.py`；修改 `core/models.py`、`core/controller.py`、`core/agent.py`、`prompts/explore.md`；测试 `tests/unit/test_controller.py`、`tests/unit/test_agent.py`、`tests/integration/test_agentscope_backends.py`。
+**Files:** 新增 `src/reproagent/core/workflow.py`、`tests/unit/test_workflow.py`；修改 `src/reproagent/core/models.py`、`src/reproagent/core/controller.py`、`src/reproagent/core/agent.py`、`src/reproagent/prompts/explore.md`；测试 `tests/unit/test_controller.py`、`tests/unit/test_agent.py`、`tests/integration/test_agentscope_backends.py`。
 
-**Interfaces:** frozen `WorkflowState(steps_remaining, grounded, candidate_id, candidate_contract_version, current_contract_version, has_execution, reproduced, repeated_action)`；frozen `WorkflowDecision(forced_action: AgentAction|None, allowed_actions: tuple[str,...], reason_code: str)`；`choose_workflow(state)->WorkflowDecision`。`AgentContext` 追加默认 `allowed_actions=()`，ReproAgent 将非空集合与现有 schema 取交集。
+**Interfaces:** frozen `WorkflowState(steps_remaining: int, grounded: bool, candidate_id: str, candidate_contract_version: int, current_contract_version: int, has_execution: bool, reproduced: bool, repeated_action: AgentAction|None)`；frozen `WorkflowDecision(forced_action: AgentAction|None, allowed_actions: tuple[str,...], blocked_actions: tuple[AgentAction,...], reason_code: str)`；`choose_workflow(state: WorkflowState)->WorkflowDecision`。`AgentContext` 追加默认 `allowed_actions=()`、`blocked_actions=()`；ReproAgent 将非空allowed集合与schema取交集，只拒绝blocked中完全相同的动作及参数，不禁止读取另一个合法文件。
 
 - [ ] 写 `test_pending_candidate_forces_run_without_model_decision`、`test_reproduced_candidate_forces_submit_without_model_decision`；强制动作也消耗1步。
 - [ ] 写 `test_two_remaining_steps_do_not_allow_new_unrunnable_candidate`、`test_missing_facts_still_allow_information`、`test_revised_contract_cannot_submit_stale_candidate`。
@@ -112,7 +112,7 @@
 
 ### Task 5：区分接口提案、重复失败与差分成功
 
-**Files:** 修改 `prompts/analyze_issue.md`、`prompts/explore.md`、`prompts/review_evidence.md`、`core/models.py`、`core/controller.py`、`exporter.py`、`reporting.py`、`resources/report.md.template`、`evals/schema.py`、`evals/run.py`、`evals/swt_bench/results.py`；测试 `tests/unit/test_model_protocol_regressions.py`、`tests/unit/test_controller.py`、`tests/unit/test_reporting.py`、`tests/unit/test_swt_results.py`。
+**Files:** 修改 `src/reproagent/prompts/analyze_issue.md`、`src/reproagent/prompts/explore.md`、`src/reproagent/prompts/review_evidence.md`、`src/reproagent/core/models.py`、`src/reproagent/core/controller.py`、`src/reproagent/exporter.py`、`src/reproagent/reporting.py`、`src/reproagent/resources/report.md.template`、`evals/schema.py`、`evals/run.py`、`evals/swt_bench/results.py`；测试 `tests/unit/test_model_protocol_regressions.py`、`tests/unit/test_controller.py`、`tests/unit/test_reporting.py`、`tests/unit/test_swt_results.py`。
 
 **Interfaces:** `TaskResult.fix_validation_status='not_provided'`，枚举 not_provided/passed/failed/blocked；`EvalResult` 增加同名默认字段，报告原样传递。旧记录默认 not_provided。
 
@@ -125,7 +125,7 @@
 
 ### Task 6：内部处理 Windows 长路径
 
-**Files:** 新增 `src/reproagent/paths.py`、`tests/unit/test_paths.py`、`tests/integration/test_windows_long_paths.py`；修改 `store.py`、`workspace.py`、`runner.py`、`adapters/runtimes/local.py`、`exporter.py`、`resources/replay.py` 中必要的工作区路径使用点；保留现有 `absolute_python` 的 venv 语义。
+**Files:** 新增 `src/reproagent/paths.py`、`tests/unit/test_paths.py`、`tests/integration/test_windows_long_paths.py`；修改 `src/reproagent/store.py`、`src/reproagent/workspace.py`、`src/reproagent/runner.py`、`src/reproagent/adapters/runtimes/local.py`、`src/reproagent/exporter.py`、`src/reproagent/resources/replay.py` 中必要的工作区路径使用点；保留现有 `absolute_python` 的 venv 语义。
 
 **Interfaces:** `workspace_path(path: Path)->Path`：Windows 内部工作区统一绝对、长路径表示，其他平台保留原规则；`display_path(path: Path)->str` 仅用于展示。解释器路径不经过 workspace_path。
 
@@ -137,7 +137,7 @@
 
 ### Task 7：让环境对照证明测试真的执行
 
-**Files:** 新增 `evals/swt_bench/control.py`、`tests/integration/test_swt_controls.py`；修改 `evals/swt_bench/__main__.py`、`prepare.py` 与 `docs/swt-bench.md`；本地版本化绑定/依赖清单存入独立新目录。
+**Files:** 新增 `evals/swt_bench/control.py`、`tests/integration/test_swt_controls.py`；修改 `evals/swt_bench/__main__.py`、`evals/swt_bench/prepare.py` 与 `docs/swt-bench.md`；本地版本化绑定/依赖清单存入独立新目录。
 
 **Interfaces:** `run_reference_control(row: dict, binding: dict, output: Path)->dict`，row仅在独立评测端读取，包含固定patch/test_patch与目标节点；新增 CLI `python -m evals.swt_bench control --snapshot ... --manifest ... --bindings ... --output ...`。
 
@@ -152,10 +152,11 @@
 
 ### Task 8：冻结版本后的开发集、新样本与官方判分
 
-**Files:** 新增实际日期的 `docs/evaluations/<date>-swt-repaired.md`；修改 `docs/swt-bench.md`、`README.md`、`docs/implementation-status.md`。评测轮次与完整事件留在 `repro-results`；源指纹和回执来自 Task 1/7。
+**Files:** 修改 `evals/datasets/swt_bench.py`、`evals/swt_bench/results.py`、`tests/unit/test_swt_dataset.py`、`tests/unit/test_swt_results.py`；新增实际日期的 `docs/evaluations/<date>-swt-repaired.md`；修改 `docs/swt-bench.md`、`README.md`、`docs/implementation-status.md`。评测轮次与完整事件留在 `repro-results`；源指纹和回执来自 Task 1/7。
 
-**Interfaces:** 复用现有 SWT CLI 和预测/来源校验；不新增能力评分算法。summary 增加来源状态以及实际执行/原版重复/差分/独立交付/官方判分的明确计数，缺失官方结果显示待判分。
+**Interfaces:** 新增 `select_holdout(catalog: dict, excluded_ids: set[str], *, repos: tuple[str,...], count: int=10, seed: str='reproagent-swt-holdout-v1')->dict`，返回现有run_batch可消费的sealed manifest。仓库列表先按已支持的Python/pytest配置确定；排序为repo轮询 + sha256(seed+instance_id)，只读取生成侧catalog的公开元数据。复用现有CLI和预测/来源校验；不新增能力评分算法。summary增加来源状态以及实际执行/原版重复/差分/独立交付/官方判分的明确计数，缺失官方结果显示待判分。
 
+- [ ] 写 `test_holdout_is_deterministic_and_excludes_development_ids`、`test_selection_does_not_depend_on_hidden_patch_or_control_results`、`test_pending_official_report_keeps_measured_local_zero_visible`；运行看到RED，实现选择器和明确的汇总展示，再运行GREEN并提交这部分代码。
 - [ ] 完整离线测试：`.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q --basetemp=.tmp/repair-final-<unique>`；`.venv\Scripts\python.exe -m pip check`。检查真实SDK测试被执行，不能只看总通过数。
 - [ ] 冻结干净实现提交、实际导入路径、模型配置和依赖回执；在一轮内来源发生变化则该轮不可用于对比。
 - [ ] 原 dev20 全部20例重新执行，使用 new native/native + 显式disabled配置，动作/时间预算沿用20/60/900；每例记录，失败不替换。不把原第三轮和新轮解释成纯算法对照，因为模型选项/环境变化也需列出。
