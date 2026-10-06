@@ -27,7 +27,9 @@ class LimitedResponseStream(httpx.AsyncByteStream):
                 raise BudgetStopped('CANCELLED')
             size += len(chunk)
             if size > 1048576:
-                raise ModelOutputError('provider response exceeds protocol limit')
+                # This is the path a real HTTP response takes, so it has to classify the
+                # size failure identically to the post-read check below.
+                raise ModelOutputError('provider response exceeds protocol limit', 'RESPONSE_TOO_LARGE', False)
             yield chunk
 
     async def aclose(self):

@@ -182,10 +182,17 @@ def test_oversized_stream_stops_reading_and_never_enters_sdk_parser(monkeypatch)
         parsed.append(True)
         raise AssertionError('SDK must not parse an oversized body')
     monkeypatch.setattr(OpenAIChatModel,'_parse_completion_response',parse)
+    events=[]
+    class Store:
+        def append_event(self, kind, refs, payload): events.append(payload)
     model=AgentScopeModelGateway(config(),transport=httpx.MockTransport(handle))
-    with pytest.raises(ModelOutputError,match='protocol limit'):
+    model.attempt_store=Store()
+    with pytest.raises(ModelOutputError,match='protocol limit') as error:
         asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},)),context()))
+    # The live streaming path has to classify the size failure like the post-read check.
+    assert error.value.code=='RESPONSE_TOO_LARGE' and error.value.retryable is False
     assert len(calls)==1 and len(consumed)==2 and closed and not parsed
+    assert events[0]['outcome']=='RESPONSE_TOO_LARGE' and events[0]['effective_output_limit']==4096
 
 
 def test_sdk_reasoning_content_is_not_mistaken_for_invalid_final_text():
