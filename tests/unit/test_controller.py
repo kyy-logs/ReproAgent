@@ -239,11 +239,15 @@ def test_repeated_failure_with_failed_fix_is_not_differential_success(tmp_path, 
     assert '修复版对照通过' not in text
     # The hidden fixed version still never reaches the explorer.
     assert str(still_broken) not in json.dumps(model.messages)
-    # The evaluation keeps the repeated observation but counts zero differential successes.
+    # The evaluation keeps the repeated observation visible, but this case is not an
+    # effective reproduction: the candidate was reproduced, human-confirmed and replayed,
+    # and the fixed version still did not pass, so the effective success count is zero.
     from evals.run import summarize
     from evals.schema import EvalResult
     summary = summarize((EvalResult('pallets__flask-4992', status='DONE', evidence_level='REPEATED_OBSERVATION',
-        reproduced=True, fix_validation_status=result.fix_validation_status),))
+        reproduced=True, human_judgement=True, export_replayed=True,
+        fix_validation_status=result.fix_validation_status),))
+    assert summary['effective_reproductions'] == 0 and summary['total_rate'] == 0.0
     assert summary['differential_successes'] == 0 and summary['fix_validation_failed'] == 1
 
 

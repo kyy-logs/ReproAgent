@@ -61,13 +61,24 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend='nativ
 
 
 def summarize(results):
+    """The effective-success count is the differential one.
+
+    An effective reproduction requires the supplied fixed version to have *passed*
+    (fix_validation_status == 'passed'), on top of the reproduced candidate, the human
+    confirmation and the independent replay. Every evaluation case supplies a fixed
+    version, so a repeated observation of the original failure alone is never counted
+    here, however well it was reviewed; local repetition stays visible through
+    `differential_successes`/`fix_validation_failed` per case.
+    """
     all_tasks = len(results)
     runnable = sum(r.environment_status == 'runnable' for r in results)
-    effective = sum(r.reproduced and r.human_judgement is True and r.export_replayed is True for r in results)
+    effective = sum(r.reproduced and r.fix_validation_status == 'passed'
+        and r.human_judgement is True and r.export_replayed is True for r in results)
     claimed = sum(r.reproduced for r in results)
     known = [r.cost_value for r in results if r.cost_kind != 'unknown' and r.cost_value is not None]
     # A DONE task whose fixed version also failed confirms only the original repeated
-    # failure: it is counted here as a failed check, never as a differential success.
+    # failure: it never reaches `effective_reproductions` above, and is counted here as a
+    # failed check rather than a differential success.
     return {'all_tasks':all_tasks, 'runnable_tasks':runnable, 'effective_reproductions':effective,
         'differential_successes':sum(r.fix_validation_status == 'passed' for r in results),
         'fix_validation_failed':sum(r.fix_validation_status == 'failed' for r in results),

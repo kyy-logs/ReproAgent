@@ -14,7 +14,8 @@ def test_eval_input_excludes_fix_and_new_regression_tests(tmp_path):
 
 def test_blocked_cases_remain_in_total_denominator():
     schema, run = modules()
-    results = (schema.EvalResult('a', environment_status='runnable', reproduced=True, human_judgement=True, export_replayed=True),
+    results = (schema.EvalResult('a', environment_status='runnable', reproduced=True, human_judgement=True,
+                                 export_replayed=True, fix_validation_status='passed'),
         schema.EvalResult('b', environment_status='blocked'), schema.EvalResult('c', environment_status='runnable', reproduced=True, human_judgement=False),
         schema.EvalResult('d', environment_status='runnable'))
     summary = run.summarize(results)
@@ -22,6 +23,22 @@ def test_blocked_cases_remain_in_total_denominator():
     assert summary['effective_reproductions'] == 1 and summary['false_positives'] == 1
     assert summary['total_rate'] == .25
     assert run.summarize(())['total_rate'] is None
+
+
+def test_effective_reproduction_requires_the_fixed_version_to_pass():
+    """The effective-success count is the differential one: 评测有效成功 needs the supplied
+    fixed version to pass, so a repeated observation whose fix failed (or whose fix was never
+    validated) is not counted, however well it was human-reviewed and independently replayed."""
+    schema, run = modules()
+    reviewed = {'environment_status':'runnable', 'reproduced':True, 'human_judgement':True, 'export_replayed':True}
+    cases = [schema.EvalResult(name, fix_validation_status=status, **reviewed)
+             for name, status in (('failed-fix','failed'), ('passed-fix','passed'),
+                                  ('legacy','not_provided'), ('blocked-fix','blocked'))]
+    summary = run.summarize(tuple(cases))
+    assert summary['effective_reproductions'] == 1 and summary['total_rate'] == .25
+    assert summary['differential_successes'] == 1 and summary['fix_validation_failed'] == 1
+    assert run.summarize((cases[0],))['effective_reproductions'] == 0
+    assert run.summarize((cases[3],))['effective_reproductions'] == 0
 
 
 def test_unknown_cost_is_not_counted_as_zero():
