@@ -10,6 +10,18 @@ from .protocol import ModelOutputError, ModelProtocolError, contract_schema, obj
 from .budget import BudgetStopped
 
 
+PROTOCOL_ERROR_CODES = frozenset({'INVALID_ACTION_RESPONSE'})
+
+
+class ActionProtocolError(ValueError):
+    """No usable action within the bounded correction attempts; only a fixed code is recorded."""
+    def __init__(self, code, message):
+        if code not in PROTOCOL_ERROR_CODES:
+            raise ValueError(f'unknown protocol error code: {code}')
+        super().__init__(message)
+        self.code = code
+
+
 def prompt(name):
     return files('reproagent').joinpath('prompts/' + name + '.md').read_text(encoding='utf-8')
 
@@ -105,7 +117,7 @@ class ReproAgent:
                 else:
                     return action
             data['protocol_error'] = error[:512] + '; return exactly ONE complete JSON object, no DSML, XML, prose or additional actions'
-        raise ValueError('action response invalid after 3 attempts: ' + error[:512])
+        raise ActionProtocolError('INVALID_ACTION_RESPONSE', 'action response invalid after 3 attempts: ' + error[:512])
 
     def _action_payload(self, data):
         cap = self.context.budget.limits.tool_response_bytes

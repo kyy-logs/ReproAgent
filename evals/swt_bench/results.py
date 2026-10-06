@@ -24,6 +24,8 @@ def summarize_round(round_data):
     published=[value for value in outcomes if value.get('status')=='DONE']
     ratio=lambda numerator,denominator:numerator/denominator if denominator else None
     return {'all_tasks':total,'ready_tasks':len(ready),'preparation_rate':ratio(len(ready),total),
+        # Rounds recorded before the source was pinned cannot claim a comparable version.
+        'source_comparison_status':round_data.get('source_comparison_status','not_recorded'),
         'local_repeated':sum(value.get('evidence_level') in ('REPEATED_OBSERVATION','DIFFERENTIAL_VALIDATED') for value in outcomes),
         'local_differential':sum(value.get('evidence_level')=='DIFFERENTIAL_VALIDATED' for value in outcomes),
         'official_graded':len(verified),'official_successes':official,'official_not_verified':total-len(verified),

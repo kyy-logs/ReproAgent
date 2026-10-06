@@ -80,3 +80,42 @@ def test_credentials_never_enter_records(monkeypatch):
     assert 'private-secret-123' not in json.dumps(asdict(result))
     ctx = CallContext(Budget(BudgetLimits(model_cost_limit=1)))
     with pytest.raises(ValueError): asyncio.run(gateway(handle).complete(request(), ctx))
+
+
+def attempt_events():
+    events = []
+    class Store:
+        def append_event(self, kind, refs, payload): events.append(payload)
+    return events, Store()
+
+
+def test_finish_reason_classification_is_a_closed_set():
+    from reproagent.adapters.models.provider import classify_finish_reason
+    assert classify_finish_reason('stop') == 'stop' and classify_finish_reason('length') == 'length'
+    assert classify_finish_reason('content_filter') == 'content_filter'
+    assert classify_finish_reason('provider-private-reason') == 'other'
+    assert classify_finish_reason('') == 'unknown' and classify_finish_reason(None) == 'unknown'
+
+
+def test_failed_attempt_event_records_size_and_reason_not_raw_content():
+    from reproagent.core.protocol import ModelOutputError
+    secret = 'synthetic-reasoning-text'
+    model = gateway(lambda req: httpx.Response(200, json={'choices':[{'finish_reason':'length','message':{'content':secret}}],
+                                                          'usage':{'prompt_tokens':10,'completion_tokens':5}}))
+    events, store = attempt_events(); model.attempt_store = store
+    with pytest.raises(ModelOutputError):
+        asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},), 'action', max_output_tokens=1234), context()))
+    assert len(events) == 1 and events[0]['attempt'] == 1
+    assert events[0]['response_kind'] == 'action' and events[0]['effective_output_limit'] == 1234
+    assert events[0]['finish_reason'] == 'length' and events[0]['content_bytes'] == len(secret.encode())
+    assert events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5} and events[0]['cost_kind'] == 'unknown'
+    assert secret not in json.dumps(events[0])
+
+
+def test_completed_attempt_event_stays_within_the_configured_limit():
+    model = gateway(lambda req: reply())
+    events, store = attempt_events(); model.attempt_store = store
+    result = asyncio.run(model.complete(request(), context()))
+    assert result.text == '{}' and len(events) == 1
+    assert events[0]['finish_reason'] == 'stop' and events[0]['content_bytes'] == 2
+    assert events[0]['response_kind'] == 'action' and events[0]['effective_output_limit'] == 4096

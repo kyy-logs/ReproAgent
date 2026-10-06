@@ -4,18 +4,39 @@ import time
 import uuid
 from dataclasses import asdict, replace
 
-from .agent import ReproAgent
+from .agent import ActionProtocolError, ReproAgent
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, CandidateDraft, DraftFile, EvidenceContext, EvidenceLevel, EvidenceRef,
                      IssueDescription, ProjectView, SourceRef, TaskResult, TaskState)
-from .serialization import bytes_hash
+from .serialization import bytes_hash, canonical_hash
 from .tools import Tools
 from .protocol import ModelProtocolError
 from reproagent.store import atomic_write
 
+# Every action ends in one of these codes; none of them carries model or provider text.
+ACTION_RESULT_CODES = frozenset({'OK', 'INVALID_ARGUMENT', 'MISSING_FILE', 'INVALID_ENCODING', 'UNKNOWN_CANDIDATE',
+    'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF', 'REVISION_BUDGET_EXCEEDED',
+    'REPLAY_UNCONFIRMED', 'INTERRUPTED'})
+
 
 class CleanupFailed(Exception):
     def __init__(self, reason): self.reason = reason
+
+
+class ActionRejected(ValueError):
+    """A validated action failed its own preconditions; the event records only the code."""
+    def __init__(self, code, message):
+        if code not in ACTION_RESULT_CODES or code == 'OK':
+            raise ValueError(f'unknown action result code: {code}')
+        super().__init__(message)
+        self.code = code
+
+
+def rejection_code(error):
+    if isinstance(error, ActionRejected): return error.code
+    if isinstance(error, FileNotFoundError): return 'MISSING_FILE'
+    if isinstance(error, UnicodeError): return 'INVALID_ENCODING'
+    return 'INVALID_ARGUMENT'
 
 
 class Controller:
@@ -43,6 +64,21 @@ class Controller:
         for secret in self.secrets:
             text = text.replace(secret, '[REDACTED]')
         return text.encode()[:8192].decode(errors='ignore')
+
+    def steps_remaining(self, context):
+        return max(0, context.budget.limits.agent_steps - context.budget.steps_used)
+
+    def action_start(self, action, context, contract):
+        """Record the action under a bounded name, a hash and the remaining budget only."""
+        selected = {'action':action.name, 'parameters_hash':canonical_hash(action.parameters),
+                    'steps_remaining':self.steps_remaining(context), 'contract_version':contract.version}
+        self.store.append_event('action.selected', (), selected)
+        return selected
+
+    def action_end(self, selected, started, code):
+        if code not in ACTION_RESULT_CODES: raise ValueError(f'unknown action result code: {code}')
+        self.store.append_event('action.completed' if code == 'OK' else 'action.rejected', (),
+            {**selected, 'result_code':code, 'duration':time.monotonic() - started})
 
     async def run(self, request, context, fixed=None):
         started = time.monotonic()
@@ -80,94 +116,118 @@ class Controller:
                 result = self.state(result, TaskState.GENERATING)
                 try:
                     action = await agent.next_action(AgentContext(contract, tools.project, tuple(history[-4:]), feedback))
-                    parameters = action.parameters
-                    if action.name == 'search_code':
-                        tool_result = tools.search_code(**parameters)
-                        remember_original(tool_result.evidence_refs)
-                        feedback = self.feedback(asdict(tool_result))
-                    elif action.name == 'read_file':
-                        tool_result = tools.read_file(**parameters)
-                        remember_original(tool_result.evidence_refs)
-                        feedback = self.feedback(asdict(tool_result))
-                    elif action.name == 'write_candidate':
-                        if contract.missing_information or not contract.expected:
-                            raise ValueError('read expectation sources and revise contract before generating a candidate')
-                        draft = CandidateDraft(tuple(DraftFile(f['path'], f['content'].encode('utf-8'), f['role']) for f in parameters['files']),
-                            snapshot.snapshot_id, contract.contract_id, contract.version, parameters['hypothesis'], expectation_sources=contract.sources)
-                        feedback = self.feedback(asdict(tools.write_candidate(draft)))
-                    elif action.name == 'revise_contract':
-                        refs = tuple(EvidenceRef(**ref) for ref in parameters['source_refs'])
-                        if any(ref not in seen_sources for ref in refs):
-                            raise ValueError('revision may cite only original project evidence returned by tools')
-                        sources = [source, *(s for s in contract.sources if s != source)]
-                        sources.extend(SourceRef(ref.path, ref.content_hash, ref.start_line, ref.end_line, 'repository') for ref in refs)
-                        texts = tuple('\n'.join(self.verifier.resolve(s).splitlines()[s.start_line - 1:s.end_line]) for s in sources)
-                        if sum(len(t.encode()) for t in texts) > context.budget.limits.tool_response_bytes:
-                            raise ValueError('revision sources exceed context budget; narrow line ranges')
-                        revised = await agent.analyze(IssueDescription(issue_bytes.decode('utf-8'), bytes_hash(issue_bytes)), EvidenceContext(tuple(sources), texts, contract))
-                        revised = replace(revised, revision_reason=parameters['reason'])
-                        for ref in revised.sources: self.verifier.resolve(ref)
-                        self.store.save_contract(revised)
-                        contract = revised
-                        executions.clear(); verdicts.clear(); history.clear()
-                        result = self.state(result, TaskState.GENERATING, evidence_level=EvidenceLevel.NONE, accepted_candidate_id='')
-                        feedback = self.feedback({'contract_version':contract.version, 'missing_information':contract.missing_information})
-                    elif action.name == 'request_information':
-                        result = self.state(result, TaskState.NEEDS_INFORMATION, stop_reason='MISSING_INFORMATION', uncertainties=(parameters['question'],))
-                        break
-                    else:
-                        candidate = next((c for c in tools.project.candidates if c.candidate_id == parameters['candidate_id']), None)
-                        if candidate is None: raise ValueError('unknown candidate_id')
-                        if action.name == 'run_candidate':
-                            result = self.state(result, TaskState.EXECUTING)
-                            run = await self.runner.execute(candidate, snapshot, environment, context)
-                            self.check_execution(run)
-                            result = self.state(result, TaskState.VERIFYING)
-                            verdict = await self.verifier.evaluate(contract, candidate, (run,), context)
-                            self.store.save_record('verdicts', 'verdict-' + run.run_id, verdict)
-                            executions[candidate.candidate_id], verdicts[candidate.candidate_id] = run, verdict
-                            feedback = self.feedback(asdict(verdict))
-                            if verdict.classification == CandidateClass.ENVIRONMENT_BLOCKED:
-                                result = self.state(result, TaskState.BLOCKED, stop_reason='ENVIRONMENT_BLOCKED', uncertainties=(verdict.reason,))
-                                break
-                            if verdict.classification == CandidateClass.REPRODUCED:
-                                result = self.state(result, TaskState.VERIFYING, evidence_level=EvidenceLevel.SINGLE_OBSERVATION, accepted_candidate_id=candidate.candidate_id)
-                        elif action.name == 'submit_candidate':
-                            first, first_verdict = executions.get(candidate.candidate_id), verdicts.get(candidate.candidate_id)
-                            if not first or first_verdict.classification != CandidateClass.REPRODUCED:
-                                raise ValueError('candidate has no verified original failure')
-                            result = self.state(result, TaskState.REPLAYING)
-                            second = await self.runner.execute(candidate, snapshot, environment, context)
-                            self.check_execution(second)
-                            second_verdict = await self.verifier.evaluate(contract, candidate, (second,), context)
-                            self.store.save_record('verdicts', 'verdict-' + second.run_id, second_verdict)
-                            if not self.verifier.confirm(contract, candidate, first, second, (first_verdict, second_verdict)):
-                                feedback = 'Independent replay did not confirm the same failure; revise or request information.'
-                                continue
-                            result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.REPEATED_OBSERVATION, accepted_candidate_id=candidate.candidate_id)
-                            if fixed:
-                                # No repair paths/source are ever placed in AgentContext or Tools.
-                                fixed_request = replace(request, repo=fixed.repo, language=replace(request.language, python=fixed.python or request.language.python))
-                                try:
-                                    fixed_snapshot = self.workspace.freeze(fixed_request, context)
-                                    fixed_environment = await self.runner.prepare(fixed_request, fixed_snapshot, context)
-                                    fixed_run = await self.runner.execute(candidate, fixed_snapshot, fixed_environment, context, execution_role='fixed')
-                                    self.check_execution(fixed_run)
-                                    checks = self.runner.adapter.check_framework(candidate, fixed_run.observation)
-                                    same_nodes = set(fixed_run.observation.framework_details.get('completed_nodeids', [])) == set(first.observation.framework_details.get('completed_nodeids', []))
-                                    passed = same_nodes and fixed_run.raw.exit_code == 0 and fixed_run.raw.stop_reason == 'EXITED' and fixed_run.protection.ok and fixed_run.observation.executed and fixed_run.observation.probe_complete and not checks.invalid and not checks.blocked
-                                    if passed:
-                                        result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.DIFFERENTIAL_VALIDATED)
-                                    else:
-                                        result = replace(result, uncertainties=(*result.uncertainties, 'Fixed-version validation failed or was incompatible.'))
-                                except (ValueError, OSError):
-                                    result = replace(result, uncertainties=(*result.uncertainties, 'Fixed-version environment/fixtures unavailable.'))
-                            context.budget.check()
-                            result = self.state(result, TaskState.EXPORTING)
-                            break
-                    history.append({'action':action.name, 'feedback':feedback.encode()[:2048].decode(errors='ignore')})
-                except (ValueError, FileNotFoundError, UnicodeError) as exc:
+                except ActionProtocolError as exc:
+                    self.store.append_event('protocol.error', (), {'response_kind':'action', 'result_code':exc.code,
+                        'steps_remaining':self.steps_remaining(context)})
                     feedback = self.feedback({'error':str(exc)})
+                except (ValueError, FileNotFoundError, UnicodeError) as exc:
+                    # No action was selected, so this is a protocol failure rather than a rejection.
+                    self.store.append_event('protocol.error', (), {'response_kind':'action', 'result_code':'INVALID_ACTION_RESPONSE',
+                        'steps_remaining':self.steps_remaining(context)})
+                    feedback = self.feedback({'error':str(exc)})
+                else:
+                    parameters = action.parameters
+                    selected = self.action_start(action, context, contract)
+                    started_action = time.monotonic()
+                    code = 'OK'
+                    try:
+                        if action.name == 'search_code':
+                            tool_result = tools.search_code(**parameters)
+                            remember_original(tool_result.evidence_refs)
+                            feedback = self.feedback(asdict(tool_result))
+                        elif action.name == 'read_file':
+                            tool_result = tools.read_file(**parameters)
+                            remember_original(tool_result.evidence_refs)
+                            feedback = self.feedback(asdict(tool_result))
+                        elif action.name == 'write_candidate':
+                            if contract.missing_information or not contract.expected:
+                                raise ActionRejected('CONTRACT_INCOMPLETE', 'read expectation sources and revise contract before generating a candidate')
+                            draft = CandidateDraft(tuple(DraftFile(f['path'], f['content'].encode('utf-8'), f['role']) for f in parameters['files']),
+                                snapshot.snapshot_id, contract.contract_id, contract.version, parameters['hypothesis'], expectation_sources=contract.sources)
+                            feedback = self.feedback(asdict(tools.write_candidate(draft)))
+                        elif action.name == 'revise_contract':
+                            refs = tuple(EvidenceRef(**ref) for ref in parameters['source_refs'])
+                            if any(ref not in seen_sources for ref in refs):
+                                raise ActionRejected('UNAUTHORIZED_EVIDENCE_REF', 'revision may cite only original project evidence returned by tools')
+                            sources = [source, *(s for s in contract.sources if s != source)]
+                            sources.extend(SourceRef(ref.path, ref.content_hash, ref.start_line, ref.end_line, 'repository') for ref in refs)
+                            texts = tuple('\n'.join(self.verifier.resolve(s).splitlines()[s.start_line - 1:s.end_line]) for s in sources)
+                            if sum(len(t.encode()) for t in texts) > context.budget.limits.tool_response_bytes:
+                                raise ActionRejected('REVISION_BUDGET_EXCEEDED', 'revision sources exceed context budget; narrow line ranges')
+                            revised = await agent.analyze(IssueDescription(issue_bytes.decode('utf-8'), bytes_hash(issue_bytes)), EvidenceContext(tuple(sources), texts, contract))
+                            revised = replace(revised, revision_reason=parameters['reason'])
+                            for ref in revised.sources: self.verifier.resolve(ref)
+                            self.store.save_contract(revised)
+                            contract = revised
+                            executions.clear(); verdicts.clear(); history.clear()
+                            result = self.state(result, TaskState.GENERATING, evidence_level=EvidenceLevel.NONE, accepted_candidate_id='')
+                            feedback = self.feedback({'contract_version':contract.version, 'missing_information':contract.missing_information})
+                        elif action.name == 'request_information':
+                            result = self.state(result, TaskState.NEEDS_INFORMATION, stop_reason='MISSING_INFORMATION', uncertainties=(parameters['question'],))
+                            break
+                        else:
+                            candidate = next((c for c in tools.project.candidates if c.candidate_id == parameters['candidate_id']), None)
+                            if candidate is None: raise ActionRejected('UNKNOWN_CANDIDATE', 'unknown candidate_id')
+                            if action.name == 'run_candidate':
+                                result = self.state(result, TaskState.EXECUTING)
+                                run = await self.runner.execute(candidate, snapshot, environment, context)
+                                self.check_execution(run)
+                                result = self.state(result, TaskState.VERIFYING)
+                                verdict = await self.verifier.evaluate(contract, candidate, (run,), context)
+                                self.store.save_record('verdicts', 'verdict-' + run.run_id, verdict)
+                                executions[candidate.candidate_id], verdicts[candidate.candidate_id] = run, verdict
+                                feedback = self.feedback(asdict(verdict))
+                                if verdict.classification == CandidateClass.ENVIRONMENT_BLOCKED:
+                                    result = self.state(result, TaskState.BLOCKED, stop_reason='ENVIRONMENT_BLOCKED', uncertainties=(verdict.reason,))
+                                    break
+                                if verdict.classification == CandidateClass.REPRODUCED:
+                                    result = self.state(result, TaskState.VERIFYING, evidence_level=EvidenceLevel.SINGLE_OBSERVATION, accepted_candidate_id=candidate.candidate_id)
+                            elif action.name == 'submit_candidate':
+                                first, first_verdict = executions.get(candidate.candidate_id), verdicts.get(candidate.candidate_id)
+                                if not first or first_verdict.classification != CandidateClass.REPRODUCED:
+                                    raise ActionRejected('CANDIDATE_NOT_REPRODUCED', 'candidate has no verified original failure')
+                                result = self.state(result, TaskState.REPLAYING)
+                                second = await self.runner.execute(candidate, snapshot, environment, context)
+                                self.check_execution(second)
+                                second_verdict = await self.verifier.evaluate(contract, candidate, (second,), context)
+                                self.store.save_record('verdicts', 'verdict-' + second.run_id, second_verdict)
+                                if not self.verifier.confirm(contract, candidate, first, second, (first_verdict, second_verdict)):
+                                    feedback = 'Independent replay did not confirm the same failure; revise or request information.'
+                                    code = 'REPLAY_UNCONFIRMED'
+                                    continue
+                                result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.REPEATED_OBSERVATION, accepted_candidate_id=candidate.candidate_id)
+                                if fixed:
+                                    # No repair paths/source are ever placed in AgentContext or Tools.
+                                    fixed_request = replace(request, repo=fixed.repo, language=replace(request.language, python=fixed.python or request.language.python))
+                                    try:
+                                        fixed_snapshot = self.workspace.freeze(fixed_request, context)
+                                        fixed_environment = await self.runner.prepare(fixed_request, fixed_snapshot, context)
+                                        fixed_run = await self.runner.execute(candidate, fixed_snapshot, fixed_environment, context, execution_role='fixed')
+                                        self.check_execution(fixed_run)
+                                        checks = self.runner.adapter.check_framework(candidate, fixed_run.observation)
+                                        same_nodes = set(fixed_run.observation.framework_details.get('completed_nodeids', [])) == set(first.observation.framework_details.get('completed_nodeids', []))
+                                        passed = same_nodes and fixed_run.raw.exit_code == 0 and fixed_run.raw.stop_reason == 'EXITED' and fixed_run.protection.ok and fixed_run.observation.executed and fixed_run.observation.probe_complete and not checks.invalid and not checks.blocked
+                                        if passed:
+                                            result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.DIFFERENTIAL_VALIDATED)
+                                        else:
+                                            result = replace(result, uncertainties=(*result.uncertainties, 'Fixed-version validation failed or was incompatible.'))
+                                    except (ValueError, OSError):
+                                        result = replace(result, uncertainties=(*result.uncertainties, 'Fixed-version environment/fixtures unavailable.'))
+                                context.budget.check()
+                                result = self.state(result, TaskState.EXPORTING)
+                                break
+                    except (ValueError, FileNotFoundError, UnicodeError) as exc:
+                        code = rejection_code(exc)
+                        feedback = self.feedback({'error':str(exc)})
+                    except BaseException:
+                        code = 'INTERRUPTED'
+                        raise
+                    else:
+                        history.append({'action':action.name, 'feedback':feedback.encode()[:2048].decode(errors='ignore')})
+                    finally:
+                        # Every selected action gets exactly one terminal event, including
+                        # the branches that break, continue or interrupt the loop.
+                        self.action_end(selected, started_action, code)
         except CleanupFailed as exc:
             result = self.state(result, TaskState.FAILED, stop_reason=exc.reason, uncertainties=(*result.uncertainties, 'Process cleanup failed; directories retained.'))
         except BudgetStopped as exc:

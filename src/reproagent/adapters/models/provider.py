@@ -8,6 +8,24 @@ from reproagent.core.budget import BudgetStopped
 from reproagent.core.models import ModelResponse
 from reproagent.core.protocol import ModelOutputError
 
+FINISH_REASONS = frozenset({'stop', 'length', 'content_filter', 'tool_calls', 'function_call'})
+
+
+def classify_finish_reason(value):
+    """Reduce a provider's finish_reason to a closed set; raw values never enter records."""
+    if not isinstance(value, str) or not value: return 'unknown'
+    return value if value in FINISH_REASONS else 'other'
+
+
+def attempt_payload(attempt, usage, cost_kind, cost_value, *, response_kind, effective_output_limit,
+                    finish_reason='', content_bytes=0, backend=None):
+    """Bound what a model attempt records: no prompt, raw response, reasoning text or header."""
+    record = {'attempt':attempt, 'usage':usage, 'cost_kind':cost_kind, 'cost_value':cost_value,
+        'response_kind':response_kind, 'effective_output_limit':effective_output_limit,
+        'finish_reason':classify_finish_reason(finish_reason), 'content_bytes':content_bytes}
+    if backend is not None: record['backend'] = backend
+    return record
+
 
 async def bounded(awaitable, context):
     context.budget.check()
@@ -49,8 +67,9 @@ class ChatCompletionGateway:
         if not key and self.transport is None:
             raise ValueError('API key environment variable is missing')
         started = time.monotonic()
+        effective_limit = min(request.max_output_tokens, self.config.max_output_tokens)
         payload = {'model': self.config.model, 'messages': list(request.messages),
-            self.config.output_limit_field: min(request.max_output_tokens, self.config.max_output_tokens),
+            self.config.output_limit_field: effective_limit,
             'response_format': {'type': 'json_object'}}
         headers = {'Authorization': 'Bearer ' + key} if key else {}
         async with httpx.AsyncClient(transport=self.transport, timeout=min(60, context.budget.deadline - context.budget.clock()), follow_redirects=False, trust_env=False) as client:
@@ -59,6 +78,7 @@ class ChatCompletionGateway:
                 settled = False
                 attempt_usage = {}
                 attempt_cost = None
+                attempt_finish, attempt_bytes = '', 0
                 try:
                     response = await bounded(client.post(self.config.base_url.rstrip('/') + '/chat/completions', json=payload, headers=headers), context)
                     if response.status_code in (408, 429, 500, 502, 503, 504):
@@ -88,6 +108,8 @@ class ChatCompletionGateway:
                     settled = True
                     choice = data['choices'][0]
                     text = choice['message']['content']
+                    attempt_finish = choice.get('finish_reason', '')
+                    attempt_bytes = len(text.encode('utf-8')) if isinstance(text, str) else 0
                     if choice.get('finish_reason') != 'stop' or not isinstance(text, str) or not text:
                         raise ModelOutputError('truncated, empty or incompatible provider response; return a complete JSON object')
                     total_cost = cost if attempt == 0 else None
@@ -102,6 +124,8 @@ class ChatCompletionGateway:
                     if not settled:
                         context.budget.settle_cost(reservation, None)
                     if self.attempt_store:
-                        self.attempt_store.append_event('model.attempt', (), {'attempt':attempt + 1, 'usage':attempt_usage,
-                            'cost_kind':'estimated' if attempt_cost is not None else 'unknown', 'cost_value':attempt_cost})
+                        self.attempt_store.append_event('model.attempt', (), attempt_payload(attempt + 1, attempt_usage,
+                            'estimated' if attempt_cost is not None else 'unknown', attempt_cost,
+                            response_kind=request.response_kind, effective_output_limit=effective_limit,
+                            finish_reason=attempt_finish, content_bytes=attempt_bytes))
         raise RuntimeError('provider produced no response')

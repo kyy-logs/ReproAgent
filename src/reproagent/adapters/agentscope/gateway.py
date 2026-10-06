@@ -6,7 +6,7 @@ import time
 import httpx
 
 from .dependency import require_agentscope
-from ..models.provider import bounded
+from ..models.provider import attempt_payload, bounded
 from ...core.budget import BudgetStopped
 from ...core.models import ModelResponse
 from ...core.protocol import ModelOutputError
@@ -60,6 +60,7 @@ class AgentScopeModelGateway:
         if not key and self.transport is None:
             raise ValueError('API key environment variable is missing')
         started = time.monotonic()
+        effective_limit = min(request.max_output_tokens, self.config.max_output_tokens)
         class TextFormatter(OpenAIChatFormatter):
             async def format(self, messages):
                 encoded = await super().format(messages)
@@ -73,7 +74,7 @@ class AgentScopeModelGateway:
         messages = [Msg(name=message['role'], role=message['role'], content=[TextBlock(text=message['content'])]) for message in request.messages]
         for attempt in range(3):
             context.budget.check()
-            observed = {'usage':{}, 'error':'', 'finish_reason':''}
+            observed = {'usage':{}, 'error':'', 'finish_reason':'', 'content_bytes':0}
             reservation = context.budget.reserve_cost(None)
             cost = None
             async def observe(response):
@@ -105,6 +106,7 @@ class AgentScopeModelGateway:
                     choice = data['choices'][0]
                     observed['finish_reason'] = choice.get('finish_reason', '')
                     text = choice['message']['content']
+                    observed['content_bytes'] = len(text.encode('utf-8')) if isinstance(text, str) else 0
                     if choice.get('finish_reason') != 'stop' or not isinstance(text, str) or not text or choice['message'].get('tool_calls'):
                         raise ValueError('truncated, empty or incompatible provider response')
                 except (ValueError, KeyError, IndexError, TypeError):
@@ -123,7 +125,7 @@ class AgentScopeModelGateway:
                         client_kwargs={'http_client':client, 'max_retries':0})
                     try:
                         result = await bounded(sdk(messages, response_format={'type':'json_object'},
-                            **{self.config.output_limit_field:min(request.max_output_tokens, self.config.max_output_tokens)}), context)
+                            **{self.config.output_limit_field:effective_limit}), context)
                     except (asyncio.CancelledError, BudgetStopped):
                         raise
                     except Exception as error:
@@ -162,6 +164,8 @@ class AgentScopeModelGateway:
                     cost = (usage['prompt_tokens']*self.config.input_cost_per_million+usage['completion_tokens']*self.config.output_cost_per_million)/1000000
                 context.budget.settle_cost(reservation, cost)
                 if self.attempt_store:
-                    self.attempt_store.append_event('model.attempt', (), {'attempt':attempt+1, 'backend':'agentscope',
-                        'usage':usage, 'cost_kind':'estimated' if cost is not None else 'unknown', 'cost_value':cost})
+                    self.attempt_store.append_event('model.attempt', (), attempt_payload(attempt + 1, usage,
+                        'estimated' if cost is not None else 'unknown', cost, response_kind=request.response_kind,
+                        effective_output_limit=effective_limit, finish_reason=observed['finish_reason'],
+                        content_bytes=observed['content_bytes'], backend='agentscope'))
         raise RuntimeError('provider produced no response')
