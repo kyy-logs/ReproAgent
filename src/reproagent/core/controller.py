@@ -245,11 +245,16 @@ class Controller:
                                         same_nodes = set(fixed_run.observation.framework_details.get('completed_nodeids', [])) == set(first.observation.framework_details.get('completed_nodeids', []))
                                         passed = same_nodes and fixed_run.raw.exit_code == 0 and fixed_run.raw.stop_reason == 'EXITED' and fixed_run.protection.ok and fixed_run.observation.executed and fixed_run.observation.probe_complete and not checks.invalid and not checks.blocked
                                         if passed:
-                                            result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.DIFFERENTIAL_VALIDATED)
+                                            result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.DIFFERENTIAL_VALIDATED, fix_validation_status='passed')
                                         else:
-                                            result = replace(result, uncertainties=(*result.uncertainties, 'Fixed-version validation failed or was incompatible.'))
+                                            # The fixed version ran the same candidate and did not pass:
+                                            # only the original repeated failure is confirmed.
+                                            result = replace(result, fix_validation_status='failed',
+                                                uncertainties=(*result.uncertainties, 'Fixed-version validation failed or was incompatible.'))
                                     except (ValueError, OSError):
-                                        result = replace(result, uncertainties=(*result.uncertainties, 'Fixed-version environment/fixtures unavailable.'))
+                                        # No fixed-version verdict exists, so no differential claim is made.
+                                        result = replace(result, fix_validation_status='blocked',
+                                            uncertainties=(*result.uncertainties, 'Fixed-version environment/fixtures unavailable.'))
                                 context.budget.check()
                                 result = self.state(result, TaskState.EXPORTING)
                                 break

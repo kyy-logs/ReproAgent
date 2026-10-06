@@ -220,6 +220,70 @@ def test_fixed_validation_is_separate_and_same_candidate(tmp_path, projects, fac
     assert str(fixed) not in json.dumps(model.messages)
 
 
+def test_repeated_failure_with_failed_fix_is_not_differential_success(tmp_path, projects, facts):
+    # The candidate fails twice on the original version, so the task still finishes; the
+    # supplied fixed version runs the same candidate and fails too. The pipeline status
+    # stays DONE and the repeated observation stays visible, but neither the report nor
+    # the evaluation may present this as a differential success.
+    request, model, controller, ctx = setup(tmp_path, projects, facts)
+    still_broken = projects.plain(tmp_path / 'fixed-version-still-broken')
+    result = asyncio.run(controller.run(request, ctx, FixValidationRequest(still_broken, sys.executable)))
+    assert result.status == TaskState.DONE and result.export_state == 'published'
+    assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+    assert result.fix_validation_status == 'failed'
+    package = request.output_dir / 'artifacts/reproduction'
+    report = json.loads((package / 'report.json').read_text(encoding='utf-8'))
+    assert report['fix_validation_status'] == 'failed' and report['verified'] is True
+    text = (package / 'report.md').read_text(encoding='utf-8')
+    assert '仅确认原版重复失败，差分复现未成立' in text
+    assert '修复版对照通过' not in text
+    # The hidden fixed version still never reaches the explorer.
+    assert str(still_broken) not in json.dumps(model.messages)
+    # The evaluation keeps the repeated observation but counts zero differential successes.
+    from evals.run import summarize
+    from evals.schema import EvalResult
+    summary = summarize((EvalResult('pallets__flask-4992', status='DONE', evidence_level='REPEATED_OBSERVATION',
+        reproduced=True, fix_validation_status=result.fix_validation_status),))
+    assert summary['differential_successes'] == 0 and summary['fix_validation_failed'] == 1
+
+
+def test_no_fixed_version_preserves_buggy_only_workflow(tmp_path, projects, facts):
+    # The normal product workflow supplies no fixed version: the repeated original
+    # observation is still delivered, and the fixed-version status says so instead of
+    # inventing a differential claim.
+    request, model, controller, ctx = setup(tmp_path, projects, facts)
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE and result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+    assert result.fix_validation_status == 'not_provided'
+    runs = [controller.store.load_record('runs', path.parent.name) for path in (request.output_dir / 'runs').glob('*/execution.json')]
+    assert {run.execution_role for run in runs} == {'original'}
+    package = request.output_dir / 'artifacts/reproduction'
+    report = json.loads((package / 'report.json').read_text(encoding='utf-8'))
+    assert report['verified'] is True and report['fix_validation_status'] == 'not_provided'
+    text = (package / 'report.md').read_text(encoding='utf-8')
+    assert '已确认问题版的重复观察；未获得修复版通过的差异验证。' in text
+    assert '差分复现未成立' not in text
+    from evals.schema import EvalResult
+    assert EvalResult('case').fix_validation_status == 'not_provided'
+
+
+def test_legacy_record_without_fix_status_can_be_read(tmp_path):
+    # Records written before this field existed must keep loading, and a freshly created
+    # result must default to the same value: no fixed version was provided.
+    from reproagent.core.models import TaskResult
+    from reproagent.store import TaskStore
+    root = tmp_path / 'legacy'
+    root.mkdir()
+    (root / 'task.json').write_text(json.dumps({'schema_version': 1, 'task_id': 'pallets__flask-4992',
+        'status': 'DONE', 'stop_reason': '', 'evidence_level': 'REPEATED_OBSERVATION', 'export_state': 'published',
+        'accepted_candidate_id': 'candidate-1', 'uncertainties': ['Fixed-version validation failed or was incompatible.'],
+        'duration': 3.5}), encoding='utf-8')
+    legacy = TaskStore(root).load_record('task', 'task')
+    assert legacy.fix_validation_status == 'not_provided'
+    assert legacy.status == TaskState.DONE and legacy.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+    assert TaskResult('fresh', TaskState.PREPARING).fix_validation_status == 'not_provided'
+
+
 def event_dump(events): return json.dumps([{'kind': event.kind, 'payload': event.payload} for event in events])
 
 

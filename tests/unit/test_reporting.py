@@ -57,8 +57,36 @@ def test_fixed_failure_and_uncertainties_are_visible_without_promoting_evidence(
 def test_differential_report_explains_proof_scope():
     data = report_data('DIFFERENTIAL_VALIDATED')
     data['runs'].append({'run_id': 'fixed-1', 'candidate_id': 'candidate-1', 'role': 'fixed', 'exit_code': 0, 'cleanup_ok': True})
+    data['fix_validation_status'] = 'passed'
     text = render_report(data)
     assert '修复版对照通过' in text and '根因' in text
+    assert '差分复现未成立' not in text
+
+
+def test_failed_fix_report_says_the_differential_claim_did_not_hold():
+    data = report_data()
+    data['fix_validation_status'] = 'failed'
+    data['runs'].append({'run_id': 'fixed-1', 'candidate_id': 'candidate-1', 'role': 'fixed', 'exit_code': 1, 'cleanup_ok': True})
+    data['uncertainties'] = ['Fixed-version validation failed or was incompatible.']
+    text = render_report(data)
+    assert '仅确认原版重复失败，差分复现未成立' in text
+    assert '修复版对照通过' not in text and '根因' not in text
+    assert 'fixed-1' in text and '修复版验证' in text and '修复版未通过' in text
+
+
+def test_blocked_fix_report_says_the_differential_check_never_ran():
+    data = report_data()
+    data['fix_validation_status'] = 'blocked'
+    data['uncertainties'] = ['Fixed-version environment/fixtures unavailable.']
+    text = render_report(data)
+    assert '差分验证未执行' in text and '修复版验证受阻' in text
+    assert '差分复现未成立' not in text and '修复版对照通过' not in text
+
+
+def test_report_without_fix_status_keeps_the_buggy_only_conclusion():
+    text = render_report(report_data())
+    assert '未进行修复版对照' in text
+    assert '差分复现未成立' not in text
 
 
 def test_diagnostic_with_partial_evidence_never_offers_success_replay():

@@ -15,6 +15,22 @@ def test_summary_keeps_denominator_unknown_cost_and_pending_judgement():
     assert summary['duration_p50']==5
 
 
+def test_round_summary_keeps_repeated_observation_and_failed_fix_separate():
+    from evals.swt_bench.results import summarize_round
+    # A failed fixed-version check must not be summarised like a passing one, and a round
+    # recorded before the field existed keeps its outcome as "no fixed version provided".
+    round_data={'outcomes':{
+        'pallets__flask-4992':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION','fix_validation_status':'failed',
+            'human_judgement':None,'export_replayed':None},
+        'sphinx-doc__sphinx-8801':{'status':'DONE','evidence_level':'DIFFERENTIAL_VALIDATED','fix_validation_status':'passed'},
+        'old-round':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION'},
+        'no-fix':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION','fix_validation_status':'not_provided'}}}
+    summary=summarize_round(round_data)
+    assert summary['local_repeated']==4 and summary['local_differential']==1
+    assert summary['fix_validation_passed']==1 and summary['fix_validation_failed']==1
+    assert summary['fix_validation_not_provided']==2 and summary['fix_validation_blocked']==0
+
+
 def test_unverified_external_report_is_not_counted_as_independent_success():
     from evals.swt_bench.results import summarize_round
     summary=summarize_round({'outcomes':{'a':{'status':'DONE','official_status':'imported_unverified','official_resolved':True}}})

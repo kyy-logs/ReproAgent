@@ -216,6 +216,64 @@ def test_generated_candidate_cannot_become_expectation_source(tmp_path,projects,
     assert len(list((request.output_dir/'contracts').glob('*.json'))) == 1
 
 
+class ProposalModel:
+    """Records the issue's interface proposal as unconfirmed, then keeps proposing a candidate."""
+    def __init__(self): self.requests, self.actions = [], 0
+    async def complete(self, request, context):
+        self.requests.append(request)
+        if request.response_kind == 'contract':
+            return ModelResponse(json.dumps({'trigger':'from_file(path, load, mode="b")','expected':'',
+                'reported_actual':'TypeError: File must be opened in binary mode','source_indices':[],
+                'observable_checks':[],'assumptions':[],
+                'missing_information':['mode="b" is only proposed by the issue; confirm it against the from_file signature']}))
+        if request.response_kind == 'action':
+            self.actions += 1
+            if self.actions <= 3:
+                return ModelResponse(json.dumps({'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py',
+                    'role':'test','content':'from example.parser import parse\ndef test_mode(tmp_path):\n    assert parse([1], mode="b") == [1]\n'}],
+                    'hypothesis':'the proposed mode parameter'}}))
+            if self.actions == 4:
+                return ModelResponse(json.dumps({'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}}))
+            return ModelResponse(json.dumps({'name':'request_information','parameters':{'question':'Confirm the proposed mode parameter'}}))
+        raise AssertionError(request.response_kind)
+
+
+def test_interface_proposal_is_missing_information_not_an_expectation(tmp_path,projects,facts):
+    """A mode="b" parameter or a Domain column name proposed by the issue is an unconfirmed
+    proposal, not the standard of correctness: the Controller refuses to publish a candidate
+    built on it while leaving the original sources readable and revisable. This does not prove
+    the model recognises every proposal; it fixes the prompt rule and the Controller guard."""
+    from importlib.resources import files
+    from reproagent.core.models import BudgetLimits
+    from tests.unit.test_controller import controller_for
+    model = ProposalModel()
+    request, controller, context = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=6))
+    result = asyncio.run(controller.run(request, context))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert not list((request.output_dir / 'candidates').glob('*/manifest.json'))
+    events = controller.store.read_events()[0]
+    assert [event.payload['action'] for event in events if event.kind == 'action.selected'] == ['read_file','request_information']
+    assert ('action.completed','read_file','OK') in [(event.kind, event.payload['action'], event.payload['result_code'])
+        for event in events if event.kind in ('action.completed','action.rejected')]
+    # The refused writes leave one bounded protocol error, not a published candidate.
+    assert [event.payload['result_code'] for event in events if event.kind == 'protocol.error'] == ['INVALID_ACTION_RESPONSE']
+    assert 'choose an allowed action' in model.requests[2].messages[-1]['content']
+    assert {request_obj.response_kind for request_obj in model.requests} == {'contract','action'}
+    # The rule is carried by the prompts the Runtime sends, not only by these test doubles.
+    analyze_text = model.requests[0].messages[0]['content']
+    assert 'proposal' in analyze_text and 'mode="b"' in analyze_text and 'Domain' in analyze_text
+    assert 'signature' in analyze_text
+    explorer_text = model.requests[1].messages[0]['content']
+    assert 'proposal' in explorer_text and 'correctness standard' in explorer_text
+    review_text = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
+    assert 'proposal' in review_text and 'correctness standard' in review_text
+    # While the proposal stays unconfirmed, only reading, revising and asking are offered.
+    first_action = json.loads(model.requests[1].messages[-1]['content'])
+    assert 'write_candidate' not in first_action['allowed_actions']
+    assert {'read_file','revise_contract'} <= set(first_action['allowed_actions'])
+    assert any('mode="b"' in item for item in first_action['contract']['missing_information'])
+
+
 def test_verdict_text_check_is_corrected_to_boolean_with_original_evidence(tmp_path,projects,facts):
     from tests.unit.test_verifier import EvidenceModel, prepare
     class TextCheckModel(EvidenceModel):

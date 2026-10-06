@@ -23,11 +23,19 @@ def summarize_round(round_data):
     durations=[value['duration'] for value in outcomes if value.get('status') not in ('EXHAUSTED','CANCELLED') and type(value.get('duration')) in (int,float) and math.isfinite(value['duration'])]
     published=[value for value in outcomes if value.get('status')=='DONE']
     ratio=lambda numerator,denominator:numerator/denominator if denominator else None
+    # The fixed-version outcome is its own vocabulary: a repeated original failure is not a
+    # differential success, and an outcome recorded before the field existed defaults to
+    # "not_provided" rather than inheriting either claim.
+    fix_status=lambda value:value.get('fix_validation_status','not_provided')
     return {'all_tasks':total,'ready_tasks':len(ready),'preparation_rate':ratio(len(ready),total),
         # Rounds recorded before the source was pinned cannot claim a comparable version.
         'source_comparison_status':round_data.get('source_comparison_status','not_recorded'),
         'local_repeated':sum(value.get('evidence_level') in ('REPEATED_OBSERVATION','DIFFERENTIAL_VALIDATED') for value in outcomes),
         'local_differential':sum(value.get('evidence_level')=='DIFFERENTIAL_VALIDATED' for value in outcomes),
+        'fix_validation_passed':sum(fix_status(value)=='passed' for value in outcomes),
+        'fix_validation_failed':sum(fix_status(value)=='failed' for value in outcomes),
+        'fix_validation_blocked':sum(fix_status(value)=='blocked' for value in outcomes),
+        'fix_validation_not_provided':sum(fix_status(value)=='not_provided' for value in outcomes),
         'official_graded':len(verified),'official_successes':official,'official_not_verified':total-len(verified),
         'official_total_rate':ratio(official,total),'official_rate_final':bool(total) and len(verified)==total,
         'runnable_official_rate':ratio(sum(value.get('official_status')=='verified' and value.get('official_resolved') is True for value in ready),len(ready)),
@@ -48,15 +56,18 @@ def save_summary(root,round_data):
     root=Path(root); summary=summarize_round(round_data); write_json(root/'summary.json',summary)
     lines=['# SWT-Bench 开发子集评测','',f"选定样本：{summary['all_tasks']}；准备可用：{summary['ready_tasks']}。",
         f"本地重复确认：{summary['local_repeated']}；本地差分确认：{summary['local_differential']}。",
+        f"修复版对照：通过 {summary['fix_validation_passed']}；未通过 {summary['fix_validation_failed']}；受阻 {summary['fix_validation_blocked']}；未提供 {summary['fix_validation_not_provided']}。",
+        '原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功。',
         f"有来源的官方判分：{summary['official_graded']}；成功：{summary['official_successes']}；尚未核验：{summary['official_not_verified']}。",
         '官方结果未齐全时，成功比例仅是暂定下界；本地 DONE 不能代替 SWT 判分。',
         f"人工已审查：{summary['human_reviewed']}；待审查：{summary['pending_human_review']}。",
         f"HTTP 尝试：{summary['http_attempts']}；记录 token：{summary['total_tokens']}；费用未知样本：{summary['costs_unknown_count']}。",
-        '', '| 样本 | 准备 | 本地状态 | 证据 | 官方状态 |','| --- | --- | --- | --- | --- |']
+        '', '| 样本 | 准备 | 本地状态 | 证据 | 修复版 | 官方状态 |','| --- | --- | --- | --- | --- | --- |']
     def escaped(value): return str(value).replace('|','\\|').replace('\n',' ').replace('<','&lt;').replace('>','&gt;')
     for identity,outcome in round_data['outcomes'].items():
         lines.append('| '+' | '.join(escaped(value) for value in (identity,outcome.get('preparation',{}).get('status','pending'),
-            outcome.get('status','NOT_RUN'),outcome.get('evidence_level','NONE'),outcome.get('official_status','not_run')))+' |')
+            outcome.get('status','NOT_RUN'),outcome.get('evidence_level','NONE'),
+            outcome.get('fix_validation_status','not_provided'),outcome.get('official_status','not_run')))+' |')
     from reproagent.store import atomic_write
     atomic_write(root/'report.md',('\n'.join(lines)+'\n').encode())
     return summary

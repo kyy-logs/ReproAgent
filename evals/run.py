@@ -56,7 +56,8 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend='nativ
         description_hash=bytes_hash(case.allowed_description.encode()), buggy_version=case.buggy_version, fixed_version=case.fixed_version,
         model_backend=model_backend,agent_backend=agent_backend,stop_reason=result.stop_reason,http_attempts=len(attempts),
         usage={key:sum(call.get('usage',{}).get(key,0) for call in calls) for key in ('prompt_tokens','completion_tokens','total_tokens')},
-        known_cost_subtotal=sum(value for value in costs if value is not None),unknown_cost_attempts=sum(value is None for value in costs))
+        known_cost_subtotal=sum(value for value in costs if value is not None),unknown_cost_attempts=sum(value is None for value in costs),
+        fix_validation_status=result.fix_validation_status)
 
 
 def summarize(results):
@@ -65,7 +66,11 @@ def summarize(results):
     effective = sum(r.reproduced and r.human_judgement is True and r.export_replayed is True for r in results)
     claimed = sum(r.reproduced for r in results)
     known = [r.cost_value for r in results if r.cost_kind != 'unknown' and r.cost_value is not None]
+    # A DONE task whose fixed version also failed confirms only the original repeated
+    # failure: it is counted here as a failed check, never as a differential success.
     return {'all_tasks':all_tasks, 'runnable_tasks':runnable, 'effective_reproductions':effective,
+        'differential_successes':sum(r.fix_validation_status == 'passed' for r in results),
+        'fix_validation_failed':sum(r.fix_validation_status == 'failed' for r in results),
         'total_rate':effective / all_tasks if all_tasks else None, 'runnable_rate':effective / runnable if runnable else None,
         'false_positives':sum(r.reproduced and r.human_judgement is False for r in results),
         'export_replay_rate':sum(r.reproduced and r.export_replayed is True for r in results) / claimed if claimed else None,

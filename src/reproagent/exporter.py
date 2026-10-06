@@ -67,6 +67,9 @@ class Exporter:
         events = store.read_events()[0]
         report = {'package_kind':kind, 'verified':bool(success), 'task_id':result.task_id, 'status':result.status.value,
             'stop_reason':result.stop_reason, 'evidence_level':result.evidence_level.value, 'uncertainties':list(result.uncertainties),
+            # Carried through unchanged so the report states the fixed-version outcome next to
+            # the evidence level instead of letting the repeated observation imply one.
+            'fix_validation_status':result.fix_validation_status,
             'event_cutoff':len(events) - 1, 'candidate_files':[], 'log_mapping':[], 'runs':[], 'source_mapping':[], 'verdict_mapping':[],
             'accepted_run_ids':[], 'environment_probes':[]}
         previews = {}

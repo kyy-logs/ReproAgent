@@ -56,6 +56,11 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
     previews = previews or {}
     verified = report.get('verified') is True and report.get('package_kind') == 'reproduction'
     level = report.get('evidence_level', 'NONE')
+    # A repeated observation of the original failure and a validated fixed version are
+    # different claims; the headline states which one this package actually holds.
+    fix_status = report.get('fix_validation_status', 'not_provided')
+    fix_labels = {'passed': '修复版对照通过', 'failed': '修复版未通过', 'blocked': '修复版验证受阻',
+                  'not_provided': '未进行修复版对照'}
     sections['title'] = 'Bug 复现报告' if verified else 'Bug 复现诊断：未确认复现'
     lines = []
     if not verified:
@@ -64,9 +69,14 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
         lines.append('问题版重复观察已确认，同一候选的修复版对照通过。此结论不等于完整根因证明。')
     else:
         lines.append('已确认问题版的重复观察；未获得修复版通过的差异验证。')
+        if fix_status == 'failed':
+            lines.append('仅确认原版重复失败，差分复现未成立：修复版运行了同一候选但没有通过。')
+        elif fix_status == 'blocked':
+            lines.append('修复版环境或夹具不可用，差分验证未执行；仅确认原版重复失败。')
     lines += ['', f'- 任务：{_text(report.get("task_id", ""))}',
               f'- 导出时状态：{_code(report.get("status", ""))}',
               f'- 证据等级：{_code(level)}',
+              f'- 修复版验证：{_code(fix_status)}（{_text(fix_labels.get(fix_status, "未记录"))}）',
               f'- 事件截止序号：{_text(report.get("event_cutoff", ""))}',
               '- 这是导出时的记录，最终任务状态以原任务目录的 task.json 为准。']
     if report.get('stop_reason'):

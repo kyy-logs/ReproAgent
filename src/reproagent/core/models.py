@@ -40,6 +40,13 @@ class EvidenceLevel(StrEnum):
     DIFFERENTIAL_VALIDATED = "DIFFERENTIAL_VALIDATED"
 
 
+# Closed vocabulary for the fixed-version check. No value claims more than was observed:
+# "passed" means the same candidate passed on the fixed version, "failed" that it did not,
+# "blocked" that the fixed version could not be prepared, and "not_provided" that no
+# differential check was requested or reached.
+FIX_VALIDATION_STATUSES = frozenset({"not_provided", "passed", "failed", "blocked"})
+
+
 @dataclass(frozen=True, slots=True)
 class BudgetLimits:
     agent_steps: int = 20
@@ -427,6 +434,15 @@ class TaskResult:
     export_state: str = "pending"
     uncertainties: tuple[str, ...] = ()
     duration: float = 0
+    # Whether an explicitly supplied fixed version was checked against the same candidate.
+    # A repeated observation of the original failure and a differential success are separate
+    # claims, so this stays its own field next to the evidence level. Records written before
+    # it existed load with the default.
+    fix_validation_status: str = "not_provided"
+
+    def __post_init__(self):
+        if self.fix_validation_status not in FIX_VALIDATION_STATUSES:
+            raise ValueError(f"unsupported fix_validation_status: {self.fix_validation_status}")
 
 
 @dataclass(frozen=True, slots=True)
