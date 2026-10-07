@@ -41,6 +41,28 @@ cd E:\ReproAgent
 
 输出 catalog.json 和 dev20.json。网络获取、导入与运行均使用新目录，拒绝覆盖。原始问题按字节哈希绑定，Unicode/Emoji 不经 Windows GBK 改写。
 
+### 冻结未参与调试的新清单
+
+固定开发清单是调试用的，不能当作正式评测。正式清单用 `evals.datasets.swt_bench.select_holdout` 从同一 catalog 选出：传入 catalog、排除项集合（dev20 的身份加已调试历史案例）、`repos=` 已支持 Python/pytest 的仓库顺序，以及固定 `seed`（默认 `reproagent-swt-holdout-v1`）。选择只读生成侧公开元数据，按仓库轮询取每个仓库内 `sha256(seed + ':' + instance_id)` 最小的样本；数据集修复补丁、参考测试和参考对照结果都不是输入，生成结果也不参与，因此同一 catalog、排除项、仓库顺序与 seed 必然得到同一份 sealed manifest。仓库池不足时直接报错，不静默减少样本。缺绑定的案例仍留在分母里：选择在任何案例运行前冻结，失败不替换。
+
+清单以 sealed manifest 落盘后，用现有的 `run`、`preflight`、`control` 命令消费，不新增运行路径：
+
+```python
+# freeze-holdout.py：用本仓库 .venv 解释器运行，写出冻结清单
+import json
+
+from evals.datasets.swt_bench import DEV_REPOS, select_holdout
+
+catalog = json.load(open('.local/swt-bench/data/catalog.json', encoding='utf-8'))
+development = json.load(open('.local/swt-bench/data/dev20.json', encoding='utf-8'))
+debugged_ids = set()  # 已调试历史案例的身份，按实际清单补齐
+excluded = {case['instance_id'] for case in development['cases']} | debugged_ids
+manifest = select_holdout(catalog, excluded, repos=DEV_REPOS, count=10)
+open('.local/swt-bench/data/holdout10.json', 'w', encoding='utf-8').write(json.dumps(manifest, ensure_ascii=False))
+```
+
+该清单只说明“本项目未调试过”，不保证模型训练未见过这些公开数据。同一轮内若来源指纹变化，该轮不可用于对比。
+
 ## 项目环境与绑定
 
 每例绑定指定 instance_id、buggy_repo、fixed_repo、buggy_python、fixed_python、target_modules、source_roots、candidate_parent、pytest_args、可选 baseline_tests、fix_patch_hash、fixed_source_hash、review_status 与 review_actor。
@@ -143,5 +165,7 @@ python -m evals.swt_bench official-run \
 ```powershell
 .\.venv\Scripts\python.exe -m evals.swt_bench summarize --round repro-results/swt-bench/dev20-native-001
 ```
+
+汇总把来源状态与各类计数分开列出，互不代偿：选定样本、准备可用、实际执行（运行器真正启动的案例）、本地重复确认、本地差分确认、独立交付确认/重跑未通过/待重跑、修复版对照（通过/未通过/受阻/未提供），以及官方判分。官方判分只认有来源回执的 verified 报告：全部案例齐了才记为已判分（最终）并给出 `official_rate`；只要还有一例未核验就记为 `待判分`，`official_rate` 为 null，不写成 0，也不把本地比例当作官方成绩。`official_total_rate` 仍保留“暂定下界”的旧口径，供需要分母的读者对照。没有这些字段的旧轮次照旧读取：来源读作 not_recorded，修复版读作 not_provided。
 
 实施记录和最新完整测试见 [实现记录](implementation-status.md)，具体接口见 [设计](superpowers/specs/2026-10-06-reproagent-swt-bench-design.md)。

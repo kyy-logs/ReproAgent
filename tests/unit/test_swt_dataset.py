@@ -69,6 +69,49 @@ def test_selection_is_deterministic_and_does_not_use_oracles(tmp_path):
     assert not any(word in json.dumps(first) for word in ('private fix','hidden oracle','private hint'))
 
 
+def test_holdout_is_deterministic_and_excludes_development_ids(tmp_path):
+    import collections
+    from evals.datasets.swt_bench import load_snapshot,select_dev,select_holdout
+    repos=('pallets/flask','psf/requests','pytest-dev/pytest','sphinx-doc/sphinx','sympy/sympy')
+    rows=[row(repo,number) for repo in repos for number in range(1,8)]
+    snapshot,filters,source=fixture_snapshot(tmp_path,rows)
+    catalog=load_snapshot(snapshot,filters,source,expected_count=len(rows))
+    development=select_dev(catalog,count=20); development_ids={case['instance_id'] for case in development['cases']}
+    first=select_holdout(catalog,development_ids,repos=repos,count=10)
+    second=select_holdout(catalog,development_ids,repos=repos,count=10)
+    assert first==second and first['catalog_hash']==catalog['catalog_hash'] and first['manifest_hash']
+    selected=[case['instance_id'] for case in first['cases']]
+    assert len(selected)==10 and len(set(selected))==10 and not set(selected)&development_ids
+    # Repository round-robin over the requested order, then the fixed-seed hash order.
+    assert collections.Counter(case['repo'] for case in first['cases'])=={repo:2 for repo in repos}
+    assert all(set(case)=={'instance_id','repo','base_commit','description_hash'} for case in first['cases'])
+    by_id={entry['instance_id']:entry for entry in catalog['entries']}
+    assert all(case=={key:by_id[case['instance_id']][key] for key in ('instance_id','repo','base_commit','description_hash')}
+        for case in first['cases'])
+    assert not any(word in json.dumps(first) for word in ('private fix','hidden oracle','private hint'))
+
+
+def test_selection_does_not_depend_on_hidden_patch_or_control_results(tmp_path):
+    from evals.datasets.swt_bench import load_snapshot,select_holdout
+    from evals.swt_bench.io import seal
+    repos=('sympy/sympy','pytest-dev/pytest')
+    rows=[row(repo,number) for repo in repos for number in range(1,8)]
+    snapshot,filters,source=fixture_snapshot(tmp_path,rows)
+    catalog=load_snapshot(snapshot,filters,source,expected_count=len(rows))
+    selected=select_holdout(catalog,set(),repos=repos,count=6)
+    identities=[case['instance_id'] for case in selected['cases']]
+    # The dataset's fix patch, its reference tests and every control result behind them
+    # are hidden from generation: a catalog whose opaque hashes differ, and one that
+    # never carried them at all, must select exactly the same cases in the same order.
+    public={key:value for key,value in catalog.items() if key!='catalog_hash'}
+    scrambled=seal({**public,'entries':[{**entry,'fix_patch_hash':'0'*64,'oracle_test_hash':'f'*64} for entry in catalog['entries']]},'catalog_hash')
+    stripped=seal({**public,'entries':[{key:value for key,value in entry.items()
+        if key not in ('fix_patch_hash','oracle_test_hash')} for entry in catalog['entries']]},'catalog_hash')
+    assert [case['instance_id'] for case in select_holdout(scrambled,set(),repos=repos,count=6)['cases']]==identities
+    assert [case['instance_id'] for case in select_holdout(stripped,set(),repos=repos,count=6)['cases']]==identities
+    assert not any(key in json.dumps(selected) for key in ('fix_patch_hash','oracle_test_hash'))
+
+
 def test_decoder_handles_unicode_independent_of_windows_console(tmp_path,monkeypatch):
     import subprocess
     from evals.datasets import fetch_swt

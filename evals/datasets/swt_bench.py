@@ -11,6 +11,7 @@ REVISION='6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2'
 HARNESS_COMMIT='330a649a764fab2fadaea632776eeae87272f74b'
 FILTER_HASH='d88e9ecfc5ab4f68cb961cea90bf54ddcd7d8af58b77c15e7def8a5b2fd00f2b'
 SEED='reproagent-swt-dev-v1'
+HOLDOUT_SEED='reproagent-swt-holdout-v1'
 DEV_REPOS=('pallets/flask','psf/requests','pytest-dev/pytest','sphinx-doc/sphinx','sympy/sympy')
 
 
@@ -66,3 +67,40 @@ def select_dev(catalog,count=20):
     cases=[{key:entry[key] for key in ('instance_id','repo','base_commit','description_hash')} for entry in selected]
     return seal({'schema_version':1,'purpose':'development','seed':SEED,'selection':'repo-round-robin-sha256-v1',
         'source':catalog['source'],'catalog_hash':catalog['catalog_hash'],'cases':cases},'manifest_hash')
+
+
+def select_holdout(catalog,excluded_ids,*,repos,count=10,seed=HOLDOUT_SEED):
+    """Select a frozen holdout manifest from public generation-side metadata only.
+
+    ``repos`` is the caller's list of projects whose Python/pytest configuration is
+    actually supported, in the order the pools are consumed; each pool is ordered by
+    ``sha256(seed + ':' + instance_id)`` and drawn round-robin, so the same catalog,
+    exclusions, repositories and seed always produce the same sealed manifest.
+    ``excluded_ids`` holds every identifier that must not be re-selected -- the pinned
+    development set and any already-debugged case -- and an identifier the catalog does
+    not contain is simply an identifier nothing can be selected from, so it is recorded
+    but not rejected.
+
+    The hidden material stays hidden: dataset patches, reference tests and reference
+    control results are never read, and nothing derived from generation results is an
+    input here. Failures keep their place in the denominator because the caller freezes
+    this manifest before any case runs.
+    """
+    verify_seal(catalog,'catalog_hash')
+    if type(count) is not int or count<1: raise ValueError('holdout count must be a positive integer')
+    if not isinstance(repos,tuple) or not repos or any(type(repo) is not str for repo in repos) or len(set(repos))!=len(repos):
+        raise ValueError('holdout repositories must be a non-empty unique sequence')
+    excluded=set(excluded_ids)
+    pools={repo:sorted((entry for entry in catalog['entries']
+        if entry['repo']==repo and entry['instance_id'] not in excluded),
+        key=lambda entry:hashlib.sha256((seed+':'+entry['instance_id']).encode()).hexdigest()) for repo in repos}
+    selected=[]
+    while len(selected)<count:
+        previous=len(selected)
+        for repo in repos:
+            if pools[repo] and len(selected)<count: selected.append(pools[repo].pop(0))
+        if len(selected)==previous: raise ValueError('not enough eligible holdout samples')
+    cases=[{key:entry[key] for key in ('instance_id','repo','base_commit','description_hash')} for entry in selected]
+    return seal({'schema_version':1,'purpose':'holdout','seed':seed,'selection':'repo-round-robin-sha256-v1',
+        'repos':list(repos),'excluded_ids':sorted(excluded),'source':catalog['source'],
+        'catalog_hash':catalog['catalog_hash'],'cases':cases},'manifest_hash')

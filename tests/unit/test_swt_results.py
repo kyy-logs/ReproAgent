@@ -31,6 +31,30 @@ def test_round_summary_keeps_repeated_observation_and_failed_fix_separate():
     assert summary['fix_validation_not_provided']==2 and summary['fix_validation_blocked']==0
 
 
+def test_pending_official_report_keeps_measured_local_zero_visible(tmp_path):
+    from evals.swt_bench.results import summarize_round,save_summary
+    # The round ran locally and every local count is zero; no official report exists yet.
+    # The measured zeros must stay visible, while the missing official figure reads as
+    # pending rather than as a zero score.
+    round_data={'source_comparison_status':'verified','outcomes':{
+        'exhausted':{'status':'EXHAUSTED','preparation':{'status':'ready'},'duration':30,'evidence_level':'NONE',
+            'human_judgement':None,'export_replayed':None,'official_status':'not_run','official_resolved':None},
+        'blocked':{'status':'NOT_PREPARED','preparation':{'status':'blocked'},'duration':None,'evidence_level':'NONE',
+            'human_judgement':None,'export_replayed':None,'official_status':'not_run','official_resolved':None}}}
+    summary=summarize_round(round_data)
+    assert summary['source_comparison_status']=='verified' and summary['all_tasks']==2
+    assert summary['executed_tasks']==1 and summary['ready_tasks']==1
+    assert summary['local_repeated']==0 and summary['local_differential']==0
+    assert summary['independent_delivered']==0 and summary['independent_delivery_failed']==0
+    assert summary['official_grade_status']=='pending' and summary['official_rate'] is None
+    assert summary['official_graded']==0 and summary['official_successes']==0 and summary['official_not_verified']==2
+    save_summary(tmp_path,round_data)
+    report=(tmp_path/'report.md').read_text(encoding='utf-8')
+    official=[line for line in report.splitlines() if line.startswith('官方判分')][0]
+    assert '待判分' in official and 'success' not in official.lower()
+    assert '实际执行：1' in report and '本地差分确认：0' in report
+
+
 def test_unverified_external_report_is_not_counted_as_independent_success():
     from evals.swt_bench.results import summarize_round
     summary=summarize_round({'outcomes':{'a':{'status':'DONE','official_status':'imported_unverified','official_resolved':True}}})

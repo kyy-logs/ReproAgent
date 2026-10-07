@@ -15,6 +15,7 @@
 - Claude Code 项目级 /reproagent Skill 与 Windows 启动器，真实调用和状态读取已验证，详见 [接入说明](claude-code.md)。
 - AgentScope 2.0.9 可选模型与单决策策略适配，Explorer 工厂注入、CLI/启动器独立选择，以及报告中的后端记录，见 [使用说明](agentscope.md)。
 - SWT-Bench Lite 固定版本导入、开发样本选择、独立预检、串行运行、标准测试补丁和官方结果来源校验，见 [评测说明](swt-bench.md)。
+- 正式评测清单的冻结选择器 `select_holdout`：排除 dev20 与已调试案例，按仓库轮询与固定 seed 从生成侧公开元数据选样本；汇总区分来源状态、实际执行、重复、差分、独立交付与官方判分，官方报告缺失时为待判分。
 
 ## 当前证据
 
@@ -55,6 +56,9 @@ Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9 已首次执行 
 
 2026-10-06 后续真实评测：第二轮 2 例调用模型，6 例 Sphinx 在 Windows 长路径快照阶段阻塞；有效交付 0。第三轮沿用固定20例、模型和预算，以长路径前缀及独立补齐依赖的 Sphinx 环境执行，8 例调用模型，1 DONE/REPEATED_OBSERVATION、7 EXHAUSTED、12 NOT_PREPARED，有效差分交付 0。165 次 HTTP 尝试、1475156 token，费用 unknown，官方判分与人工审查待完成。
 参考测试在独立副本核验，其中5例呈现原版失败/修复版通过；这5例 Agent 有效交付0/5。Sphinx-8801 的两个未接受候选独立执行均为1/0，但语义核验证据超32KB导致任务未交付，只用于诊断，不计成功。详见 [真实评测报告](evaluations/2026-10-06-swt-development.md)。本轮评测新增文档和本地环境，未改写旧任务包；运行期间另有 CI/venv 路径处理的并行变更，评测未覆盖这些变更，正式对比前需冻结实现版本。
+
+2026-10-07 评测清单与汇总口径（仅代码，未跑新轮次）：新增 `select_holdout`，从生成侧 catalog 按排除项与 `repos` 顺序做仓库轮询、仓库内按 `sha256(seed + ':' + instance_id)` 排序选出 sealed manifest，只读公开元数据，数据集补丁、参考测试与对照结果不参与，仓库池不足时报错而不静默减量；该 manifest 由现有的 `run`、`preflight`、`control` 命令消费，未新增运行路径或评分算法。
+`summarize_round` 增加实际执行、独立交付（确认/重跑未通过/待重跑）与来源状态展示，并引入 `official_grade_status`/`official_rate`：只有全部案例都有带回执的 verified 官方报告才给最终比例，否则记为待判分且比例为 null，不写成 0；官方成绩仍只来自独立 SWT harness，本地 DONE 或原版重复都不能代替。旧轮次无新字段时按 not_recorded / not_provided 读取，仍然可汇总。三个新回归场景先失败后通过。
 
 2026-10-06 CI 首次执行（Windows/Linux × 目标 Python 3.10/3.11/3.12 × pytest 7.4/8/9，共 18 个矩阵任务）全部失败，合并后为三类环境耦合问题，均已定位到根因。
 其一，dev 依赖未声明 setuptools，而打包测试用 --no-build-isolation 构建 wheel；Python 3.12 的 venv 不再自带 setuptools，本地 .venv 恰有而未暴露。
