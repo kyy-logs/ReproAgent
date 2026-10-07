@@ -16,7 +16,10 @@ def check_harness(harness,commit):
     harness=Path(harness).resolve()
     if git_output(harness,'rev-parse','HEAD')!=commit or git_output(harness,'diff','HEAD','--'):
         raise ValueError('harness commit/source mismatch')
-    exclusions=tuple(harness/name for name in ('image_build_logs','run_instance_swt_logs','evaluation_results'))
+    # The harness writes these while it runs. locks/ is created by its Locker and
+    # is not always released, so counting it as input aborted a completed run's
+    # results with 'source changed'; the other three are its log/report trees.
+    exclusions=tuple(harness/name for name in ('image_build_logs','run_instance_swt_logs','evaluation_results','locks'))
     contents=inventory(harness,exclusions)
     tracked=set(git_output(harness,'ls-files','-z').split('\0'))-{''}
     if set(contents)-tracked: raise ValueError('untracked or ignored harness input')

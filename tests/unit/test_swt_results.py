@@ -135,6 +135,28 @@ def test_official_harness_rejects_dirty_or_ignored_shadowing(tmp_path,projects):
     with pytest.raises(ValueError): check_harness(repo,commit)
 
 
+def test_official_harness_ignores_its_own_run_output_directories(tmp_path,projects):
+    """The harness writes these while it runs; they are not source changes.
+
+    A run leaves locks/ behind (the pinned harness's Locker files are not
+    released on every path), and counting them as input aborts every officially
+    graded case with HARNESS_SOURCE_CHANGED after a run that actually worked.
+    Anything outside these directories must still be rejected.
+    """
+    from evals.swt_bench.official import check_harness
+    from tests.unit.test_swt_prepare import git
+    repo=projects.plain(tmp_path/'harness'); git(repo,'init'); git(repo,'add','.')
+    git(repo,'-c','user.name=Fixture','-c','user.email=fixture@example.org','commit','-m','base')
+    commit=git(repo,'rev-parse','HEAD')
+    before=check_harness(repo,commit)
+    for name in ('image_build_logs','run_instance_swt_logs','evaluation_results','locks'):
+        (repo/name).mkdir()
+        (repo/name/'artifact').write_text('run output')
+    assert check_harness(repo,commit)==before
+    (repo/'extra.txt').write_text('not run output')
+    with pytest.raises(ValueError): check_harness(repo,commit)
+
+
 @pytest.mark.parametrize('failure',['timeout','nonzero'])
 def test_failed_official_execution_is_retained_as_infrastructure_failure(tmp_path,monkeypatch,failure):
     import subprocess
