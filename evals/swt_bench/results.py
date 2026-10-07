@@ -26,7 +26,9 @@ def round_identity(round_data):
     for source in (round_data.get('configuration'),round_data):
         if isinstance(source,dict):
             recorded.update({key:value for key,value in source.items() if key in IDENTITY_FIELDS and value})
-    for key in ('model_backend','agent_backend'):
+    # The version the round ran on is what it recorded, never the one installed now: a round
+    # summarised after an SDK upgrade must not be re-attributed to the newer build.
+    for key in ('model_backend','agent_backend','agentscope_version'):
         recorded.setdefault(key,NOT_RECORDED)
     return component_identity(**recorded)
 
@@ -82,7 +84,7 @@ def save_summary(root,round_data):
     root=Path(root); summary=summarize_round(round_data); write_json(root/'summary.json',summary)
     lines=['# SWT-Bench 开发子集评测','',f"选定样本：{summary['all_tasks']}；准备可用：{summary['ready_tasks']}。",
         f"基础设施：{summary['infrastructure']}；复现策略：{summary['strategy']}（版本 {summary['strategy_version']}）。",
-        f"本轮记录的后端：模型 {recorded_label(summary['model_backend'])}；Agent {recorded_label(summary['agent_backend'])}；AgentScope 版本：{summary['agentscope_version'] or '未安装'}。",
+        f"本轮记录的后端：模型 {recorded_label(summary['model_backend'])}；Agent {recorded_label(summary['agent_backend'])}；AgentScope 版本：{recorded_label(summary['agentscope_version'])}。",
         f"本地重复确认：{summary['local_repeated']}；本地差分确认：{summary['local_differential']}。",
         f"修复版对照：通过 {summary['fix_validation_passed']}；未通过 {summary['fix_validation_failed']}；受阻 {summary['fix_validation_blocked']}；未提供 {summary['fix_validation_not_provided']}。",
         '原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功。',

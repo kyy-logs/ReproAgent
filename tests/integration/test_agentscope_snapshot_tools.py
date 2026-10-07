@@ -212,6 +212,26 @@ def test_a_search_larger_than_one_command_line_reaches_every_registered_file(tmp
     assert asyncio.run(env.backend.exec_shell(["rg", "--hidden", MARKER, str(env.fixed)])).exit_code == 2
 
 
+@pytest.mark.skipif(find_ripgrep() is None, reason="no ripgrep on this host, so the SDK search blocks by design")
+def test_an_operator_ripgrep_config_cannot_inject_flags(tmp_path, projects, facts, monkeypatch):
+    """The search child reads no config file, so an operator's options cannot reach it.
+
+    Ripgrep prepends the options of the file ``RIPGREP_CONFIG_PATH`` names to every search,
+    which is the one way a flag the argv allowlist refused could still arrive -- ``--pre``
+    runs a command per searched file.  A config naming an unknown flag makes that visible:
+    with the config honoured the child fails outright, and with ``--no-filename`` its output
+    loses the path column the SDK's own argv produces.
+    """
+    config = tmp_path / "operator-ripgrep.conf"
+    config.write_text("--no-filename\n--not-a-real-ripgrep-flag\n", encoding="utf-8")
+    monkeypatch.setenv("RIPGREP_CONFIG_PATH", str(config))
+    env = environment(tmp_path, projects, facts, rg=find_ripgrep())
+    result = asyncio.run(env.backend.exec_shell(["rg", "--hidden", "-n", MARKER, str(env.root)]))
+    assert result.ok(), result.stderr
+    text = result.stdout.decode("utf-8")
+    assert f"{env.module_path}:{MARKER_LINE}:" in text
+
+
 @pytest.mark.parametrize("name", SENSITIVE_NAMES)
 def test_a_registered_sensitive_name_is_never_served(tmp_path, projects, facts, name):
     """The manifest is not the only gate: a credential name is refused at the read itself."""

@@ -59,6 +59,17 @@ class ScriptedModel:
         return ModelResponse(json.dumps(result))
 
 
+class ClosableModel(ScriptedModel):
+    """A gateway that owns clients of its own, as the SDK one does."""
+
+    def __init__(self, missing=False, classification='REPRODUCED'):
+        super().__init__(missing, classification)
+        self.closed = 0
+
+    async def aclose(self):
+        self.closed += 1
+
+
 class InvalidContract(ScriptedModel):
     """A contract analysis that never returns a usable contract."""
 
@@ -420,6 +431,19 @@ def test_a_session_that_cannot_be_closed_is_recorded_not_raised(tmp_path, projec
     assert [event.payload['result_code'] for event in events if event.kind == 'explorer.cleanup_failed'] == \
         ['CLEANUP_FAILED']
     assert controller.explorer.closed
+
+
+def test_the_gateway_is_closed_with_the_task_that_used_it(tmp_path, projects, facts):
+    # Contract and verdict calls go through a gateway that holds its own clients, so the
+    # task's own close has to reach it -- not only the exploration session -- or a process
+    # running many tasks serially accumulates one set of sockets per task.
+    model = ClosableModel()
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, plan=[publish()])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE and model.closed == 1
+    # Closing is idempotent: a second close never reaches the gateway again.
+    asyncio.run(controller.close_explorer())
+    assert model.closed == 1
 
 
 def test_unknown_candidate_id_is_refused_and_answered_with_feedback(tmp_path, projects, facts):

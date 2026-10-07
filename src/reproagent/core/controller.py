@@ -525,19 +525,33 @@ class Controller:
         return result
 
     async def close_explorer(self):
-        """Release the task's strategy; the result the run decided is never rewritten here.
+        """Release the task's strategy and its model clients; the run's result is never rewritten here.
 
-        A session that cannot be closed is recorded as a cleanup failure rather than
-        raised: the run has already reached its conclusion, and an exception from this
-        point would replace that conclusion with an unrelated one.
+        The strategy closes its own session, and the gateway the task was assembled with --
+        contract and verdict calls go through a factory that holds its own clients -- is
+        closed in the same step, so nothing the task opened outlives the run.  A cleanup
+        that fails is recorded as a cleanup failure rather than raised: the run has already
+        reached its conclusion, and an exception from this point would replace that
+        conclusion with an unrelated one.
         """
-        explorer = self.explorer
-        if explorer is None or self._explorer_closed:
+        if self._explorer_closed:
             return
         self._explorer_closed = True
+        failed = False
         try:
-            await explorer.aclose()
+            explorer = self.explorer
+            if explorer is not None:
+                await explorer.aclose()
         except asyncio.CancelledError:
             raise
         except Exception:
+            # Still try the gateway: one failed close must not strand the other's clients.
+            failed = True
+        try:
+            await self.gateway.aclose()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            failed = True
+        if failed:
             self.store.append_event('explorer.cleanup_failed', (), {'result_code':'CLEANUP_FAILED'})

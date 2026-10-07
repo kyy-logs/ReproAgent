@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from reproagent.app import LEGACY_BACKENDS
-from reproagent.core.models import INFRASTRUCTURE, BudgetLimits
+from reproagent.core.models import INFRASTRUCTURE, BudgetLimits, installed_agentscope_version
 from reproagent.core.serialization import canonical_hash
 from ..run import run_case
 from .io import fresh_dir,seal,verify_seal,write_json
@@ -45,8 +45,12 @@ async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_b
     output=fresh_dir(destination)
     tool_root=Path(tool_root).resolve() if tool_root is not None else TOOL_ROOT
     tool_source=capture_tool_source(tool_root)
-    # The round records what it ran on, not which deprecated flag selected it.
+    # The round records what it ran on, not which deprecated flag selected it.  The SDK
+    # version is recorded here too, so a summary written later states the version *this*
+    # round ran on instead of whatever happens to be installed when it is summarised.
     configuration={'model':asdict(model),'limits':asdict(limits),'model_backend':INFRASTRUCTURE,'agent_backend':INFRASTRUCTURE}
+    version=installed_agentscope_version()
+    if version: configuration['agentscope_version']=version
     round_data={'schema_version':1,'run_id':output.name,'model_name':model_name,'manifest':manifest,
         'catalog_hash':catalog['catalog_hash'],'harness_commit':catalog['source']['harness_commit'],
         'configuration':configuration,'configuration_hash':canonical_hash(configuration),'bindings_hash':canonical_hash(bindings),

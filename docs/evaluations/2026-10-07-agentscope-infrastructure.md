@@ -68,15 +68,20 @@ Controller 自动执行原版候选、做结构化语义核验、独立重复一
 ### 2. 离线验收（EXECUTED）
 
 ```text
-.venv/Scripts/python.exe -m pytest tests/unit tests/integration -q -rs
-437 passed, 4 skipped in 408.46s (0:06:48)          # exit code 0, default basetemp
+REPROAGENT_RG_PATH=<rg.exe> .venv/Scripts/python.exe -m pytest tests/unit tests/integration -q -rs
+440 passed, 4 skipped in 443.33s (0:07:23)          # exit code 0, default basetemp
 .venv/Scripts/python.exe -m pip check
 No broken requirements found.
 ```
 
+`REPROAGENT_RG_PATH` 指向本机 ripgrep，是上面这一行实际使用的命令的一部分：搜索路径测试在找不到
+ripgrep 时会 `skipif` 掉自己。同一条命令不带该前缀时为 436 passed、8 skipped——多跳过的 4 项就是
+Grep 命中与"无匹配"的区分、跨命令行多次搜索、引用行宽和配置注入这四组搜索断言。上面的计数是最终评审
+修复波新增 3 个测试后的重新测量；冻结提交 `8aa6ae58` 上的同一条命令为 437 passed、4 skipped（408.46 秒）。
+
 4 个 skip 全部与 SDK 无关，它们是本机账户缺少符号链接权限与 venv 链接不可达：
-`test_paths.py:137`、`test_workspace.py:48`、`test_windows_long_paths.py:474`
-（`link creation needs privilege on Windows`）与 `test_windows_long_paths.py:501`
+`test_paths.py:137`、`test_workspace.py:48`、`test_windows_long_paths.py:482`
+（`link creation needs privilege on Windows`）与 `test_windows_long_paths.py:509`
 （`this interpreter is not reached through a link`）。没有任何一条是 `importorskip` 造成的。
 
 **basetemp：使用默认 basetemp，未使用计划里的 `--basetemp=.tmp/agentscope-infra-final-01`。**

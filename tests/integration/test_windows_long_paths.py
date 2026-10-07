@@ -315,23 +315,31 @@ def test_a_run_copy_no_process_can_enter_is_refused_by_name(tmp_path, projects, 
 
 @WINDOWS_ONLY
 def test_a_snapshot_root_past_the_limit_does_not_abort_the_run(tmp_path, projects, facts):
-    """The run reaches the model's own end state instead of an internal error.
+    """The run reaches the model's own end state and still delivers its package.
 
-    The package itself cannot be published at this depth -- the export build
-    directory is ``task + 53`` characters, past the Windows directory limit but
-    below the file limit -- so the run ends ``FAILED`` with an unhelpful
-    ``export_state``.  What is checked here is what the snapshot-path mapping
-    decides: the task is analysed, one exploration phase runs to its own result,
-    and the task stops for the phase's reason instead of aborting on the way in.
+    The task root here is below the file limit while the frozen copy inside it is not, so
+    the export build directory (``task + 53``) sits in the reserved window where a
+    *directory* stops working before a file does.  That window is not a failure band: the
+    build name and the final name are promoted together as soon as either crosses the file
+    limit and stay ordinary below it, so the publish rename never mixes the two forms, and
+    the package is published.  Both halves are checked here -- the snapshot-path mapping
+    gets the task analysed and one exploration phase to its own result, and the diagnostic
+    package is delivered rather than failing on the way out.
     """
     request, store, _ = band_workspace(tmp_path, projects)
+    build = store.root / "artifacts" / (".building-" + "0" * 32)
+    assert len(str(store.root)) < MAX_PATH
+    assert MAX_PATH - 12 <= len(str(build)) < MAX_PATH        # the reserved window
     model = ScriptedModel(missing=True)
     controller = create_controller(request, ModelConfig(), gateway=model,
                                    explorer_factory=PhasePlan([ask("stop here")]))
     result = asyncio.run(controller.run(request, facts.context(limits=request.limits)))
     assert model.kinds == ["contract"]
     assert [context.contract.contract_id for context in controller.explorer.contexts]
+    assert result.status == TaskState.NEEDS_INFORMATION
     assert result.stop_reason == "MISSING_INFORMATION"
+    assert result.export_state == "published"
+    assert (request.output_dir / "artifacts/diagnostic/report.json").exists()
 
 
 @WINDOWS_ONLY

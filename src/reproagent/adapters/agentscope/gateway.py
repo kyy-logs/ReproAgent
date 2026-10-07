@@ -39,6 +39,10 @@ class AgentScopeModelGateway:
     def attempt_store(self, store):
         self.factory.store = store
 
+    async def aclose(self):
+        """Release the factory's clients; the factory owns every client this gateway used."""
+        await self.factory.aclose()
+
     async def complete(self, request, context):
         from agentscope.message import Msg, TextBlock
 

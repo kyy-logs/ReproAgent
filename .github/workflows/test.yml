@@ -27,6 +27,22 @@ jobs:
           if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
           echo "REPRO_TOOL_PYTHON=$PY" >> "$GITHUB_ENV"
           "$PY" -m pip install -e ".[dev]"
+      # The SDK search path is the strongest Grep protection (refusal vs "no matches",
+      # ordered multi-run search, width-correct citations) and its tests skip themselves
+      # when no ripgrep is found, so one is installed from the host's own package manager.
+      # The same resolution the tests use (shutil.which, which knows about the Windows
+      # .exe) names it afterwards; a host without one fails here instead of skipping.
+      - name: Install ripgrep for the search-path tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            choco install ripgrep --no-progress -y || true
+          else
+            sudo apt-get update
+            sudo apt-get install -y ripgrep
+          fi
+          RG="$("$REPRO_TOOL_PYTHON" -c 'import shutil,sys; p=shutil.which("rg") or shutil.which("rg.exe"); print(p); sys.exit(0 if p else 1)')"
+          echo "REPROAGENT_RG_PATH=$RG" >> "$GITHUB_ENV"
       - name: Run offline tests
         shell: bash
         run: |

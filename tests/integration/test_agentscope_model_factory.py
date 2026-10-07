@@ -377,6 +377,10 @@ def test_one_factory_reuses_one_model_per_purpose_and_closes_it():
             factory.create(context_, 'summary')
         await first([Msg(name='user', role='user', content=[TextBlock(text='hello')])])
         await first([Msg(name='user', role='user', content=[TextBlock(text='hello')])])
+        # The one client per purpose the factory built, captured before `drive` closes it.
+        return list(factory._clients)
 
-    drive(scenario, handler)
+    clients = drive(scenario, handler)
     assert len(calls) == 2
+    assert len(clients) == 2
+    assert all(client.is_closed for client in clients)

@@ -204,8 +204,10 @@ def test_a_cancelled_task_closes_the_phase_session_and_stops_with_a_diagnostic(t
         assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
         assert not (request.output_dir / 'artifacts/reproduction').exists()
         assert len(seen) == 1
-        # The phase session is closed and no SDK task survives the run.
+        # The phase session is closed and no SDK task survives the run; the explorer's own
+        # model factory is released with it, so the client it built is not left open.
         assert controller.explorer.runtime is None
+        assert controller.explorer.model_factory is None
         assert pending_tasks() == set()
 
     asyncio.run(scenario())

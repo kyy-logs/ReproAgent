@@ -220,3 +220,18 @@ def test_sdk_deadline_stops_pending_http_without_retry():
         asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},)),context(task_timeout_seconds=0.25)))
     assert error.value.reason=='EXHAUSTED' and len(calls)<=1
     assert not calls or closed
+
+
+def test_closing_the_gateway_releases_the_factory_clients():
+    # The gateway owns no client itself: it shapes a request and reads the reply.  Closing
+    # it has to reach the factory's one client per purpose, which is what leaks in a long
+    # multi-task process when nothing closes them.
+    def handle(request): return reply()
+    model=build_gateway(handle)
+    async def scenario():
+        await model.complete(ModelRequest(({'role':'user','content':'hello'},)),context())
+        clients=list(model.factory._clients)
+        await model.aclose()
+        return clients
+    clients=asyncio.run(scenario())
+    assert len(clients)==1 and all(client.is_closed for client in clients)

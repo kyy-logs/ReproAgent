@@ -67,10 +67,18 @@ class AgentScopeExplorer(ReproAgent):
         return await self.runtime.explore(phase)
 
     async def aclose(self):
-        """Close the task's SDK session; nothing this explorer started outlives it."""
+        """Close the task's SDK session and its models; nothing this explorer opened outlives it.
+
+        The factory keeps one HTTP client per purpose it built, so closing it -- not only the
+        runtime that used it -- is what releases the sockets a long multi-task process would
+        otherwise accumulate.
+        """
         runtime, self.runtime = self.runtime, None
         if runtime is not None:
             await runtime.aclose()
+        factory, self.model_factory = self.model_factory, None
+        if factory is not None:
+            await factory.aclose()
 
     def _runtime(self, phase):
         """The one SDK runtime of this task, under the first phase's product prompt.

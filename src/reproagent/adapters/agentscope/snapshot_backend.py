@@ -80,7 +80,16 @@ TRUNCATION_MARKER = "\n[... output truncated by the snapshot backend ...]\n"
 #: The options the SDK's ``Grep`` emits.  Anything absent from this pair of sets is
 #: refused, so ``--pre``, ``--files-from``, ``-f/--file``, ``--follow``, ``--no-ignore``
 #: and every other way to reach a file outside the manifest cannot be smuggled in.
-RG_FLAGS = frozenset({"--hidden", "-U", "--multiline-dotall", "-i", "-l", "-c", "-n", "-H", "--with-filename"})
+#: ``--no-config`` is here because the backend always passes it itself: an SDK that named
+#: it too would be accepted rather than refused.
+RG_FLAGS = frozenset({"--hidden", "-U", "--multiline-dotall", "-i", "-l", "-c", "-n", "-H", "--with-filename", "--no-config"})
+#: Added by the backend, never taken from the SDK's argv.  Without it ripgrep prepends the
+#: options of the file ``RIPGREP_CONFIG_PATH`` names, which could inject ``--pre`` or
+#: ``--follow`` into a search the allowlist above has already approved.
+RG_NO_CONFIG = "--no-config"
+#: The variable that names that file.  The child is given an environment without it, so the
+#: guarantee does not depend on the flag alone.
+RIPGREP_CONFIG_ENV = "RIPGREP_CONFIG_PATH"
 RG_VALUED_FLAGS = frozenset({"--sort", "--glob", "--max-columns", "--type", "-A", "-B", "-C"})
 RG_INTEGERS = {"--max-columns": (1, 100_000), "-A": (0, 1000), "-B": (0, 1000), "-C": (0, 1000)}
 RG_TYPE = re.compile(r"[A-Za-z0-9_+-]{1,32}\Z")
@@ -398,6 +407,9 @@ class SnapshotBackend(BackendBase):
             # A snapshot directory with no registered file under it: an empty result, and
             # never a search of the directory itself (rg with no path searches its cwd).
             return ExecResult(1, b"", b"")
+        # The one flag the backend adds, so no operator config file can prepend options the
+        # allowlist above already refused.  It is part of the accounted option list.
+        args = [RG_NO_CONFIG, *args]
         runs = self._runs(args, sorted(files))
         if len(runs) > MAX_SEARCH_RUNS:
             return ExecResult(EXIT_RG_ERROR, b"", f"blocked: {len(files)} registered files under {str(target)!r} need more search runs than the snapshot backend allows; narrow the search path".encode("utf-8"))
@@ -602,13 +614,19 @@ class SnapshotBackend(BackendBase):
         The child's own working directory is :meth:`_child_cwd`: the snapshot root where
         the host can supply one, and nothing where the root is too deep for it.
 
+        The child is given this process's environment without ``RIPGREP_CONFIG_PATH``: a
+        config file that variable names is prepended to every search, so the flag allowlist
+        cannot be the whole guarantee while a child can still read one.
+
         Returns:
             (`ExecResult`, `bool`): the outcome, and whether more than *limit* bytes of
             standard output followed what was kept.
         """
         kwargs = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)} if os.name == "nt" else {}
+        env = os.environ.copy()
+        env.pop(RIPGREP_CONFIG_ENV, None)
         try:
-            process = await asyncio.create_subprocess_exec(*argv, cwd=self._child_cwd(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
+            process = await asyncio.create_subprocess_exec(*argv, cwd=self._child_cwd(), env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
         except (OSError, NotImplementedError) as exc:
             return self._blocked(f"cannot start the search helper: {exc}"), False
         outgoing = asyncio.ensure_future(self._drain(process.stdout, limit))

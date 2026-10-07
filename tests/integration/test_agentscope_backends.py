@@ -72,6 +72,11 @@ def test_default_and_legacy_flags_select_same_sdk_infrastructure(tmp_path, proje
     result = asyncio.run(controller.run(request, ctx, FixValidationRequest(fixed, sys.executable)))
     assert isinstance(controller.explorer, AgentScopeExplorer)
     assert result.status.value == 'DONE' and result.evidence_level.value == 'DIFFERENTIAL_VALIDATED', result
+    # Both factories of the task are released with it: the exploration one through the
+    # explorer, the contract/verdict one through the gateway.  A long serial batch would
+    # otherwise keep one client per purpose per finished task.
+    assert controller.explorer.model_factory is None
+    assert controller.gateway.gateway.factory._clients == []
     assert calls == ['contract', 'exploration', 'verdict', 'verdict']
     assert toolkit == [list(TOOL_NAMES)]
     assert ctx.budget.steps_used == 1 and assert_hidden(script.messages, fixed) is None

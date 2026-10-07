@@ -20,7 +20,7 @@
 
 ## 当前证据
 
-最新完整离线测试：**437 passed、4 skipped**（408.46 秒，2026-10-07，AgentScope 成为唯一基础设施后的整链路；默认 basetemp，`REPROAGENT_RG_PATH` 指向本机 ripgrep）；依赖检查无冲突，4 个 skip 均为本机符号链接权限与 venv 链接不可达。上一轮（2026-10-06，含 SWT 接入及当时的 AgentScope 2.0.9 可选后端）为 244 passed、1 skipped（164.37 秒）；SWT 该轮新增46项测试，包含真实 Git apply、pytest、补丁字节保留、绑定隔离、源码冻结、费用、取消、Unicode 路径及外部回执/缺报告状态。
+最新完整离线测试：**440 passed、4 skipped**（443.33 秒，2026-10-07，AgentScope 成为唯一基础设施后的整链路 + 最终评审修复波新增 3 项；默认 basetemp，`REPROAGENT_RG_PATH` 指向本机 ripgrep）；依赖检查无冲突，4 个 skip 均为本机符号链接权限与 venv 链接不可达。上一轮（2026-10-06，含 SWT 接入及当时的 AgentScope 2.0.9 可选后端）为 244 passed、1 skipped（164.37 秒）；SWT 该轮新增46项测试，包含真实 Git apply、pytest、补丁字节保留、绑定隔离、源码冻结、费用、取消、Unicode 路径及外部回执/缺报告状态。
 安装 SDK 前，完整原生环境为 176 passed，4 skipped（111.11 秒）：除符号链接测试外，另跳过三个 SDK 集成模块。新 wheel 独立安装、原生 CLI 和缺依赖提示均通过。
 跳过项为 Windows 账户缺少符号链接权限；普通路径越界测试已运行。
 测试覆盖真实进程 PID 清理、pytest 阶段和导入异常、src/conftest、候选保护、
