@@ -8,12 +8,14 @@ version = "0.1.0"
 description = "Evidence-first local Python bug reproduction agent"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["httpx>=0.27,<1"]
+dependencies = ["httpx>=0.27,<1", "agentscope==2.0.9"]
 
 [project.optional-dependencies]
 # Tests build a wheel with --no-build-isolation, which needs the backend importable.
 dev = ["pytest>=8,<10", "wheel", "setuptools>=68"]
-agentscope = ["agentscope==2.0.9"]
+# The infrastructure is a main dependency now. The extra stays, empty, for one deprecation
+# cycle so an old `pip install reproagent-local[agentscope]` command keeps working.
+agentscope = []
 
 [project.scripts]
 reproagent = "reproagent.cli:main"

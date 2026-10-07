@@ -13,11 +13,10 @@ import httpx
 
 from .dependency import require_agentscope
 from ..models.options import resolve_model_options
-from ..models.provider import attempt_payload, classify_output
 from ...core.async_ops import bounded
 from ...core.budget import BudgetStopped
 from ...core.models import ModelRequest
-from ...core.protocol import ModelOutputError
+from ...core.protocol import ModelOutputError, attempt_payload, classify_output
 from ...core.serialization import parse_json
 
 PURPOSES = frozenset({'exploration', 'contract', 'verdict'})

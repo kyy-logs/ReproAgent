@@ -148,9 +148,10 @@ class Controller:
         self.secrets = tuple(secret for secret in secrets if secret)
         self.explorer_factory = explorer_factory
         # The product's own component identity, under whatever this run recorded: a run
-        # that selected another backend, or a record written before these fields existed,
-        # keeps saying what it used instead of being relabelled here.
-        self.backend_info = component_identity(**(backend_info or {'model_backend':'native', 'agent_backend':'native'}))
+        # that injected its own boundary, or a record written before these fields existed,
+        # keeps saying what it used instead of being relabelled here. A Controller built
+        # without one ran on the product's single infrastructure, which is the default.
+        self.backend_info = component_identity(**(backend_info or {}))
         self.explorer = None
         self._explorer_closed = False
 

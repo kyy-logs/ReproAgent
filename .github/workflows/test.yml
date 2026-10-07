@@ -26,7 +26,7 @@ jobs:
           python -m venv .venv
           if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
           echo "REPRO_TOOL_PYTHON=$PY" >> "$GITHUB_ENV"
-          "$PY" -m pip install -e ".[dev,agentscope]"
+          "$PY" -m pip install -e ".[dev]"
       - name: Run offline tests
         shell: bash
         run: |

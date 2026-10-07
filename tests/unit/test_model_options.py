@@ -7,6 +7,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+pytest.importorskip('agentscope')
+
+from reproagent.adapters.agentscope.gateway import AgentScopeModelGateway
+from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
 from reproagent.adapters.models.options import ProviderRequestOptions, resolve_model_options
 from reproagent.core.budget import Budget
 from reproagent.core.models import BudgetLimits, CallContext, ModelConfig, ModelRequest
@@ -24,9 +28,8 @@ def context(): return CallContext(Budget(BudgetLimits()))
 
 
 def gateway(handler, **kwargs):
-    import importlib
-    module = importlib.import_module('reproagent.adapters.models.provider')
-    return module.ChatCompletionGateway(config(**kwargs), transport=httpx.MockTransport(handler))
+    """The product's model boundary over a mock transport."""
+    return AgentScopeModelGateway(AgentScopeModelFactory(config(**kwargs), None, transport=httpx.MockTransport(handler)))
 
 
 def recorder():
@@ -85,7 +88,7 @@ def test_thinking_switch_is_resolved_only_when_configured():
     assert resolve_model_options(config(thinking_mode='enabled'), request()).extra_body == {'thinking': {'type': 'enabled'}}
 
 
-def test_native_request_body_carries_the_thinking_switch_only_when_configured():
+def test_request_body_carries_the_thinking_switch_only_when_configured():
     calls, handler = recorder()
     asyncio.run(gateway(handler).complete(request(), context()))
     assert 'thinking' not in calls[0]

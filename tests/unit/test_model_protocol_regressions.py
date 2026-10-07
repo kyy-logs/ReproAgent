@@ -9,7 +9,6 @@ from dataclasses import replace
 from reproagent.core.agent import ReproAgent
 from reproagent.core.budget import BudgetStopped, BudgetedGateway
 from reproagent.core.models import EvidenceContext, IssueDescription, ModelResponse, SourceRef, TaskState
-from reproagent.core.tools import validate_action
 from tests.unit.test_controller import setup
 
 
@@ -85,12 +84,6 @@ def test_protocol_failure_is_failed_not_a_request_for_user_information(tmp_path,
     assert result.stop_reason == 'MODEL_PROTOCOL_ERROR'
     assert len(invalid.requests) == 3
     assert (request.output_dir/'artifacts/diagnostic/report.json').is_file()
-
-
-def test_invalid_search_scope_reports_the_allowed_values():
-    with pytest.raises(ValueError) as error:
-        validate_action({'name':'search_code','parameters':{'query':'parse','scope':'src/parser.py'}})
-    assert all(scope in str(error.value) for scope in ('snapshot','candidates','all'))
 
 
 def test_contract_schema_explains_required_text_fields(facts):

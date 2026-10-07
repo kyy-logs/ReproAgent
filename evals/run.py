@@ -3,7 +3,7 @@ from pathlib import Path
 
 from reproagent.app import create_controller
 from reproagent.core.budget import Budget
-from reproagent.core.models import BudgetLimits, FixValidationRequest, PythonPytestConfig, RunContext, TaskRequest
+from reproagent.core.models import INFRASTRUCTURE, BudgetLimits, FixValidationRequest, PythonPytestConfig, RunContext, TaskRequest
 from reproagent.core.serialization import bytes_hash
 from reproagent.store import atomic_write
 from .schema import EvalResult
@@ -15,7 +15,7 @@ def generation_input(case):
         'python':case.buggy_python, 'target_modules':list(case.target_modules), 'source_roots':list(case.source_roots)}
 
 
-async def run_case(case, model, output_dir, *, limits=None, model_backend='native', agent_backend='native',cancel_event=None):
+async def run_case(case, model, output_dir, *, limits=None, model_backend=None, agent_backend=None,cancel_event=None):
     if case.review_status != 'approved':
         raise ValueError('historical case must be manually reviewed before evaluation')
     output_dir = Path(output_dir)
@@ -54,7 +54,9 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend='nativ
         duration=result.duration, cost_kind='estimated' if known else 'unknown', cost_value=sum(costs) if known else None,
         model=model.model, model_base_url=model.base_url, budget=asdict(limits), environment=env,
         description_hash=bytes_hash(case.allowed_description.encode()), buggy_version=case.buggy_version, fixed_version=case.fixed_version,
-        model_backend=model_backend,agent_backend=agent_backend,stop_reason=result.stop_reason,http_attempts=len(attempts),
+        # What this case actually ran on: the flags above are deprecated aliases of the one
+        # infrastructure, so the record names the infrastructure instead of the flag.
+        model_backend=INFRASTRUCTURE,agent_backend=INFRASTRUCTURE,stop_reason=result.stop_reason,http_attempts=len(attempts),
         usage={key:sum(call.get('usage',{}).get(key,0) for call in calls) for key in ('prompt_tokens','completion_tokens','total_tokens')},
         known_cost_subtotal=sum(value for value in costs if value is not None),unknown_cost_attempts=sum(value is None for value in costs),
         fix_validation_status=result.fix_validation_status)

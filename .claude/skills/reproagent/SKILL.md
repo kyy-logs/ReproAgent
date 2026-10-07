@@ -22,7 +22,7 @@ powershell.exe -NoProfile -File "${CLAUDE_SKILL_DIR}/scripts/reproagent.ps1" -Ta
 ```
 
 Optional run arguments: `-ModelConfig "<model.json>"`, `-FixedRepo "<fixed repo>"`, `-FixedPython "<target python>"`. `-ToolPython` chooses the installed ReproAgent interpreter; it defaults to this project's `.venv/Scripts/python.exe`.
-`-ModelBackend native|agentscope` and `-AgentBackend native|agentscope` select independently, both default to native. Use explicit user-selected backends; AgentScope requires the optional extra described in [AgentScope guide](../../../docs/agentscope.md).
+ReproAgent runs on one infrastructure, the AgentScope runtime installed with the product; there is no backend to choose. `-ModelBackend` and `-AgentBackend` are deprecated aliases kept for one cycle: naming either one changes nothing and prints a deprecation notice. See [AgentScope guide](../../../docs/agentscope.md).
 On other systems use the installed `reproagent run --config ... --model-config ...` and `reproagent inspect ...` CLI directly. See [input template](../../../examples/task.json) and [integration guide](../../../docs/claude-code.md).
 
 ## Workflow

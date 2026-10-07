@@ -381,20 +381,6 @@ class ExecutionResult:
 
 
 @dataclass(frozen=True, slots=True)
-class AgentAction:
-    name: str
-    parameters: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class ToolResult:
-    status: str
-    text: str
-    evidence_refs: tuple[EvidenceRef, ...] = ()
-    candidate_id: str = ""
-
-
-@dataclass(frozen=True, slots=True)
 class ModelRequest:
     messages: tuple[dict[str, str], ...]
     response_kind: str = "action"
@@ -443,8 +429,6 @@ class AgentContext:
     project: ProjectView
     history: tuple[dict[str, Any], ...] = ()
     feedback: str = ""
-    allowed_actions: tuple[str, ...] = ()
-    blocked_actions: tuple[AgentAction, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

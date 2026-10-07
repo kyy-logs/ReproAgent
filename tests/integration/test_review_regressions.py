@@ -12,7 +12,6 @@ from reproagent.core.budget import BudgetedGateway
 from reproagent.core.models import (BudgetLimits, CandidateDraft, DraftFile, EvidenceContext, EvidenceLevel,
     FixValidationRequest, IssueDescription, ModelConfig, ModelResponse, PythonPytestConfig, SourceRef, TaskRequest, TaskState)
 from reproagent.adapters.languages.python_pytest.collector import read_probe
-from reproagent.adapters.models.provider import ChatCompletionGateway
 from reproagent.store import TaskStore
 from reproagent.workspace import Workspace
 from tests.integration.test_exporter import export_setup
@@ -125,12 +124,17 @@ def test_analysis_redacts_provider_secrets_before_the_model(tmp_path, projects, 
 
 
 def test_ambiguous_retry_keeps_total_cost_unknown(facts):
+    """A first attempt that never answered has no tokens to bill, so the call stays unknown."""
+    from reproagent.adapters.agentscope.gateway import AgentScopeModelGateway
+    from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
     count = []
     def handler(request):
         count.append(request)
         if len(count) == 1: raise httpx.ReadTimeout('ambiguous',request=request)
         return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'{}'}}],'usage':{'prompt_tokens':10,'completion_tokens':5}})
-    gateway = BudgetedGateway(ChatCompletionGateway(ModelConfig(base_url='https://offline.example/v1',model='test',input_cost_per_million=1,output_cost_per_million=1),transport=httpx.MockTransport(handler)))
+    factory = AgentScopeModelFactory(ModelConfig(base_url='https://offline.example/v1',model='test',input_cost_per_million=1,output_cost_per_million=1),
+                                     None, transport=httpx.MockTransport(handler))
+    gateway = BudgetedGateway(AgentScopeModelGateway(factory))
     from reproagent.core.models import ModelRequest
     ctx = facts.context(); result = asyncio.run(gateway.complete(ModelRequest(({'role':'user','content':'x'},)),ctx))
     assert len(count) == 2 and result.cost_kind == 'unknown' and result.cost_value is None
