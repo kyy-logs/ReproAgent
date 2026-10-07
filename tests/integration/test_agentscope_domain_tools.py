@@ -15,8 +15,6 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("agentscope")
-
 from agentscope.message import Base64Source, DataBlock, TextBlock, ToolCallBlock, ToolResultState
 from agentscope.permission import (
     PermissionBehavior,

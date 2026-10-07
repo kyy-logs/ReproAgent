@@ -3,7 +3,7 @@
 把 Bug 描述转成 Python/pytest 回归测试，实际运行、核验并独立重放，最后导出测试与证据。
 当前安装位置为 `E:\ReproAgent`，迁移说明见 [迁移记录](docs/migration-to-e.md)。
 
-当前为本地 CLI MVP。最新完整离线测试为 244 passed、1 skipped，包含真实 AgentScope SDK 和 SWT 数据/评测链路；SDK 接入阶段曾验证无 SDK 环境为 176 passed、4 skipped。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；这次评测接入没有重测该批历史案例。
+当前为本地 CLI MVP，只有一套基础设施：AgentScope。最新完整离线测试为 437 passed、4 skipped，包含真实 AgentScope SDK 整链路和 SWT 数据/评测链路。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；本次基础设施迁移没有重跑该批历史案例，也没有真实模型轮次，见 [迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
 
 ## 安装与输入
 
@@ -25,11 +25,15 @@ python -m venv .venv
 - `pytest_args` 支持 `-q/-v/-vv/-s/--disable-warnings/--tb=short/--tb=long/--tb=no`。不支持 Agent 覆盖执行参数。
 - 模型接口采用兼容 Chat Completions 的 JSON 文本接口。配置 base_url、模型 ID、API key 的环境变量名称。
 不在配置文件写密钥。供应商若不支持 `max_completion_tokens`，将 `output_limit_field` 改为 `max_tokens`。
-  DeepSeek 示例为 `examples/model.deepseek.json`，凭据环境变量为 `DEEPSEEK_API_KEY`；模型可用性以账户实际接口为准。
+  DeepSeek 示例为 `examples/model.deepseek.json`，显式关闭思维链且输出上限 4096 的版本为
+  `examples/model.deepseek.non-thinking.json`；凭据环境变量为 `DEEPSEEK_API_KEY`；模型可用性以账户实际接口为准。
 
 ## 运行与查看
 
-模型与 Agent 策略可以独立选择 `native` 或 `agentscope`，默认使用原生组合。AgentScope 是可选依赖；CLI 和 Claude Code 启动器均支持选择，配置、预算和验收流程共用。安装和用法见 [AgentScope 接入说明](docs/agentscope.md)。
+ReproAgent 只有一套基础设施：AgentScope。模型调用、受限文件工具、阶段内执行和消息历史都由 SDK 提供，
+复现策略、业务编排、证据核验与独立交付仍属于 ReproAgent，没有第二个运行时可以切换。`--model-backend`
+/ `--agent-backend`（启动器的 `-ModelBackend` / `-AgentBackend`）是迁移前的旧参数，现已弃用且不再选择
+运行时。安装和结构见 [AgentScope 基础设施说明](docs/agentscope.md)。
 
 Claude Code 接入提供项目级 `/reproagent` Skill，本机也已安装当前用户全局入口，可在任意目标项目使用。在本项目目录启动 `claude`，输入 `/reproagent check` 检查，输入 `/reproagent <Bug 描述或 task.json 路径>` 开始复现，或 `/reproagent inspect <结果目录>` 查看证据。详见 [Claude Code 使用说明](docs/claude-code.md)。
 
@@ -79,6 +83,11 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 - xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索暂未支持。
 - 带不可重置外部前置资源的候选不能升级重复复现；运行不起来时报告环境阻塞，缩小运行范围属于后续优化。
 - 语义核对依赖模型，证据引用与硬性检查降低误报，不能替代人的审查。
+- 探索阶段的输入是契约、历史与反馈，不含原始 Issue 正文。契约若把"返回一个 ValidationError"改写成
+  "抛出一个 ValidationError"，阶段输入里没有能反驳它的材料；两个提示词都固定了"返回而非抛出"的规则，
+  但这条规则无法从输入本身交叉验证。
+- 导出包内的 `replay.py` 不为目录预留长度余量：普通路径在 248–259 字符区间时可能触发 `WinError 206`，
+  它的子进程工作目录也会碰到工具自身已经在别处拒绝的 259 字符上限。
 - 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1；CI 矩阵（Windows/Ubuntu × 目标 Python 3.10–3.12 × pytest 7.4–9）18/18 通过，含 AgentScope SDK 模块与 SWT 链路。其他组合见 `docs/compatibility.md`，首次执行的失败与修复记录见 `docs/implementation-status.md`。
 
 ## 开发与评估
@@ -94,4 +103,5 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 `evals/README.md` 说明历史样本审查、修复信息隔离及分母统计。20 个历史案例的原始累计记录见 `evals/cases/cumulative-historical-results.json`，最终修复整轮见 `evals/cases/expanded-final-results.json` 与 `docs/expanded-case-repairs.md`；原始扩展失败保留于 `docs/expanded-case-validation.md`。原始三例 0/3 基线保留于 `docs/historical-case-validation.md`；代表性大样本、独立人类审查与能力比较尚未完成。合成案例首次冒烟结果见 `docs/deepseek-smoke.md`。
 SWT-Bench Lite 的固定数据导入、20 个开发样本、独立环境预检、批量运行、标准预测和官方报告导入已接通，见 [评测使用说明](docs/swt-bench.md)。官方 Docker 判分尚未执行；开发首轮结果和准备阻塞均保留，不作为全量基准成绩。
 最新 [真实 Bug 评测报告](docs/evaluations/2026-10-06-swt-development.md)：固定20例中8例调用模型、12例环境阻塞，当前配置有效差分交付0；参考测试可区分版本的5例中为0/5。Sphinx-8801 已生成有差分效果的候选，但被核验证据体积限制挡住，未计成功。完整自动交付流程仍需修正。
+最新 [基础设施迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)：迁移代码通过离线整链路验证（MockTransport），真实模型的定点、dev20 重跑、冻结保留集与官方 Docker 判分均**未执行**——本次环境没有模型凭据，也没有可用的 Linux/Docker。结论为"迁移代码验证通过，能力验收未通过"，这些轮次没有产生任何真实模型结果。
 设计、架构与实现计划位于 `docs/superpowers`。

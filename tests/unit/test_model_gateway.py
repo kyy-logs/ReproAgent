@@ -11,8 +11,6 @@ import json
 import httpx
 import pytest
 
-pytest.importorskip('agentscope')
-
 from reproagent.adapters.agentscope.gateway import AgentScopeModelGateway
 from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
 from reproagent.core.budget import Budget

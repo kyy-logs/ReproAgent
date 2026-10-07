@@ -82,7 +82,9 @@ powershell.exe -NoProfile -File .claude/skills/reproagent/scripts/reproagent.ps1
 ```
 
 `-TaskConfig` 可追加 `-ModelConfig`、`-FixedRepo` 和 `-FixedPython`。Linux/macOS 使用安装后的 ReproAgent CLI。
-也可追加 `-ModelBackend agentscope -AgentBackend agentscope`，分别选择模型与 Agent 策略，默认均为 native；安装与边界见 [AgentScope 使用说明](agentscope.md)。本机全局入口沿用同一启动器，已有默认调用继续有效。
+`-ModelBackend` / `-AgentBackend` 是迁移前的旧参数，现已弃用且不再选择运行时：传入任一旧值都会打印弃用
+提示并照常运行同一套 AgentScope 基础设施，其他值被 CLI 拒绝。安装与边界见 [AgentScope 基础设施说明](agentscope.md)。
+本机全局入口沿用同一启动器，已有默认调用继续有效。
 repo、issue_file 和 output_dir 相对路径按 task JSON 所在目录解释；source_roots 和 candidate_parent 相对目标 repo。
 language.python 使用目标解释器绝对路径。启动器自身的默认路径按脚本位置解释。
 

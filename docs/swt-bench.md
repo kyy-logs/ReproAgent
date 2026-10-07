@@ -73,11 +73,13 @@ ready 表示原版/修复版的 Python、pytest 和指定目标模块来源探�
   --manifest .local/swt-bench/data/dev20.json `
   --bindings .local/swt-bench/bindings.json `
   --model-config examples/model.deepseek.json `
-  --model-backend native --agent-backend native `
-  --output repro-results/swt-bench/dev20-native-next
+  --output repro-results/swt-bench/dev20-next
 ```
 
-`--limits <JSON>` 可显式配置统一预算；`--name <简单标签>` 指定预测 model_name_or_path。两个后端都支持 native/agentscope。策略比较时固定模型后端，只替换 Agent 策略；每组合使用新轮次，不挑各组最佳结果合并。
+`--limits <JSON>` 可显式配置统一预算；`--name <简单标签>` 指定预测 model_name_or_path。
+`--model-backend` / `--agent-backend` 是迁移前的旧参数，现已弃用且不再选择运行时：两个旧值都进入同一套
+AgentScope 基础设施并被记录为 `agentscope`，其他值被拒绝。既有调用继续可执行；轮次记录里的
+`model_backend`/`agent_backend` 写的是实际运行的组件，不是所选参数。每组合使用新轮次，不挑各组最佳结果合并。
 
 批量入口退出 0 表示记录流程完成，不代表所有 Bug 复现成功。NOT_PREPARED、EXHAUSTED、FAILED、CANCELLED 保留在分母。没有准备的绑定不会调用模型；取消后不再启动后续案例。原任务协议内纠正仍有限，任务失败后不会自动加预算重跑。
 
@@ -137,6 +139,23 @@ python -m evals.swt_bench official-run \
 首轮有 6 个 Sphinx 绑定因 Git 的 Unicode 文件名输出被误判；该实现问题已通过回归修复。重新预检为 8 ready、12 blocked，保存于独立目录；没有更改首轮模型结果，也没有把旧结果转换成新代码的能力分数。接入阶段未重跑这 8 例；后续已完成第二、第三轮真实模型评测及独立重跑，见上述最新报告。仍不宣称一般复现率或后端提升。
 
 旧项目 20 个历史案例仍用于开发回归。正式评测需另冻结未参与本项目调试的样本，并检查历史重叠；公开数据也可能被模型训练见过。
+
+## 冻结保留集
+
+`select_holdout` 是 Task 10 的固定策略：只用公开 catalog 的身份列，按固定 seed
+`reproagent-swt-holdout-v1` 对每个候选 ID 排序，在给定仓库间轮询抽取，并排除调用方列出的已开发/已调试
+ID。它不读参考对照、gold patch 或任何生成结果，也不改写已有记录，因此可以离线重放。它当前没有 CLI
+子命令，以纯函数调用：
+
+```python
+from evals.datasets.swt_bench import select_holdout
+manifest = select_holdout(catalog, excluded_ids, repos=(...), count=10)
+```
+
+2026-10-07 已用公开 catalog 冻结 10 个未调试样本（五仓库 × 2，仓库全部取自开发轮未使用的项目），
+manifest 哈希 `d2f91341d5b718eaffa88ca1d1401acd798af3937c389c18d6fdd0798525b4dc`，记为
+`.local/swt-bench/holdout10.json`。**冻结本身是离线可达的；用同一预算执行这 10 个样本需要真实模型凭据，
+本次没有执行**，见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
 
 重新生成汇总不调用模型：
 

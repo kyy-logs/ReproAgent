@@ -13,7 +13,9 @@
 - 成功包和诊断包按固定模板自动生成中文 report.md，链接测试与证据，保留原始问题、脱敏和文件哈希；生成过程无模型调用。
 - HTTP 模型接口、离线传输测试、评估统计工具、wheel 与 CI 配置。
 - Claude Code 项目级 /reproagent Skill 与 Windows 启动器，真实调用和状态读取已验证，详见 [接入说明](claude-code.md)。
-- AgentScope 2.0.9 可选模型与单决策策略适配，Explorer 工厂注入、CLI/启动器独立选择，以及报告中的后端记录，见 [使用说明](agentscope.md)。
+- AgentScope 2.0.9 成为唯一基础设施：模型调用、受限 Glob/Grep/Read 文件工具、阶段内 ReAct 执行与消息
+  历史都由 SDK 提供；复现策略、业务编排、证据核验与独立交付仍属于 ReproAgent。旧的两个后端参数保留为
+  弃用别名，见 [基础设施说明](agentscope.md)。
 - SWT-Bench Lite 固定版本导入、开发样本选择、独立预检、串行运行、标准测试补丁和官方结果来源校验，见 [评测说明](swt-bench.md)。
 
 ## 当前证据
@@ -107,3 +109,38 @@ Codex 已检查新增 8 个成功测试，独立人类正确性审查与通用 A
 依照原设计，环境跑不起来时先报告阻塞。后续可增加依赖/服务诊断、
 在用户授权下修复环境、缩小复现范围、外部资源重置和容器隔离；
 这些能力没有混入当前 MVP 成功判定。
+
+## 已知限制（2026-10-07 记录）
+
+- **探索阶段的输入没有原始 Issue 正文。** 阶段收到的是契约、阶段历史与反馈；契约携带
+  trigger/expected/reported_actual/observable_checks。两个提示词都固定了"返回 X"与"抛出 X"的区别，
+  但阶段输入里没有任何能反驳这份契约的材料：如果契约把"返回一个 ValidationError"改写成"抛出一个
+  ValidationError"，阶段只能照它执行。这条限制由 Task 6 披露并保留，不是新发现。
+- **导出包内的 `replay.py` 不为目录长度预留余量。** 它直接镜像 `workspace_path`，普通路径在 248–259
+  字符区间时可能触发 `WinError 206`；它的子进程工作目录也会碰到工具自身已经在别处拒绝的 259 字符
+  上限。同时长路径前缀可以避免该区间，但这条余量本身没有实现。
+- 以上两条都在现有测试之外，没有对应的回归测试；它们作为已知限制公布，不隐藏在成功描述里。
+
+## 2026-10-07 基础设施迁移（离线）
+
+AgentScope 成为唯一基础设施：`create_controller` 只装配 SDK gateway 与 SDK explorer 工厂；旧 native
+执行路径、动作循环策略引擎及其测试已删除；`agentscope==2.0.9` 改为 `pyproject.toml` 的主依赖，
+`[agentscope]` extra 保留为空以兼容旧安装命令。
+
+离线验收：`tests/unit tests/integration` 全量 **437 passed、4 skipped**（408.46 秒，默认 basetemp，
+`REPROAGENT_RG_PATH` 指向本机 ripgrep）；`pip check` 无冲突。4 个 skip 都是本机符号链接权限与 venv
+链接不可达，没有一条来自 `importorskip`。新增整链路测试用 MockTransport 走完
+Glob → Grep → Read → `write_candidate`，再由 Controller 自动执行原版、结构化核验、独立重复、固定版
+执行与导出，导出包在新原版/新修复副本分别退出 1/0。该测试断言探索 wire 携带 tools、领域请求是无 tools
+的结构化请求、没有额外的 run/submit 决策、隐藏修复版不进入模型输入、以及纯文字的"已复现"结尾不会
+成为成功。
+
+必需 SDK 测试不再使用 `module` 级 `pytest.importorskip`：SDK 是主依赖，缺失时必须像产品一样报安装
+错误，而不是让这些模块静默跳过（`test_windows_long_paths.py` 内在 helper 级的那个保留，因为该模块
+同时承载不依赖 SDK 的路径与 venv 回归）。
+
+**真实模型步骤未执行。** 本环境没有 `REPROAGENT_API_KEY`、`DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`，
+也没有可用的 Linux/Docker，因此 Sphinx-8801 定点任务、dev20 重跑、冻结保留集执行和官方 harness 判分
+都没有运行，没有产生任何真实模型结果，也没有可用于对比的 HTTP/token 计数。保留集 manifest 已按固定
+策略离线冻结（见 [评测说明](swt-bench.md)），但**没有执行**。结论：**迁移代码验证通过，能力验收未通过。**
+详见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。

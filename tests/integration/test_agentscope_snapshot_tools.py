@@ -20,8 +20,6 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("agentscope")
-
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.state import AgentState
 from agentscope.tool import Glob, Grep, Read

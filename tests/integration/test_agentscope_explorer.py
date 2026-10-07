@@ -14,8 +14,6 @@ from dataclasses import replace
 import httpx
 import pytest
 
-pytest.importorskip('agentscope')
-
 from reproagent.adapters.agentscope.explorer import agentscope_explorer_factory
 from reproagent.adapters.agentscope.runtime import AgentScopeRuntime
 from reproagent.core.models import (AgentContext, BudgetLimits, EvidenceLevel, FileEntry, IssueContract, ModelConfig,

@@ -11,8 +11,6 @@ import json
 import httpx
 import pytest
 
-pytest.importorskip('agentscope')
-
 from agentscope.message import DataBlock, Msg, TextBlock, ToolCallBlock, ToolResultBlock, URLSource
 
 from reproagent.adapters.agentscope.gateway import AgentScopeModelGateway

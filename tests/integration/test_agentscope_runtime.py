@@ -18,8 +18,6 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-pytest.importorskip("agentscope")
-
 from agentscope.agent import Agent, ReActConfig
 from agentscope.message import TextBlock
 from agentscope.permission import PermissionBehavior, PermissionDecision

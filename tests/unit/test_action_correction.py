@@ -11,8 +11,6 @@ import json
 
 import pytest
 
-pytest.importorskip("agentscope")
-
 from reproagent.adapters.agentscope.middleware import PROTOCOL_ATTEMPTS, PhaseProtocolError
 from reproagent.core.budget import BudgetStopped
 from reproagent.core.models import BudgetLimits
