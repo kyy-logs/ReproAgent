@@ -440,8 +440,22 @@ class _DomainTool(ToolBase):
             raise ValueError("this phase has already ended; the controller decides what happens next")
 
     async def check_permissions(self, tool_input, context) -> PermissionDecision:
-        """A domain tool runs under the phase's own rules, not a permission prompt."""
-        return PermissionDecision(behavior=PermissionBehavior.PASSTHROUGH, message="the phase owns this domain tool")
+        """Allow the call: a domain tool is how the phase ends, so it must actually run.
+
+        ``ALLOW`` is required here, not ``PASSTHROUGH``.  In AgentScope 2.0.9 a passthrough
+        means "let the engine continue with rule matching", and a non-read-only tool then
+        falls through to the mode fallback: DEFAULT asks a user who is not there, DONT_ASK
+        (the unattended mode) denies outright, and only BYPASS would run it.  Either way no
+        phase result would ever be produced.  Every check that matters is still applied —
+        deny rules are evaluated before this method, and the tool itself re-checks the
+        budget, the cancellation flag, the bound contract and the evidence ledger.
+
+        Note that EXPLORE denies every non-read-only tool without consulting it at all, so
+        the exploration phase must not run in EXPLORE mode; an SDK agent that may publish
+        candidates runs in DEFAULT or DONT_ASK.
+        """
+        return PermissionDecision(behavior=PermissionBehavior.ALLOW,
+                                  message=f"{self.name} is a phase tool; the phase's own checks already gate it")
 
     def _result(self, payload: dict) -> ToolChunk:
         return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],

@@ -18,7 +18,14 @@ import pytest
 pytest.importorskip("agentscope")
 
 from agentscope.message import Base64Source, DataBlock, TextBlock, ToolCallBlock, ToolResultState
-from agentscope.permission import PermissionBehavior, PermissionDecision
+from agentscope.permission import (
+    PermissionBehavior,
+    PermissionContext,
+    PermissionDecision,
+    PermissionEngine,
+    PermissionMode,
+    PermissionRule,
+)
 from agentscope.state import AgentState
 from agentscope.tool import Read as SDKRead
 from agentscope.tool import ToolBase, ToolChunk
@@ -86,6 +93,11 @@ async def dispatch(env, name, payload, call_id="call-1"):
     async for chunk in env.toolkit.call_tool(ToolCallBlock(id=call_id, name=name, input=json.dumps(payload)), AgentState()):
         response = chunk
     return response
+
+
+async def permission(tool, tool_input, mode):
+    """The engine's own decision, exactly as ``Agent._acting`` obtains it."""
+    return await PermissionEngine(PermissionContext(mode=mode)).check_permission(tool, tool_input)
 
 
 def find_ripgrep():
@@ -327,6 +339,43 @@ def test_first_phase_result_wins_and_toolkit_is_exact(tmp_path, projects, facts)
     env.gate.begin()
     assert json.loads(text_of(call(env, "request_information", {"question": "which parser?"})))["status"] == "information_requested"
     assert env.gate.result == PhaseResult("request_information", question="which parser?")
+
+
+def test_the_permission_engine_itself_allows_every_phase_tool(tmp_path, projects, facts):
+    """The engine decides what a real agent may run; ``Toolkit.call_tool`` never asks it.
+
+    A tool that only works through the direct call path would stall every real phase: a
+    non-read-only tool that answers ``PASSTHROUGH`` is *asked for* in DEFAULT mode (no user
+    is there to answer) and denied in DONT_ASK mode, and the phase could never end.
+    """
+    env = environment(tmp_path, projects, facts)
+    inputs = {"Read": {"file_path": env.module},
+              "Grep": {"pattern": MARKER, "path": str(env.root)},
+              "Glob": {"pattern": "**/*.py", "path": str(env.root)},
+              "write_candidate": write_payload(),
+              "revise_contract": {"source_refs": [{"path": "example/中文模块.py", "content_hash": "0" * 64,
+                                                   "start_line": 1, "end_line": 1}], "reason": "cite"},
+              "request_information": {"question": "which parser?"}}
+    assert tuple(inputs) == TOOL_NAMES
+    for name, tool_input in inputs.items():
+        tool = asyncio.run(env.toolkit.get_tool(name))
+        for mode in (PermissionMode.DEFAULT, PermissionMode.DONT_ASK, PermissionMode.BYPASS):
+            decision = asyncio.run(permission(tool, tool_input, mode))
+            assert decision.behavior is PermissionBehavior.ALLOW, (name, mode, decision.message)
+    # A deny rule still wins: the engine evaluates rules before the tool is consulted.
+    engine = PermissionEngine(PermissionContext(mode=PermissionMode.DEFAULT))
+    engine.add_rule(PermissionRule(tool_name="write_candidate", rule_content=None, behavior=PermissionBehavior.DENY,
+                                   source="projectSettings"))
+    tool = asyncio.run(env.toolkit.get_tool("write_candidate"))
+    assert asyncio.run(engine.check_permission(tool, write_payload())).behavior is PermissionBehavior.DENY
+
+    # EXPLORE is read-only by design: it denies a domain tool without ever asking it, so the
+    # exploration phase must not be run in EXPLORE mode.  The read tools are unaffected.
+    for name in DOMAIN_TOOL_NAMES:
+        assert asyncio.run(permission(asyncio.run(env.toolkit.get_tool(name)), inputs[name], PermissionMode.EXPLORE)).behavior \
+            is PermissionBehavior.DENY
+    assert asyncio.run(permission(asyncio.run(env.toolkit.get_tool("Read")), inputs["Read"], PermissionMode.EXPLORE)).behavior \
+        is PermissionBehavior.ALLOW
 
 
 def test_a_small_response_budget_still_yields_a_bounded_response(tmp_path, projects, facts):
