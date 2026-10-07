@@ -21,8 +21,10 @@ from .serialization import bytes_hash, canonical_bytes
 # Stable marker for the run root: necessary paths stay readable without exporting the
 # machine-specific absolute prefix that made the recorded observation overflow.
 RUN_ROOT = '<run>'
-SUMMARIZED_FIELDS = ('contract.sources', 'contract.description_hash',
-    'observations.framework_details.run_root', 'observations.target_origins', 'observations.target_calls')
+# Only these two observations reach the reviewer as a count/digest/package summary rather
+# than in full. Everything else the projection names is either sent whole (expectation_sources)
+# or is not a field of the payload at all, so it is not listed here.
+SUMMARIZED_FIELDS = ('observations.target_origins', 'observations.target_calls')
 
 
 class ReviewContextTooLarge(Exception):
@@ -38,23 +40,37 @@ class ReviewContext:
     omitted_fields: tuple[str, ...]
 
 
+def _root_spellings(run_root):
+    """Every spelling of the run root a recorded path may use, longest first.
+
+    Windows records carry the native backslash form; a serialized probe line escapes those
+    separators, and a pytest longrepr, error or nodeid may already be forward-slashed.
+    Replacing the longest spelling first keeps the shorter ones from splitting it.
+    """
+    return sorted({run_root, run_root.replace('\\', '/'), run_root.replace('\\', '\\\\')},
+                  key=len, reverse=True)
+
+
 def _path_text(value, run_root):
     """A path with the run root replaced by a stable marker and separators normalized."""
     text = str(value if value is not None else '')
     if run_root:
-        text = text.replace(run_root, RUN_ROOT)
+        for spelling in _root_spellings(run_root):
+            text = text.replace(spelling, RUN_ROOT)
     return text.replace('\\', '/')
 
 
 def _message_text(value, run_root):
     """Free text (or a JSON-encoded record) with absolute run paths replaced.
 
-    A serialized probe line escapes its path separators, so the escaped spelling of
-    the run root is replaced as well; other backslashes are left untouched.
+    Every spelling of the run root is replaced: the native form, the escaped form a
+    serialized probe line uses, and the forward-slash form a recorded report may carry.
+    Other backslashes are left untouched.
     """
     text = str(value if value is not None else '')
     if run_root:
-        text = text.replace(run_root, RUN_ROOT).replace(run_root.replace('\\', '\\\\'), RUN_ROOT)
+        for spelling in _root_spellings(run_root):
+            text = text.replace(spelling, RUN_ROOT)
     return text
 
 

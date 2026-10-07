@@ -30,6 +30,10 @@ class Exporter:
             if success and context:
                 context.budget.check()
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+        # One shared set of task-root spellings for bytes and for decoded records, longest
+        # first: the native form, its forward-slash form and the JSON-escaped form.
+        root_spellings = tuple(sorted({str(store.root), str(store.root).replace('\\', '/'),
+            json.dumps(str(store.root))[1:-1]}, key=len, reverse=True))
         def read(path):
             chunks = []
             with path.open('rb') as stream:
@@ -43,14 +47,14 @@ class Exporter:
             for secret in self.secrets:
                 for value in sorted({secret, json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1]}, key=lambda value: (len(value), value), reverse=True):
                     data = data.replace(value.encode(), b'[REDACTED]')
-            for prefix in (str(store.root), str(store.root).replace('\\', '/'), json.dumps(str(store.root))[1:-1]):
+            for prefix in root_spellings:
                 data = data.replace(prefix.encode(), b'<task>')
             return data
         def redact_record(value):
             if isinstance(value, str):
                 for secret in self.secrets:
                     value = value.replace(secret, '[REDACTED]')
-                for prefix in (str(store.root), str(store.root).replace('\\', '/')):
+                for prefix in root_spellings:
                     value = value.replace(prefix, '<task>')
                 return value
             if isinstance(value, dict):

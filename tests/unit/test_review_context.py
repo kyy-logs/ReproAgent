@@ -222,16 +222,21 @@ def test_collection_and_nodeid_paths_are_relative_to_the_run_root(tmp_path, proj
     model = CitingModel()
     contract, candidate, execution, verifier, *_ = prepare(tmp_path, projects, facts, ASSERTION_CANDIDATE, model)
     run_root = execution.observation.framework_details['run_root']
+    forward_root = run_root.replace('\\', '/')
     # Verbatim shape of the real pytest collection error for an unimportable test file
     # (measured with this interpreter): it embeds the absolute module path.
     longrepr = (f"ImportError while importing test module '{run_root}\\tests\\test_broken.py'.\n"
         "Hint: make sure your test modules/packages have valid Python names.\nTraceback:\n"
         "tests\\test_broken.py:1: in <module>\n    import dependency_does_not_exist_123\n"
         "E   ModuleNotFoundError: No module named 'dependency_does_not_exist_123'")
+    # A recorded report may spell the same run root with forward slashes even on Windows,
+    # so the projection has to replace that spelling as well.
+    slash_longrepr = f"ImportError while importing test module '{forward_root}/tests/test_import_error.py'."
     crowded = replace(execution, observation=replace(execution.observation, framework_details={
         **execution.observation.framework_details,
         'errors': [f'probe {run_root}\\probe.jsonl incomplete'],
-        'collection_failures': [{'nodeid': f'{run_root}\\tests\\test_broken.py', 'outcome': 'failed', 'longrepr': longrepr}],
+        'collection_failures': [{'nodeid': f'{run_root}\\tests\\test_broken.py', 'outcome': 'failed', 'longrepr': longrepr},
+            {'nodeid': f'{forward_root}/tests/test_import_error.py', 'outcome': 'failed', 'longrepr': slash_longrepr}],
         'collected_nodeids': [f'{run_root}\\tests\\test_repro.py::test_empty'],
         'completed_nodeids': [f'{run_root}/tests/test_repro.py::test_empty'],
         'deselected_nodeids': [f'{run_root}\\tests\\test_other.py::test_other'],
@@ -241,7 +246,8 @@ def test_collection_and_nodeid_paths_are_relative_to_the_run_root(tmp_path, proj
         read_file=candidate_reader(candidate), max_bytes=1 << 20)
 
     view = context.payload['observation']
-    assert not any(run_root in text or run_root.replace('\\', '\\\\') in text for text in strings(context.payload))
+    assert not any(run_root in text or run_root.replace('\\', '\\\\') in text or forward_root in text
+                   for text in strings(context.payload))
     assert '<run>' in view['errors'][0] and '<run>' in view['preconditions'][0]
     assert view['collected_nodeids'] == ['<run>/tests/test_repro.py::test_empty']
     assert view['completed_nodeids'] == ['<run>/tests/test_repro.py::test_empty']
@@ -250,6 +256,10 @@ def test_collection_and_nodeid_paths_are_relative_to_the_run_root(tmp_path, proj
     assert failure['nodeid'] == '<run>/tests/test_broken.py' and failure['outcome'] == 'failed'
     assert "'<run>\\tests\\test_broken.py'" in failure['longrepr']
     assert "No module named 'dependency_does_not_exist_123'" in failure['longrepr']
+    slash_failure = view['collection_failures'][1]
+    assert slash_failure['nodeid'] == '<run>/tests/test_import_error.py'
+    assert "'<run>/tests/test_import_error.py'" in slash_failure['longrepr']
+    assert forward_root not in slash_failure['longrepr']
 
 
 def test_sent_references_are_exactly_the_citable_ones(tmp_path, projects, facts):

@@ -313,16 +313,24 @@ def test_pending_candidate_forces_run_without_model_decision(tmp_path, projects,
 
 
 def test_forced_action_does_not_bypass_cancellation(tmp_path, projects, facts):
-    class CancellingReads(ScriptedReadLoop):
-        async def complete(self, request, context):
-            response = await super().complete(request, context)
-            if request.response_kind == 'action':
-                context.cancel_event.set()
-            return response
-    request, controller, ctx = controller_for(tmp_path, projects, facts, CancellingReads())
+    # The candidate the model wrote forces the next run_candidate without a model decision.
+    # The interpreter's own backend cancels an in-flight run exactly like this: it returns a
+    # CANCELLED stop reason and cancellation is now visible. The forced action must honour
+    # that instead of finishing, and must be the action that ends interrupted.
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedReadLoop())
+    original = controller.runner.execute
+    async def cancelled(*args, **kwargs):
+        execution = await original(*args, **kwargs)
+        ctx.cancel_event.set()
+        return replace(execution, raw=replace(execution.raw, stop_reason='CANCELLED'))
+    controller.runner.execute = cancelled
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.CANCELLED
-    assert not list((request.output_dir / 'runs').glob('*/execution.json'))
+    events, _ = controller.store.read_events()
+    # The forced run_candidate is the action that ends interrupted, and the run it started
+    # never becomes evidence: no verdict is recorded from it.
+    assert action_endings(events)[-1] == ('action.rejected', 'run_candidate', 'INTERRUPTED')
+    assert not list((request.output_dir / 'verdicts').glob('*.json'))
 
 
 def test_reproduced_candidate_forces_submit_without_model_decision(tmp_path, projects, facts):

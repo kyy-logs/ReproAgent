@@ -2,6 +2,7 @@
 import asyncio
 import json
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import httpx
 import pytest
@@ -66,6 +67,16 @@ def test_resolved_options_are_frozen():
     assert options == ProviderRequestOptions(512, {})
     with pytest.raises(FrozenInstanceError):
         options.output_limit = 1
+
+
+def test_shipped_non_thinking_example_round_trips_into_model_config():
+    examples = Path(__file__).resolve().parents[2] / 'examples'
+    shipped = ModelConfig(**json.loads((examples / 'model.deepseek.json').read_text(encoding='utf-8')))
+    non_thinking = ModelConfig(**json.loads((examples / 'model.deepseek.non-thinking.json').read_text(encoding='utf-8')))
+    assert non_thinking.thinking_mode == 'disabled'
+    assert (non_thinking.base_url, non_thinking.model, non_thinking.api_key_env, non_thinking.max_output_tokens,
+            non_thinking.output_limit_field) == (shipped.base_url, shipped.model, shipped.api_key_env,
+            shipped.max_output_tokens, shipped.output_limit_field)
 
 
 def test_thinking_switch_is_resolved_only_when_configured():
