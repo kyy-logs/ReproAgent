@@ -7,6 +7,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from ...paths import PROCESS_CWD_LIMIT, display_path
+
 if os.name == "nt":
     import msvcrt
     from ctypes import wintypes as w
@@ -67,6 +69,15 @@ class ManagedProcess:
     def spawn(cls, argv: tuple[str, ...], cwd: Path, env: dict[str, str]):
         if not argv or not Path(argv[0]).is_absolute():
             raise ValueError("execution requires an absolute executable path")
+        if os.name == "nt" and len(display_path(cwd)) > PROCESS_CWD_LIMIT:
+            # No process can be started in a directory this long -- ``SetCurrentDirectoryW``
+            # refuses one just as ``CreateProcess``'s ``lpCurrentDirectory`` does, in the
+            # plain form and in the extended form alike.  Dropping the directory instead
+            # would silently run the child somewhere else, where the candidate's relative
+            # selectors do not resolve, so this is refused here, by name, rather than at a
+            # ctypes return code from inside ``CreateProcess``.
+            raise ValueError(f"Windows cannot start a process in a directory longer than "
+                             f"{PROCESS_CWD_LIMIT} characters: {cwd}")
         self = cls()
         self._closed = False
         if os.name != "nt":

@@ -44,7 +44,7 @@ from .dependency import require_agentscope
 from ...core.budget import BudgetStopped
 from ...core.models import CallContext, FileEntry, ProjectView
 from ...core.serialization import bytes_hash
-from ...paths import MAX_PATH, display_path, identity_key, is_within, relative_name, workspace_path
+from ...paths import PROCESS_CWD_LIMIT, display_path, identity_key, is_within, relative_name, workspace_path
 from ...store import TaskStore
 from ...workspace import sensitive_path
 
@@ -583,16 +583,16 @@ class SnapshotBackend(BackendBase):
     def _child_cwd(self) -> str | None:
         """The directory a helper child is started in, or None if the root cannot supply one.
 
-        ``CreateProcess`` refuses a current directory at (or past) :data:`MAX_PATH`, in
-        either path form, so a snapshot deep enough to need the ``\\\\?\\`` form cannot be
-        one -- and without this the deep snapshot's search tools could not start a child at
-        all.  Dropping it widens nothing: every path the two helpers are handed is absolute,
-        because ``_parse_ripgrep`` anchors its target at the snapshot root and the Glob
-        helper is given a directory inside the snapshot, so nothing a child resolves
-        depends on its working directory.
+        ``CreateProcess`` refuses a current directory longer than
+        :data:`PROCESS_CWD_LIMIT`, in either path form, so a snapshot deep enough to need
+        the ``\\\\?\\`` form cannot be one -- and without this the deep snapshot's search
+        tools could not start a child at all.  Dropping it widens nothing: every path the
+        two helpers are handed is absolute, because ``_parse_ripgrep`` anchors its target
+        at the snapshot root and the Glob helper is given a directory inside the snapshot,
+        so nothing a child resolves depends on its working directory.
         """
         root = str(self.root)
-        if os.name == "nt" and len(display_path(root)) >= MAX_PATH:
+        if os.name == "nt" and len(display_path(root)) > PROCESS_CWD_LIMIT:
             return None
         return root
 

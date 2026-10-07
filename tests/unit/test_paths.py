@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from reproagent.paths import (MAX_PATH, display_path, identity_key, is_within, relative_name,
-                              shared_path_form, workspace_path)
+from reproagent.paths import (MAX_PATH, RESERVED_NAME, directory_path, display_path, identity_key,
+                              is_within, relative_name, shared_path_form, workspace_path)
 
 WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="the long-path form is Windows-only")
 
@@ -49,6 +49,25 @@ def test_a_path_past_the_limit_takes_the_long_form(tmp_path):
     assert str(long_form) == "\\\\?\\" + str(long_path)
     assert workspace_path(long_form) == long_form                       # idempotent
     assert workspace_path(at_length(tmp_path, MAX_PATH - 1)) == at_length(tmp_path, MAX_PATH - 1)
+
+
+@WINDOWS_ONLY
+def test_a_directory_past_the_reserved_name_length_takes_the_long_form(tmp_path):
+    """A directory stops working before a file does, and is made through its own form.
+
+    ``workspace_path`` promotes at the file limit, because an ordinary file name still
+    opens there.  A directory stops twelve characters earlier -- the name that will live
+    inside it has to fit -- so a directory the tool has to create can already be too long
+    while the same name would still work as a file.
+    """
+    boundary = at_length(tmp_path, MAX_PATH - RESERVED_NAME)
+    assert str(directory_path(boundary)).startswith("\\\\?\\")
+    shorter = at_length(tmp_path, MAX_PATH - RESERVED_NAME - 1)
+    assert directory_path(shorter) == shorter
+    # The file form is untouched: this is a second rule, not a tighter one.
+    assert workspace_path(boundary) == boundary
+    assert workspace_path(shorter) == shorter
+    assert directory_path("\\\\?\\C:\\already\\prefixed") == Path("\\\\?\\C:\\already\\prefixed")
 
 
 @WINDOWS_ONLY

@@ -51,6 +51,15 @@ DEEP = MAX_PATH - 100
 # so this length puts the snapshot root exactly at the limit while the task root,
 # and everything that only reads the task root, is still below it.
 BAND = MAX_PATH - 57
+# A *directory* stops working twelve characters below the file limit, while a file keeps
+# working to the limit itself.  ``workspace_path`` promotes at the file limit, because
+# that is what a file needs, so this band -- where the probe directory (task + 41) and the
+# run copy (task + 47) are both inside the reserved window -- is where every directory the
+# tool creates has to be created through the form that reaches it.
+RESERVED_BAND = MAX_PATH - 52
+# The run copy is the task directory plus "/runs/run-<32 hex>/code" (47 characters),
+# which no path form can reach past the directory a process can be started in.
+UNRUNNABLE_BAND = MAX_PATH - 46
 
 
 def deep_directory(base: Path, minimum_length: int) -> Path:
@@ -139,17 +148,20 @@ def test_deep_delivery_survives_paths_past_the_legacy_limit(tmp_path, projects, 
     assert read_probe(readable(replay_output / "probe.jsonl"), "export-replay").probe_complete
 
 
-def band_workspace(tmp_path, projects):
+def band_workspace(tmp_path, projects, band=BAND):
     """A task directory in the band below the limit: snapshot root long, task root not.
 
-    Execution cannot reach this band -- the run copy's own directory would be
-    ``task + 47`` characters, past the twelve-character directory reserve, and its
-    files are what pytest would have to open -- so the checks here stay above it.
+    The default band is the shallowest one whose snapshot root crosses the limit, so
+    the run copy's own directory (``task + 48``) still fits.  ``RUN_BAND`` asks for
+    the deeper band where the run copy itself is past the limit, which is what
+    execution has to survive.
     """
     repo = projects.plain(tmp_path / "repo")
-    output = deep_directory(tmp_path / "out", BAND)
+    output = deep_directory(tmp_path / "out", band)
     assert len(str(workspace_path(output))) < MAX_PATH
-    assert str(workspace_path(output / "snapshots" / ("snapshot-" + "0" * 32) / "code")).startswith("\\\\?\\")
+    # The frozen copy is at least in the reserved window, which is what makes the band
+    # interesting: a directory stops working twelve characters below the file limit.
+    assert len(str(workspace_path(output / "snapshots" / ("snapshot-" + "0" * 32) / "code"))) >= MAX_PATH - 12
     request = TaskRequest(repo, output, repo / "issue.md",
                           language=PythonPytestConfig(python=sys.executable, target_modules=("example.parser",)))
     store = TaskStore(output)
@@ -230,6 +242,75 @@ def process_is_gone(pid: int) -> bool:
     listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"],
                             capture_output=True, text=True, timeout=60)
     return not any(len(row) > 1 and row[1].strip() == str(pid) for row in csv.reader(listed.stdout.splitlines()))
+
+
+@WINDOWS_ONLY
+def test_directories_the_tool_builds_past_the_reserved_name_limit(tmp_path, projects, facts):
+    """The directories the run needs are built where the plain form stops working.
+
+    A *directory* stops working twelve characters below the file limit, because the name
+    that will live inside it has to fit as well, while a file keeps working to the limit
+    itself.  A task directory that is still below the file limit is therefore already too
+    deep to ``mkdir`` through the form :func:`workspace_path` leaves ordinary, and the
+    probe directory and the run copy both land in that window here.  Freezing the source,
+    publishing the candidate, probing the environment and building the run copy all have
+    to complete; whether the candidate can then be *executed* at this depth is the
+    platform's own limit and is checked by the two bands either side of this one.
+    """
+    request, store, workspace = band_workspace(tmp_path, projects, band=RESERVED_BAND)
+    context = facts.context()
+    snapshot = workspace.freeze(request, context)
+    candidate = workspace.publish(CandidateDraft(
+        (DraftFile("tests/test_repro.py", b"from example.parser import parse\ndef test_empty(): assert parse([]) == []\n"),),
+        snapshot.snapshot_id, "contract-1", 1, "empty input"), snapshot)
+
+    # The frozen copy itself is past the file limit, and so are the files inside it --
+    # including the temporary an atomic write stages next to them.
+    longest = max((snapshot.root / entry.path for entry in snapshot.files), key=lambda path: len(str(path)))
+    assert str(snapshot.root).startswith("\\\\?\\")
+    assert len(str(longest)) > MAX_PATH and len(str(atomic_temporary(longest))) > MAX_PATH
+
+    # Preparing the environment builds the probe directory and runs the probe in it, and
+    # that directory -- like the run copy and the temporary beside it -- is in the
+    # reserved window, where a plain ``mkdir`` no longer works.
+    runner = Runner(workspace, store)
+    environment = asyncio.run(runner.prepare(request, snapshot, context))
+    run = workspace.fresh_run(snapshot, candidate, context)
+    assert MAX_PATH - 12 <= len(str(run.root)) < MAX_PATH
+    assert len(str(run.temp_root)) >= MAX_PATH - 12
+    assert workspace_path(run.root / "tests" / "test_repro.py").read_bytes() == \
+        b"from example.parser import parse\ndef test_empty(): assert parse([]) == []\n"
+    assert environment.python == sys.executable
+
+
+@WINDOWS_ONLY
+def test_a_run_copy_no_process_can_enter_is_refused_by_name(tmp_path, projects, facts):
+    """Past ``PROCESS_CWD_LIMIT`` the run is refused, not started somewhere else.
+
+    ``SetCurrentDirectoryW`` refuses a working directory at the legacy limit just as
+    ``CreateProcess`` does, in either path form, so no process can be started in the run
+    copy once the task directory is deep enough.  What must not happen is the quieter
+    failure: starting the test process in some other directory, where the candidate's
+    relative selectors name nothing.  The refusal names the limit instead.
+    """
+    from reproagent.paths import PROCESS_CWD_LIMIT
+
+    request, store, workspace = band_workspace(tmp_path, projects, band=UNRUNNABLE_BAND)
+    context = facts.context()
+    snapshot = workspace.freeze(request, context)
+    candidate = workspace.publish(CandidateDraft(
+        (DraftFile("tests/test_repro.py", b"from example.parser import parse\ndef test_empty(): assert parse([]) == []\n"),),
+        snapshot.snapshot_id, "contract-1", 1, "empty input"), snapshot)
+    runner = Runner(workspace, store)
+    # The environment probe still runs: creating the copy and starting a process in it
+    # are different limits, and the copy is built through the form that reaches it.
+    environment = asyncio.run(runner.prepare(request, snapshot, context))
+    with pytest.raises(ValueError, match=f"longer than {PROCESS_CWD_LIMIT} characters"):
+        asyncio.run(runner.execute(candidate, snapshot, environment, context))
+    run_root = next((store.root / "runs").iterdir()) / "code"
+    assert len(str(run_root)) > PROCESS_CWD_LIMIT
+    assert workspace_path(run_root / "tests" / "test_repro.py").read_bytes() == \
+        b"from example.parser import parse\ndef test_empty(): assert parse([]) == []\n"
 
 
 @WINDOWS_ONLY
