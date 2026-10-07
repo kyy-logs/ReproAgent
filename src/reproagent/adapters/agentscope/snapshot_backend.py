@@ -44,7 +44,7 @@ from .dependency import require_agentscope
 from ...core.budget import BudgetStopped
 from ...core.models import CallContext, FileEntry, ProjectView
 from ...core.serialization import bytes_hash
-from ...paths import identity_key, is_within, relative_name, workspace_path
+from ...paths import MAX_PATH, display_path, identity_key, is_within, relative_name, workspace_path
 from ...store import TaskStore
 from ...workspace import sensitive_path
 
@@ -580,8 +580,27 @@ class SnapshotBackend(BackendBase):
             raise SnapshotDenied(f"Glob pattern is not relative to the snapshot: {pattern!r}")
         return text
 
+    def _child_cwd(self) -> str | None:
+        """The directory a helper child is started in, or None if the root cannot supply one.
+
+        ``CreateProcess`` refuses a current directory at (or past) :data:`MAX_PATH`, in
+        either path form, so a snapshot deep enough to need the ``\\\\?\\`` form cannot be
+        one -- and without this the deep snapshot's search tools could not start a child at
+        all.  Dropping it widens nothing: every path the two helpers are handed is absolute,
+        because ``_parse_ripgrep`` anchors its target at the snapshot root and the Glob
+        helper is given a directory inside the snapshot, so nothing a child resolves
+        depends on its working directory.
+        """
+        root = str(self.root)
+        if os.name == "nt" and len(display_path(root)) >= MAX_PATH:
+            return None
+        return root
+
     async def _spawn(self, argv: list[str], timeout: float, *, limit: int = MAX_STDOUT_BYTES) -> tuple[ExecResult, bool]:
-        """Run *argv* in the snapshot root under a deadline, an output cap and a reaped child.
+        """Run *argv* under a deadline, an output cap and a reaped child.
+
+        The child's own working directory is :meth:`_child_cwd`: the snapshot root where
+        the host can supply one, and nothing where the root is too deep for it.
 
         Returns:
             (`ExecResult`, `bool`): the outcome, and whether more than *limit* bytes of
@@ -589,7 +608,7 @@ class SnapshotBackend(BackendBase):
         """
         kwargs = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)} if os.name == "nt" else {}
         try:
-            process = await asyncio.create_subprocess_exec(*argv, cwd=str(self.root), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
+            process = await asyncio.create_subprocess_exec(*argv, cwd=self._child_cwd(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, **kwargs)
         except (OSError, NotImplementedError) as exc:
             return self._blocked(f"cannot start the search helper: {exc}"), False
         outgoing = asyncio.ensure_future(self._drain(process.stdout, limit))

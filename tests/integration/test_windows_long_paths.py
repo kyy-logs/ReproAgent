@@ -16,19 +16,24 @@ by construction and let file paths cross the file limit, which is how the
 recorded failure presented itself.
 """
 import asyncio
+import csv
+import json
 import os
+import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from reproagent.adapters.languages.python_pytest.adapter import absolute_python
 from reproagent.adapters.languages.python_pytest.collector import read_probe
 from reproagent.app import create_controller
+from reproagent.core.budget import BudgetStopped
 from reproagent.core.models import (CandidateDraft, DraftFile, EvidenceLevel, IssueContract, ModelConfig,
                                     ProjectView, PythonPytestConfig, TaskRequest, TaskResult, TaskState)
-from reproagent.core.tools import Tools
 from reproagent.exporter import Exporter
 from reproagent.paths import workspace_path
 from reproagent.runner import Runner
@@ -151,6 +156,82 @@ def band_workspace(tmp_path, projects):
     return request, store, Workspace(output, store)
 
 
+def find_ripgrep():
+    """The ripgrep the SDK's Grep runs, from the environment or PATH, or None."""
+    candidates = (os.environ.get("REPROAGENT_RG_PATH"), shutil.which("rg"), shutil.which("rg.exe"))
+    return next((path for path in candidates if path and Path(path).is_file()), None)
+
+
+def glob_helper_path() -> str:
+    """The bundled helper script the SDK's Glob resolves for a local backend."""
+    import importlib.resources as resources
+
+    return str(resources.files("agentscope.tool._builtin._scripts").joinpath("_glob_helper.py"))
+
+
+def sdk_environment(tmp_path, projects, facts, rg=None):
+    """Task 2's snapshot-bound SDK file tools over a frozen copy in the deep band.
+
+    The import waits until here: this module also carries the boundary and venv
+    regressions, which must run on a host where the SDK is not installed at all.
+    """
+    pytest.importorskip("agentscope")
+    from reproagent.adapters.agentscope.evidence import EvidenceLedger
+    from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend
+    from reproagent.adapters.agentscope.tools import build_toolkit
+    from reproagent.core.candidate_service import CandidateService
+    from reproagent.core.phase import PhaseGate
+
+    request, store, workspace = band_workspace(tmp_path, projects)
+    context = facts.context()
+    snapshot = workspace.freeze(request, context)
+    project = ProjectView(snapshot)
+    gate, service = PhaseGate(), CandidateService(project, workspace, context)
+    backend = SnapshotBackend(project, store, context, rg_path=rg)
+    ledger = EvidenceLedger(project, store)
+    return SimpleNamespace(snapshot=snapshot, store=store, workspace=workspace, context=context, project=project,
+                           backend=backend, ledger=ledger, rg=rg, gate=gate,
+                           toolkit=build_toolkit(backend, ledger, service, gate, context))
+
+
+async def _dispatch(env, name, payload, call_id="call-1"):
+    from agentscope.message import ToolCallBlock
+    from agentscope.state import AgentState
+
+    response = None
+    async for chunk in env.toolkit.call_tool(ToolCallBlock(id=call_id, name=name, input=json.dumps(payload)), AgentState()):
+        response = chunk
+    return response
+
+
+def tool_call(env, name, payload):
+    """One call through the real Toolkit, which is what the phase's model does."""
+    return asyncio.run(_dispatch(env, name, payload))
+
+
+def chunk_text(chunk) -> str:
+    from agentscope.message import TextBlock
+
+    return "".join(block.text for block in chunk.content if isinstance(block, TextBlock))
+
+
+def sidecar_refs(text: str) -> list[dict]:
+    """The evidence sidecar a file tool appended, or nothing when it cited no lines."""
+    match = re.search(r"<evidence>(.*?)</evidence>", text, re.S)
+    return [] if match is None else json.loads(match.group(1))["refs"]
+
+
+def process_is_gone(pid: int) -> bool:
+    """Whether Windows itself reports no running process with *pid*.
+
+    ``Process.returncode`` is set by the same code under test, so the operating system
+    is asked separately: a killed-and-reaped child must not be listed any more.
+    """
+    listed = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"],
+                            capture_output=True, text=True, timeout=60)
+    return not any(len(row) > 1 and row[1].strip() == str(pid) for row in csv.reader(listed.stdout.splitlines()))
+
+
 @WINDOWS_ONLY
 def test_a_snapshot_root_past_the_limit_does_not_abort_the_run(tmp_path, projects, facts):
     """The run reaches the model's own end state instead of an internal error.
@@ -173,15 +254,122 @@ def test_a_snapshot_root_past_the_limit_does_not_abort_the_run(tmp_path, project
 
 
 @WINDOWS_ONLY
-def test_deep_tool_reads_stay_relative_to_the_workspace(tmp_path, projects, facts):
-    request, store, workspace = band_workspace(tmp_path, projects)
-    context = facts.context()
-    snapshot = workspace.freeze(request, context)
-    tools = Tools(ProjectView(snapshot), workspace, context)
-    read = tools.read_file("example/parser.py", 1, 2)
-    assert [ref.path for ref in read.evidence_refs] == [f"snapshots/{snapshot.snapshot_id}/code/example/parser.py"]
-    assert "def parse" in read.text
-    assert tools.search_code("def parse", "snapshot").text.startswith("example/parser.py:1:")
+def test_deep_snapshot_reads_stay_relative_and_citable(tmp_path, projects, facts):
+    """The SDK file tools read the frozen copy past the limit and cite it relatively.
+
+    The recorded failure was a snapshot whose root already crossed the legacy limit, so
+    the tools only reach it through the ``\\\\?\\`` form.  What they display must still name
+    the file the way the rest of the task does -- relative to the task store, with no
+    platform prefix and nothing absolute -- and the boundary must not be relaxed by the
+    path form: a location outside the snapshot is refused whichever form it is written in.
+    """
+    from agentscope.message import ToolResultState
+
+    from reproagent.adapters.agentscope.snapshot_backend import SnapshotDenied
+
+    env = sdk_environment(tmp_path, projects, facts, rg=find_ripgrep())
+    snapshot, backend = env.snapshot, env.backend
+    module = snapshot.root / "example" / "parser.py"
+    # The frozen copy and its files are only reachable through the long form: a read of one
+    # is a real long-path read, not a shorter path in disguise.
+    assert str(snapshot.root).startswith("\\\\?\\")
+    assert len(str(module)) > MAX_PATH
+    assert asyncio.run(backend.read_file("example/parser.py")) == (tmp_path / "repo" / "example" / "parser.py").read_bytes()
+
+    # The evidence identity the product stores is workspace-relative, exactly as the old
+    # native read reported it -- not the internal long form and not an absolute path.
+    expected = f"snapshots/{snapshot.snapshot_id}/code/example/parser.py"
+    content_hash = next(item for item in snapshot.files if item.path == "example/parser.py").content_hash
+
+    read = tool_call(env, "Read", {"file_path": str(module)})
+    assert "def parse(values):" in chunk_text(read)
+    # The sidecar names the file the way the snapshot does, so the model can copy it back
+    # -- never the long form it was read through.
+    refs = sidecar_refs(chunk_text(read))
+    assert [(ref["path"], ref["start_line"], ref["end_line"]) for ref in refs] == [("example/parser.py", 1, 2)]
+    assert all(not Path(ref["path"]).is_absolute() and "\\\\?\\" not in ref["path"] for ref in refs)
+
+    # A search of the same deep root cites the same registered lines, even though ripgrep
+    # prints the long absolute path the backend handed it.
+    if env.rg is not None:
+        grep = tool_call(env, "Grep", {"pattern": "def parse", "path": str(snapshot.root), "output_mode": "content"})
+        assert [ref["path"] for ref in sidecar_refs(chunk_text(grep))] == ["example/parser.py"]
+
+    # Citing those displayed lines back ends the phase with the store-relative reference
+    # the rest of the task uses, which is what the deep root must not change.
+    revision = {"source_refs": [{"path": "example/parser.py", "content_hash": content_hash,
+                                 "start_line": 1, "end_line": 2}], "reason": "the parse source"}
+    assert json.loads(chunk_text(tool_call(env, "revise_contract", revision)))["status"] == "revision_requested"
+    assert [(ref.path, ref.content_hash, ref.start_line, ref.end_line) for ref in env.gate.result.source_refs] == \
+        [(expected, content_hash, 1, 2)]
+    cited = env.gate.result.source_refs[0].path
+    assert not Path(cited).is_absolute() and "\\\\?\\" not in cited and str(snapshot.root) not in cited
+
+    # Outside the snapshot is refused whatever form it takes, and the SDK tool reports the
+    # refusal as a controlled error rather than reading from the machine.
+    for outside in (str(tmp_path / "repo" / "issue.md"), str(snapshot.root.parent / "snapshot.json"), str(tmp_path)):
+        with pytest.raises(SnapshotDenied):
+            asyncio.run(backend.read_file(outside))
+    assert tool_call(env, "Read", {"file_path": str(tmp_path / "repo" / "issue.md")}).state is ToolResultState.ERROR
+
+
+@WINDOWS_ONLY
+def test_a_helper_child_on_a_long_path_is_killed_and_reaped(tmp_path, projects, facts, monkeypatch):
+    """Task 2's timeout and cancel policy holds where the paths themselves are long.
+
+    The SDK's Glob runs a helper script as a child process, and that child is killed and
+    reaped before a timed-out or cancelled call returns.  A snapshot root past the legacy
+    limit must not change that: the helper still runs against the deep root, and no child
+    survives either ending.
+    """
+    env = sdk_environment(tmp_path, projects, facts)
+    backend, root = env.backend, env.snapshot.root
+    command = ["python3", glob_helper_path(), "--pattern", "**/*.py", "--base-dir", str(root)]
+    assert str(root).startswith("\\\\?\\") and len(str(root)) > MAX_PATH
+
+    spawned, real = [], asyncio.create_subprocess_exec
+
+    async def spy(*args, **kwargs):
+        process = await real(*args, **kwargs)
+        spawned.append(process)
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spy)
+    # It runs at this depth, and what it matched is still the registered manifest.
+    accepted = asyncio.run(backend.exec_shell(command))
+    assert accepted.ok(), accepted.stderr
+    matched = json.loads(accepted.stdout.decode("utf-8"))
+    assert any(Path(path).name == "parser.py" for path in matched)
+    assert all(Path(path).is_absolute() and str(root) in path for path in matched)
+    assert spawned[-1].returncode is not None and process_is_gone(spawned[-1].pid)
+
+    # A timeout kills and reaps the child, and the operating system agrees it is gone.
+    timed_out = asyncio.run(backend.exec_shell(command, timeout=0.0))
+    assert timed_out.exit_code == -1 and b"timed out" in timed_out.stderr
+    assert spawned[-1].returncode is not None and process_is_gone(spawned[-1].pid)
+
+    # A cancel that lands while the child runs kills it too, and the call reports it.
+    async def cancelling(*args, **kwargs):
+        process = await real(*args, **kwargs)
+        spawned.append(process)
+        env.context.cancel_event.set()
+        return process
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", cancelling)
+    with pytest.raises(BudgetStopped):
+        asyncio.run(backend.exec_shell(command))
+    assert spawned[-1].returncode is not None and process_is_gone(spawned[-1].pid)
+
+    # With the flag still set a further call starts no child at all, and once it is cleared
+    # the same deep-root invocation works again.
+    started = len(spawned)
+    with pytest.raises(BudgetStopped):
+        asyncio.run(backend.exec_shell(command))
+    assert len(spawned) == started
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spy)
+    env.context.cancel_event.clear()
+    assert asyncio.run(backend.exec_shell(command)).ok()
+    assert spawned[-1].returncode is not None and process_is_gone(spawned[-1].pid)
 
 
 def test_boundary_check_is_not_relaxed_by_the_path_form(tmp_path):
