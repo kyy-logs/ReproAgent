@@ -162,3 +162,21 @@ def test_replay_command_and_tool_link_survive_large_environment_fields():
     data['target_modules'] = ['模' * 2000]
     text = render_report(data)
     assert '--install' in text and '(./replay.py)' in text
+
+
+def test_no_fix_and_legacy_record_keep_truthful_defaults():
+    from evals.schema import EvalResult
+    from reproagent.core.models import TaskResult, TaskState
+    # A task that never had a fixed version may not read as a differential result: the
+    # records default to "not provided" and the report says so.
+    assert TaskResult('task-1', TaskState.PREPARING).fix_validation_status == 'not_provided'
+    assert EvalResult('case-1').fix_validation_status == 'not_provided'
+    text = render_report(report_data())
+    assert '未进行修复版对照' in text and '修复版对照通过' not in text
+    # A package written before this build recorded any component identity keeps its own
+    # backends and stays readable; rendering it must not claim the new infrastructure.
+    legacy = report_data()
+    legacy['backends'] = {'model_backend': 'native', 'agent_backend': 'native', 'model': 'offline'}
+    text = render_report(legacy)
+    assert 'native' in text
+    assert 'agentscope' not in text and '基础设施' not in text and '复现策略' not in text

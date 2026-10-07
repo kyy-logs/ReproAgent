@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from .io import read_json,write_json,verify_seal,seal,file_hash
+from reproagent.core.models import IDENTITY_FIELDS,component_identity
 
 
 def percentile(values,fraction):
@@ -11,6 +12,19 @@ def percentile(values,fraction):
     values=sorted(values); location=(len(values)-1)*fraction
     low=int(location); high=min(low+1,len(values)-1)
     return values[low]+(values[high]-values[low])*(location-low)
+
+
+def round_identity(round_data):
+    """The round's component identity: what it recorded, over the product's own identity.
+
+    The round record may carry these fields at its top level or inside its configuration;
+    whatever it recorded wins, so a round that ran another backend keeps saying so.
+    """
+    recorded={}
+    for source in (round_data.get('configuration'),round_data):
+        if isinstance(source,dict):
+            recorded.update({key:value for key,value in source.items() if key in IDENTITY_FIELDS and value})
+    return component_identity(**recorded)
 
 
 def summarize_round(round_data):
@@ -27,7 +41,7 @@ def summarize_round(round_data):
     # differential success, and an outcome recorded before the field existed defaults to
     # "not_provided" rather than inheriting either claim.
     fix_status=lambda value:value.get('fix_validation_status','not_provided')
-    return {'all_tasks':total,'ready_tasks':len(ready),'preparation_rate':ratio(len(ready),total),
+    summary={'all_tasks':total,'ready_tasks':len(ready),'preparation_rate':ratio(len(ready),total),
         # Rounds recorded before the source was pinned cannot claim a comparable version.
         'source_comparison_status':round_data.get('source_comparison_status','not_recorded'),
         'local_repeated':sum(value.get('evidence_level') in ('REPEATED_OBSERVATION','DIFFERENTIAL_VALIDATED') for value in outcomes),
@@ -50,11 +64,16 @@ def summarize_round(round_data):
         'preparation_seconds':sum(value.get('preparation',{}).get('duration',0) for value in outcomes),
         'duration_p50':percentile(durations,.5),'duration_p90':percentile(durations,.9),
         'interrupted_tasks':sum(value.get('status') in ('EXHAUSTED','CANCELLED') for value in outcomes)}
+    # What this round ran on: the product identity, with whatever the round recorded kept.
+    summary.update(round_identity(round_data))
+    return summary
 
 
 def save_summary(root,round_data):
     root=Path(root); summary=summarize_round(round_data); write_json(root/'summary.json',summary)
     lines=['# SWT-Bench 开发子集评测','',f"选定样本：{summary['all_tasks']}；准备可用：{summary['ready_tasks']}。",
+        f"基础设施：{summary['infrastructure']}；复现策略：{summary['strategy']}（版本 {summary['strategy_version']}）。",
+        f"本轮记录的后端：模型 {summary['model_backend']}；Agent {summary['agent_backend']}；AgentScope 版本：{summary['agentscope_version'] or '未安装'}。",
         f"本地重复确认：{summary['local_repeated']}；本地差分确认：{summary['local_differential']}。",
         f"修复版对照：通过 {summary['fix_validation_passed']}；未通过 {summary['fix_validation_failed']}；受阻 {summary['fix_validation_blocked']}；未提供 {summary['fix_validation_not_provided']}。",
         '原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功。',

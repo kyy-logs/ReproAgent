@@ -31,6 +31,27 @@ def test_round_summary_keeps_repeated_observation_and_failed_fix_separate():
     assert summary['fix_validation_not_provided']==2 and summary['fix_validation_blocked']==0
 
 
+def test_round_summary_states_the_component_identity_without_relabelling_a_round(tmp_path):
+    from evals.swt_bench.results import save_summary,summarize_round
+    # What a round actually ran on is kept; the product identity is stated next to it and
+    # never replaces a recorded backend.
+    round_data={'configuration':{'model_backend':'native','agent_backend':'native'},
+        'outcomes':{'a':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION','fix_validation_status':'failed'}}}
+    summary=summarize_round(round_data)
+    assert summary['infrastructure']=='agentscope' and summary['strategy']=='reproagent'
+    assert summary['strategy_version']=='1' and isinstance(summary['agentscope_version'],str)
+    assert summary['model_backend']=='native' and summary['agent_backend']=='native'
+    # A round recorded before any of this existed still summarises, and its outcome keeps
+    # the truthful "no fixed version provided" default.
+    legacy=summarize_round({'outcomes':{'old':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION'}}})
+    assert legacy['fix_validation_not_provided']==1 and legacy['local_differential']==0
+    assert legacy['infrastructure']=='agentscope' and legacy['strategy_version']=='1'
+    save_summary(tmp_path,round_data)
+    text=(tmp_path/'report.md').read_text(encoding='utf-8')
+    assert '基础设施：agentscope' in text and '复现策略：reproagent' in text
+    assert 'native' in text
+
+
 def test_unverified_external_report_is_not_counted_as_independent_success():
     from evals.swt_bench.results import summarize_round
     summary=summarize_round({'outcomes':{'a':{'status':'DONE','official_status':'imported_unverified','official_resolved':True}}})

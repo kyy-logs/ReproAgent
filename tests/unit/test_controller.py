@@ -509,6 +509,53 @@ def test_repeated_failure_with_failed_fix_is_not_differential_success(tmp_path, 
     assert summary['differential_successes'] == 0 and summary['fix_validation_failed'] == 1
 
 
+def test_failed_or_blocked_fix_is_not_differential_success(tmp_path, projects, facts):
+    # Repeating the original failure is delivered evidence on its own; a validated fixed
+    # version is a separate claim. A fixed version that ran and failed, and one whose
+    # environment could not be prepared at all, must leave the evidence level, the
+    # package's own differential flag, the evaluation's effective count and the report's
+    # main conclusion all saying the differential did not hold.
+    from evals.run import summarize
+    from evals.schema import EvalResult
+    def installed_sdk():
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            return version('agentscope')
+        except PackageNotFoundError:
+            return ''
+    cases = []
+    request, _, controller, ctx = setup(tmp_path / 'failed', projects, facts)
+    still_broken = projects.plain(tmp_path / 'fixed-still-broken')
+    cases.append((request, asyncio.run(controller.run(request, ctx, FixValidationRequest(still_broken, sys.executable))), 'failed'))
+    request, _, controller, ctx = setup(tmp_path / 'unreachable', projects, facts)
+    cases.append((request, asyncio.run(controller.run(request, ctx, FixValidationRequest(tmp_path / 'no-such-fixed-repo', sys.executable))), 'blocked'))
+    for request, result, expected in cases:
+        assert result.status == TaskState.DONE and result.export_state == 'published'
+        # The repeated original failure is still delivered as evidence of its own.
+        assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+        assert result.fix_validation_status == expected
+        package = request.output_dir / 'artifacts/reproduction'
+        report = json.loads((package / 'report.json').read_text(encoding='utf-8'))
+        assert report['verified'] is True and (package / 'candidate/tests/test_repro.py').is_file()
+        assert report['differential_validated'] is False
+        assert report['evidence_level'] != 'DIFFERENTIAL_VALIDATED'
+        assert report['fix_validation_status'] == expected
+        backends = report['backends']
+        assert backends['infrastructure'] == 'agentscope' and backends['agentscope_version'] == installed_sdk()
+        assert backends['strategy'] == 'reproagent' and backends['strategy_version'] == '1'
+        summary = summarize((EvalResult('pallets__flask-4992', status=result.status.value,
+            evidence_level=result.evidence_level.value, reproduced=True, human_judgement=True, export_replayed=True,
+            fix_validation_status=result.fix_validation_status),))
+        assert summary['effective_reproductions'] == 0 and summary['total_rate'] == 0.0
+        assert summary['differential_successes'] == 0
+        text = (package / 'report.md').read_text(encoding='utf-8')
+        assert '修复版对照通过' not in text
+        if expected == 'failed':
+            assert '仅确认原版重复失败，差分复现未成立' in text
+        else:
+            assert '差分验证未执行' in text and '差分复现未成立' not in text
+
+
 def test_no_fixed_version_preserves_buggy_only_workflow(tmp_path, projects, facts):
     # The normal product workflow supplies no fixed version: the repeated original
     # observation is still delivered, and the fixed-version status says so instead of

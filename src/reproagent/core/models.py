@@ -46,6 +46,41 @@ class EvidenceLevel(StrEnum):
 # differential check was requested or reached.
 FIX_VALIDATION_STATUSES = frozenset({"not_provided", "passed", "failed", "blocked"})
 
+# The component identity a run records for itself, as field names shared by the task
+# report and the evaluation summary. These describe what the product ran on, not what a
+# model reported about itself: `infrastructure` is the SDK the strategy runs on, `strategy`
+# is the product's reproduction strategy and `strategy_version` its version, and
+# `agentscope_version` is the SDK version actually present. The names are consumed by the
+# evaluation summary, so they must stay stable.
+INFRASTRUCTURE = "agentscope"
+STRATEGY = "reproagent"
+STRATEGY_VERSION = "1"
+IDENTITY_FIELDS = ("infrastructure", "agentscope_version", "strategy", "strategy_version",
+                   "model_backend", "agent_backend")
+
+
+def installed_agentscope_version():
+    """The SDK version present in this environment, or ``''`` when it is not installed."""
+    from importlib.metadata import PackageNotFoundError, version
+    try:
+        return version("agentscope")
+    except PackageNotFoundError:
+        return ""
+
+
+def component_identity(**recorded):
+    """The product's component identity, under whatever a run actually recorded.
+
+    Every key the run recorded wins, so a run that selected another backend, or a record
+    written before these fields existed, keeps saying what it used instead of being
+    relabelled by a later build.
+    """
+    identity = {"infrastructure": INFRASTRUCTURE, "agentscope_version": installed_agentscope_version(),
+                "strategy": STRATEGY, "strategy_version": STRATEGY_VERSION,
+                "model_backend": INFRASTRUCTURE, "agent_backend": INFRASTRUCTURE}
+    identity.update({key: value for key, value in recorded.items() if value is not None})
+    return identity
+
 
 @dataclass(frozen=True, slots=True)
 class BudgetLimits:

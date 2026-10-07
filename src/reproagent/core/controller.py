@@ -24,7 +24,8 @@ from dataclasses import asdict, dataclass, field, replace
 
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
-                     IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState)
+                     IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
+                     component_identity)
 from .serialization import bytes_hash, canonical_hash
 from .protocol import ModelOutputError, ModelProtocolError
 from reproagent.paths import relative_name
@@ -146,7 +147,10 @@ class Controller:
         self.gateway, self.verifier, self.exporter = gateway, verifier, exporter
         self.secrets = tuple(secret for secret in secrets if secret)
         self.explorer_factory = explorer_factory
-        self.backend_info = backend_info or {'model_backend':'native', 'agent_backend':'native'}
+        # The product's own component identity, under whatever this run recorded: a run
+        # that selected another backend, or a record written before these fields existed,
+        # keeps saying what it used instead of being relabelled here.
+        self.backend_info = component_identity(**(backend_info or {'model_backend':'native', 'agent_backend':'native'}))
         self.explorer = None
         self._explorer_closed = False
 

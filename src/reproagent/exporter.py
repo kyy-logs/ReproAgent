@@ -77,6 +77,9 @@ class Exporter:
             # Carried through unchanged so the report states the fixed-version outcome next to
             # the evidence level instead of letting the repeated observation imply one.
             'fix_validation_status':result.fix_validation_status,
+            # The differential claim as its own flag, so no reader has to infer it from the
+            # evidence-level string: a failed or blocked fixed version never reaches it.
+            'differential_validated':result.evidence_level == EvidenceLevel.DIFFERENTIAL_VALIDATED,
             'event_cutoff':len(events) - 1, 'candidate_files':[], 'log_mapping':[], 'runs':[], 'source_mapping':[], 'verdict_mapping':[],
             'accepted_run_ids':[], 'environment_probes':[]}
         previews = {}
