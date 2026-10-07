@@ -185,6 +185,25 @@ def test_candidate_tool_returns_actual_immutable_id(tmp_path, projects, facts):
         assert other.service.project.candidates == ()
 
 
+#: Names a candidate may never be installed as, whatever role it claims: publishing one
+#: would put a credential file inside the task's own candidate storage.
+SENSITIVE_NAMES = (".env", ".env.local", "credentials.json", "id_rsa", "id_ed25519", "service.key", "server.pem")
+
+
+@pytest.mark.parametrize("name", SENSITIVE_NAMES)
+def test_candidate_cannot_be_installed_at_a_sensitive_name(tmp_path, projects, facts, name):
+    """The publication rule refuses a credential name before any file is written."""
+    env = environment(tmp_path, projects, facts)
+    # The data role matters: a test file is already refused for its name, but nothing but the
+    # sensitive-name rule in the product workspace refuses a data file at `tests/<secret>`.
+    files = [{"path": "tests/test_repro.py", "content": "def test_repro():\n    assert False\n", "role": "test"},
+             {"path": f"tests/{name}", "content": "SECRET=1\n", "role": "data"}]
+    refused = call(env, "write_candidate", {"files": files, "hypothesis": "credential name"})
+    assert refused.state is ToolResultState.ERROR
+    assert candidate_ids(env) == [] and env.service.project.candidates == ()
+    assert env.gate.result is None
+
+
 def test_candidate_files_must_stay_in_the_configured_test_area(tmp_path, projects, facts):
     """The configured test area decides where a candidate may be installed, not the model.
 

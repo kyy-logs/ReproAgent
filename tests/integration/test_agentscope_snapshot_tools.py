@@ -30,7 +30,7 @@ from reproagent.adapters.agentscope import snapshot_backend
 from reproagent.adapters.agentscope.evidence import READ_LINE_CHARACTERS, EvidenceLedger
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend, SnapshotDenied, UnverifiedContent
 from reproagent.core.budget import BudgetStopped
-from reproagent.core.models import CandidateDraft, DraftFile, ProjectView, PythonPytestConfig, TaskRequest
+from reproagent.core.models import CandidateDraft, DraftFile, FileEntry, ProjectView, PythonPytestConfig, TaskRequest
 from reproagent.core.serialization import bytes_hash
 from reproagent.paths import relative_name
 from reproagent.store import TaskStore
@@ -56,6 +56,12 @@ OTHER_ABSOLUTE = "C:/Windows/win.ini" if os.name == "nt" else "/etc/hostname"
 WIDE_LINE = "# " + "x" * 598
 #: Wider than either tool displays whole.
 VERY_WIDE_LINE = "# " + "x" * 2098
+#: Names a manifest must never serve, whatever it claims to hold. Freezing leaves these out
+#: of the snapshot, so reaching a read with one registered means the manifest came from
+#: somewhere other than a freeze -- a hand-written or corrupted record. The secret in a
+#: served view would be exposed whether or not the manifest was supposed to hold it, so the
+#: read itself has to refuse, and these names are the whole of the rule.
+SENSITIVE_NAMES = (".env", ".env.local", "credentials.json", "id_rsa", "id_ed25519", "service.key", "server.pem")
 
 
 def chunk_text(chunk) -> str:
@@ -206,6 +212,28 @@ def test_a_search_larger_than_one_command_line_reaches_every_registered_file(tmp
         assert name in grep
     # A path that is not in the snapshot is still refused before any run happens.
     assert asyncio.run(env.backend.exec_shell(["rg", "--hidden", MARKER, str(env.fixed)])).exit_code == 2
+
+
+@pytest.mark.parametrize("name", SENSITIVE_NAMES)
+def test_a_registered_sensitive_name_is_never_served(tmp_path, projects, facts, name):
+    """The manifest is not the only gate: a credential name is refused at the read itself."""
+    env = environment(tmp_path, projects, facts)
+    secret = f"private_token_for_{name}"
+    (env.root / name).write_text(secret, encoding="utf-8")
+    item = FileEntry(name, bytes_hash(secret.encode()), len(secret.encode()), "data")
+    project = replace(env.project, snapshot=replace(env.snapshot, files=(*env.snapshot.files, item)))
+    backend, path = SnapshotBackend(project, env.store, env.context), str(env.root / name)
+    frozen = backend.snapshot
+    # The entry is registered, so "not part of the snapshot" cannot be what refuses it.
+    assert frozen.registered(path) is item
+    with pytest.raises(SnapshotDenied) as denied:
+        frozen.read_verified(item)
+    assert "sensitive" in str(denied.value)
+    with pytest.raises(SnapshotDenied):
+        asyncio.run(backend.read_file(path))
+    # The SDK tool reports it as a controlled error, and the file's bytes never reach a view.
+    view = asyncio.run(Read(backend=backend).call(file_path=path))
+    assert view.state is ToolResultState.ERROR and secret not in chunk_text(view)
 
 
 def test_traversal_symlink_and_cache_cannot_bypass_hash(tmp_path, projects, facts):
