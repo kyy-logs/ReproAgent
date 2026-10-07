@@ -9,6 +9,7 @@ resumes with the very history it built.
 """
 import asyncio
 import json
+import math
 import os
 import shutil
 from pathlib import Path
@@ -31,7 +32,7 @@ from reproagent.adapters.agentscope.middleware import (
     PhaseProtocolError,
 )
 from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
-from reproagent.adapters.agentscope.runtime import AgentScopeRuntime
+from reproagent.adapters.agentscope.runtime import AgentScopeRuntime, sdk_end_reason
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend
 from reproagent.adapters.agentscope.tools import TOOL_NAMES, build_toolkit
 from reproagent.core.budget import BudgetStopped
@@ -251,6 +252,10 @@ def test_multiple_or_unknown_tools_have_zero_side_effects(tmp_path, projects, fa
     plain.answers.extend([text_reply(), text_reply()])
     result = explore(plain)
     assert result.kind == "no_candidate" and result.reason and len(plain.requests) == 1
+    # The business kind and the SDK's own end reason are recorded separately, never merged.
+    finished = events(plain, "exploration.finished")
+    assert [(payload["action"], payload["result_code"], payload["sdk_end_reason"]) for payload in finished] == \
+        [("no_candidate", "no_candidate", "completed")]
 
 
 def test_sdk_grace_summary_and_compression_cannot_add_calls(tmp_path, projects, facts):
@@ -278,6 +283,18 @@ def test_sdk_grace_summary_and_compression_cannot_add_calls(tmp_path, projects, 
         asyncio.run(agent.reply(_user("answer in the required schema"), structured_schema=Summary))
     assert failure.value.reason == "EXHAUSTED"
     assert len(grace.requests) == 2
+
+    # The SDK's own end reasons are distinguishable in the record: an agent that runs its
+    # grace out and stops on its own reports exceed_max_iters, not completed.
+    ended = environment(tmp_path / "ended", projects, facts, limits=BudgetLimits(agent_steps=10))
+    ended.answers.extend(text_reply() for _ in range(9))
+    middleware = ExplorationMiddleware(ended.context, ended.gate, ended.store)
+    ended.model.bind(middleware.before_model_call)
+    agent = Agent(name="ended", system_prompt=SYSTEM_PROMPT, model=ended.model, toolkit=ended.toolkit,
+                  middlewares=[middleware], react_config=ReActConfig(max_iters=1, structured_output_grace_iters=5))
+    reply = asyncio.run(agent.reply(_user("answer in the required schema"), structured_schema=Summary))
+    assert sdk_end_reason(reply) == "exceed_max_iters" and sdk_end_reason(reply) != "completed"
+    assert ended.context.budget.steps_used == 6
 
     # Automatic compression is stopped explicitly: the message the phase sent stays whole,
     # source references included, and no exploration request is made.
@@ -308,6 +325,85 @@ def _user(text):
     return UserMsg(name="user", content=text)
 
 
+def measure_threshold(env):
+    """Put the model's compression threshold just above the phase's first reasoning step.
+
+    Returns the first step's own input size, counted exactly the way the compression hook
+    counts it: the round's message in the context, plus the system prompt and tool schemas.
+    The candidate's own arguments are what pushes the *next* step over the threshold.
+    """
+    env.runtime._agent.state.context.append(env.runtime._message(agent_context(env)))
+    try:
+        first = asyncio.run(env.runtime.middleware._estimated_tokens(env.runtime._agent))
+    finally:
+        env.runtime._agent.state.context.clear()
+    env.model.context_size = math.ceil(first / 0.8) + 8
+    return first
+
+
+def test_a_published_candidate_survives_the_compression_threshold(tmp_path, projects, facts):
+    """A threshold stop must not overtake a phase that already has its result.
+
+    The SDK asks to compress first thing in every reasoning step -- i.e. immediately after a
+    domain tool ran, when that tool's own arguments (a candidate's files, up to the tool
+    response budget) are already in the context.  The phase below is placed exactly there:
+    its first step fits under the threshold and the step after the candidate crosses it.
+    """
+    published = environment(tmp_path / "published", projects, facts)
+    published.answers.append(tool_reply("write_candidate", write_payload(content="x" * 24000), call_id="call-1"))
+    first = measure_threshold(published)
+    result = explore(published)
+    assert result.kind == "candidate"
+    assert published.store.load_record("candidates", result.candidate_id).candidate_id == result.candidate_id
+    assert len(published.requests) == 1                      # the next model call never happens
+    threshold = 0.8 * published.model.context_size
+    after = asyncio.run(published.runtime.middleware._estimated_tokens(published.runtime._agent))
+    assert first < threshold <= after                        # ... but the threshold was crossed
+
+    # The very same step with a refused publication leaves the phase open, and there the
+    # threshold really does stop it: that is the check the run above did not take.
+    refused = environment(tmp_path / "refused", projects, facts)
+    refused.answers.append(tool_reply(
+        "write_candidate", write_payload(path="outside/test_repro.py", content="x" * 24000), call_id="call-1"))
+    measure_threshold(refused)
+    with pytest.raises(BudgetStopped) as failure:
+        explore(refused)
+    assert failure.value.reason == "NEEDS_INFORMATION" and "compress" in str(failure.value)
+
+
+def test_a_finished_phase_answers_with_its_result_whatever_stopped_the_agent(tmp_path, projects, facts):
+    """The precedence, decided once: the gate's result outranks a task stop that follows it.
+
+    A cancel or an expired budget that arrives after a domain tool published is a stop of the
+    *agent*, not of the phase, so the phase's caller still gets the result; the cancel event
+    stays set, so the controller runs its cancellation path either way.  The stop is raised
+    through the SDK's interface because no product call can be made to race the publish.
+    """
+
+    class _Stopping:
+        def __init__(self, gate, failure):
+            self.gate, self.failure = gate, failure
+            self.react_config, self.state = SimpleNamespace(max_iters=0), SimpleNamespace(context=[])
+            self.started = asyncio.Event()
+
+        async def reply(self, message):
+            self.started.set()
+            await self.gate.event.wait()                 # the domain tool published first
+            raise self.failure                           # ... and then the task was stopped
+
+    async def scenario():
+        for failure in (BudgetStopped("CANCELLED"), BudgetStopped("EXHAUSTED", "task time limit reached")):
+            env = environment(tmp_path / failure.reason, projects, facts)
+            env.runtime._agent = _Stopping(env.gate, failure)
+            running = asyncio.ensure_future(env.runtime.explore(agent_context(env)))
+            await until(env.runtime._agent.started.is_set)
+            env.gate.finish(PhaseResult("candidate", candidate_id="candidate-1"))
+            assert await running == PhaseResult("candidate", candidate_id="candidate-1")
+            assert pending_tasks() == set()
+
+    asyncio.run(scenario())
+
+
 def test_phase_finish_resumes_history_without_user_cancel(tmp_path, projects, facts):
     env = environment(tmp_path, projects, facts)
     env.answers.extend([read_reply(env.module, "call-1"), tool_reply("write_candidate", write_payload(), call_id="call-2")])
@@ -315,6 +411,9 @@ def test_phase_finish_resumes_history_without_user_cancel(tmp_path, projects, fa
     assert len(env.requests) == 2
     # A finished phase is not a user cancel, and it spent no extra request.
     assert not env.context.cancel_event.is_set()
+    # The result is the phase's own; how the SDK reply ended is a separate field.
+    published = events(env, "exploration.finished")[0]
+    assert (published["result_code"], published["sdk_end_reason"]) == ("candidate", "phase_ended")
 
     # The next phase of the same task pays for the first phase's tool call and result out of
     # the same history, and sees the verifier's feedback as the new input.

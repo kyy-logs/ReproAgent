@@ -189,6 +189,12 @@ class ExplorationMiddleware(MiddlewareBase):
             BudgetStopped: the task was cancelled, or the context reached the model's
                 compression threshold (``NEEDS_INFORMATION``).
         """
+        if self.gate.finished:
+            # The phase already has its result, and the next model call ends it, so nothing
+            # here needs a shorter context.  A threshold stop must never overtake a result
+            # that exists: this hook runs before every reasoning step, and the step right
+            # after a domain tool is exactly the one whose arguments pushed the context up.
+            return
         if self.context.cancel_event.is_set():
             raise BudgetStopped("CANCELLED")
         config = input_kwargs.get("context_config") or agent.context_config

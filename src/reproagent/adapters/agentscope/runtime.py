@@ -37,6 +37,25 @@ AGENT_NAME = "reproagent-exploration"
 NO_CANDIDATE_REASON = ("the exploration phase ended without publishing a candidate, requesting a contract "
                        "revision or reporting missing information")
 
+#: Recorded as the SDK end reason when the reply produced no final message of its own,
+#: because the phase's result already existed and the next model call was refused.
+REPLY_STOPPED_BY_PHASE = "phase_ended"
+#: Recorded as the SDK end reason when this runtime had to stop the reply itself.
+REPLY_STOPPED = "stopped"
+
+
+def sdk_end_reason(reply) -> str:
+    """How one SDK reply ended, in the SDK's own vocabulary, next to the business kind.
+
+    The SDK's own reasons (``completed``, ``interrupted``, ``exceed_max_iters``, ``error``)
+    are recorded as they are; a reply that never produced a final message -- because this
+    runtime stopped it -- is reported with the closed token :data:`REPLY_STOPPED`.  The
+    reason is an SDK enum value, never provider text, so it is safe to record.
+    """
+    if reply is None:
+        return REPLY_STOPPED
+    return str(getattr(reply, "finished_reason", "") or "")
+
 
 class AgentScopeRuntime:
     """Runs the exploration phases of one task as bounded SDK replies.
@@ -90,6 +109,13 @@ class AgentScopeRuntime:
         The round is opened here: the gate holds this phase's result and nothing of the
         phase before it.
 
+        A phase that produced its result answers with it, whatever stopped the agent
+        afterwards -- that is the one precedence in this runtime: the guard, the compression
+        hook and :meth:`_result` all ask the gate before they ask anything else, and a task
+        stop that arrives once the result exists is a stop of the *agent*, not of the phase.
+        The cancel event is left set either way, so the controller still sees the task was
+        cancelled and runs its own cancellation path.
+
         Args:
             context: the contract, project view, history and feedback this phase starts
                 from.  The history is the SDK's own, so only what is new is delivered.
@@ -112,20 +138,29 @@ class AgentScopeRuntime:
         self.middleware.record("exploration.phase", action="", result_code="BEGIN",
                                contract_id=context.contract.contract_id, contract_version=context.contract.version)
         message = self._message(context)
+        end_reason = ""
         for attempt in range(PROTOCOL_ATTEMPTS):
             try:
-                await self._reply(message)
+                reply = await self._reply(message)
             except PhaseEnded:
-                break                                   # the gate has the phase's result
+                end_reason = REPLY_STOPPED_BY_PHASE     # the phase's result ended the reply
+                break
+            except BudgetStopped:
+                if not self.gate.finished:
+                    raise
+                end_reason = REPLY_STOPPED_BY_PHASE     # ... and so does a stop that follows it
+                break
             except PhaseProtocolError as failure:
                 self.middleware.record("exploration.protocol_error", action="", result_code=failure.code)
                 if attempt + 1 == PROTOCOL_ATTEMPTS:
                     raise
                 message = self._correction(failure)
                 continue
-            break                                       # the agent came to rest by itself
+            end_reason = sdk_end_reason(reply)          # the SDK's own reason, when it has one
+            break
         result = self._result()
-        self.middleware.record("exploration.finished", action=result.kind, result_code=result.kind)
+        self.middleware.record("exploration.finished", action=result.kind, result_code=result.kind,
+                               sdk_end_reason=end_reason)
         return result
 
     async def aclose(self) -> None:
@@ -150,7 +185,7 @@ class AgentScopeRuntime:
         Raises:
             BudgetStopped: the user cancelled the task while no domain result existed.  A
                 phase that did produce one answers with that result, whatever stopped the
-                agent afterwards.
+                agent afterwards -- the cancel event stays set for the controller either way.
         """
         if self.gate.finished:
             return self.gate.result
@@ -158,8 +193,13 @@ class AgentScopeRuntime:
             raise BudgetStopped("CANCELLED")
         return PhaseResult("no_candidate", reason=NO_CANDIDATE_REASON)
 
-    async def _reply(self, message: Msg) -> None:
-        """One SDK reply, raced against the phase's own end and awaited either way."""
+    async def _reply(self, message: Msg) -> Msg | None:
+        """One SDK reply, raced against the phase's own end and awaited either way.
+
+        Returns:
+            `Msg | None`: the SDK's own final message, or None when this runtime stopped the
+                reply.  Whatever ended the reply is re-raised.
+        """
         task = asyncio.ensure_future(self._agent.reply(message))
         stopper = asyncio.ensure_future(self._stop_signal())
         self._task = task
@@ -178,8 +218,8 @@ class AgentScopeRuntime:
             if self._task is task:
                 self._task = None
         if task.cancelled():
-            return                                      # stopped by this runtime, not by the model
-        task.result()                                   # re-raises whatever ended the reply
+            return None                                 # stopped by this runtime, not by the model
+        return task.result()                            # the final message, or what ended the reply
 
     async def _stop_signal(self) -> None:
         """Return once this phase must stop waiting: its result exists, or it was cancelled."""
@@ -259,4 +299,5 @@ class AgentScopeRuntime:
                             "resolves it, because the SDK sends no ceiling of its own") from None
 
 
-__all__ = ["AGENT_NAME", "NO_CANDIDATE_REASON", "AgentScopeRuntime"]
+__all__ = ["AGENT_NAME", "NO_CANDIDATE_REASON", "REPLY_STOPPED", "REPLY_STOPPED_BY_PHASE",
+           "AgentScopeRuntime", "sdk_end_reason"]
