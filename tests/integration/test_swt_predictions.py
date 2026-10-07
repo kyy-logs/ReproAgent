@@ -5,19 +5,21 @@ from dataclasses import replace
 
 import pytest
 
-from tests.unit.test_controller import ScriptedModel
+from tests.unit.test_controller import PhasePlan, ScriptedModel, publish
 from tests.unit.test_swt_prepare import binding_fixture,git
 
 
-def completed(tmp_path,projects,monkeypatch,script=None):
+def completed(tmp_path,projects,monkeypatch,plan=None):
     import evals.run as runner
     from reproagent.app import create_controller
     from reproagent.core.models import ModelConfig
     from evals.swt_bench.prepare import validate_binding
     row,binding=binding_fixture(tmp_path,projects)
     case=validate_binding(row,binding)
-    script=script or ScriptedModel()
-    monkeypatch.setattr(runner,'create_controller',lambda request,model,**kwargs:create_controller(request,model,gateway=script,**kwargs))
+    script=ScriptedModel()
+    explorer=PhasePlan(plan or [publish()])
+    monkeypatch.setattr(runner,'create_controller',
+        lambda request,model,**kwargs:create_controller(request,model,gateway=script,explorer_factory=explorer,**kwargs))
     result=asyncio.run(runner.run_case(case,ModelConfig(),tmp_path/'out'))
     assert result.status=='DONE'
     return case,tmp_path/'out'/'task'
@@ -68,16 +70,7 @@ def test_failed_tasks_stay_in_prediction_file(tmp_path):
 
 
 def test_frozen_candidate_data_file_is_included(tmp_path,projects,monkeypatch):
-    import json
-    from reproagent.core.models import ModelResponse
     from evals.swt_bench.predictions import candidate_patch
-    class WithData(ScriptedModel):
-        async def complete(self,request,context):
-            response=await super().complete(request,context)
-            value=json.loads(response.text)
-            if value.get('name')=='write_candidate':
-                value['parameters']['files'].append({'path':'tests/input.txt','content':'fixture data','role':'data'})
-                return ModelResponse(json.dumps(value))
-            return response
-    case,task=completed(tmp_path,projects,monkeypatch,WithData())
+    case,task=completed(tmp_path,projects,monkeypatch,
+        plan=[publish(extra=(('tests/input.txt','fixture data','data'),))])
     assert 'b/tests/input.txt' in candidate_patch(task,case)

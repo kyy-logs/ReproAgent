@@ -42,7 +42,7 @@ class EvidenceCitingModel:
     """Scripted reviewer: it proves the pipeline and the bounded context, not model skill."""
 
     def __init__(self):
-        self.step, self.reviews = 0, []
+        self.reviews = []
 
     async def complete(self, request, context):
         data = json.loads(request.messages[-1]['content'])
@@ -57,19 +57,18 @@ class EvidenceCitingModel:
             result = {'classification':'REPRODUCED', 'reason':'empty input raises the reported IndexError in the target parser',
                 'evidence_refs':[expect, failure], 'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':True}
         else:
-            name = ('write_candidate', 'run_candidate', 'submit_candidate')[min(self.step, 2)]
-            self.step += 1
-            parameters = {'files':[{'path':'tests/test_repro.py', 'content':CANDIDATE, 'role':'test'}], 'hypothesis':'empty input'}
-            result = {'name':name, 'parameters':parameters if name == 'write_candidate' else {'candidate_id':(data['candidate_ids'] or [''])[0]}}
+            raise AssertionError(f'the Controller makes no {request.response_kind} request to the domain model')
         return ModelResponse(json.dumps(result))
 
 
 def test_large_origin_run_reviews_with_bounded_citable_evidence(tmp_path, projects, facts):
+    from tests.unit.test_controller import PhasePlan, publish
     repo = large_project(tmp_path / 'large-review-repository')
     request = TaskRequest(repo, tmp_path / 'out', repo / 'issue.md',
         language=PythonPytestConfig(python=sys.executable, target_modules=('example',), candidate_parent='tests'))
     model = EvidenceCitingModel()
-    controller = create_controller(request, ModelConfig(), gateway=model)
+    controller = create_controller(request, ModelConfig(), gateway=model,
+                                   explorer_factory=PhasePlan([publish(content=CANDIDATE, hypothesis='empty input')]))
     fixed = large_project(tmp_path / 'large-review-fixed', FIXED)
 
     result = asyncio.run(controller.run(request, facts.context(), FixValidationRequest(fixed, sys.executable)))

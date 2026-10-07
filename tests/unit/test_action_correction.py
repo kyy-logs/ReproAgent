@@ -1,110 +1,135 @@
+"""What one rejected exploration response costs, and what it is never allowed to do.
+
+The phase answers with tool calls, so a response is judged whole before anything of it
+runs: a second call, an unknown tool or arguments that are not one complete JSON object are
+refused with a fixed code, the reply is asked for again within a bounded number of attempts,
+and every attempt is charged to the step budget.  Nothing of a refused response executes --
+there is no first call that runs before the second is judged.
+"""
 import asyncio
 import json
 
 import pytest
 
-from reproagent.core.agent import ReproAgent
-from reproagent.core.budget import BudgetedGateway, BudgetStopped
-from reproagent.core.models import AgentContext, BudgetLimits, EvidenceContext, IssueContract, IssueDescription, ModelResponse, ProjectView, SourceRef
-from tests.integration.test_runner import setup_runner
+pytest.importorskip("agentscope")
+
+from reproagent.adapters.agentscope.middleware import PROTOCOL_ATTEMPTS, PhaseProtocolError
+from reproagent.core.budget import BudgetStopped
+from reproagent.core.models import BudgetLimits
+
+from tests.integration.test_agentscope_runtime import (
+    agent_context, environment, explore, text_reply, tool_reply, until, write_payload,
+)
+
+#: Every shape of response the phase refuses whole, and the code that names it.  A refusal
+#: never carries model or provider text, so each one is a fixed, greppable code.
+REFUSALS = [
+    ("UNKNOWN_TOOL", tool_reply("Write", {"path": "tests/test_repro.py", "content": "x"})),
+    ("UNKNOWN_TOOL", tool_reply("search_code", {"query": "parse", "scope": "snapshot"})),
+    ("INVALID_TOOL_INPUT", tool_reply("Read", '{"file_path": ')),
+    ("INVALID_TOOL_INPUT", tool_reply("write_candidate", "{not one object")),
+    ("MULTIPLE_TOOL_CALLS", tool_reply(calls=[("Read", {"file_path": "a.py"}, "call-1"),
+                                              ("Glob", {"pattern": "**/*.py"}, "call-2")])),
+]
 
 
-class Responses:
-    def __init__(self, *values):
-        self.values, self.requests = values, []
-    async def complete(self, request, context):
-        self.requests.append(request)
-        value = self.values[min(len(self.requests)-1, len(self.values)-1)]
-        return ModelResponse(value if isinstance(value, str) else json.dumps(value))
+def test_a_rejected_response_is_corrected_and_each_attempt_is_counted(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    env.answers.extend([
+        tool_reply("Write", {"path": "tests/test_repro.py", "content": "x"}),          # outside the phase surface
+        tool_reply("Read", '{"file_path": '),                                          # not one complete JSON object
+        tool_reply("write_candidate", write_payload(), call_id="call-3")])
+    result = explore(env)
+    assert result.kind == "candidate"
+    # Two refusals, each charged to its own step, and the correction round asked for the
+    # complete tool set rather than replaying the response that was refused.
+    assert len(env.requests) == 3 == env.context.budget.steps_used
+    assert [payload["result_code"] for payload in
+            [event for event in _events(env, "exploration.protocol_error")]] == ["UNKNOWN_TOOL", "INVALID_TOOL_INPUT"]
+    correction = env.requests[1]["messages"][-1]["content"]
+    assert "write_candidate" in correction and "revise_contract" in correction
+    assert "Write" not in json.dumps(env.requests[2])
 
 
-VALID_READ = {'name': 'read_file', 'parameters': {'path': 'example/parser.py', 'start': 1, 'end': 2}}
+@pytest.mark.parametrize("code, refused", REFUSALS)
+def test_each_refusal_shape_has_its_own_code_and_no_side_effect(code, refused, tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    env.answers.extend([refused, tool_reply("write_candidate", write_payload(), call_id="call-9")])
+    result = explore(env)
+    assert result.kind == "candidate"
+    assert len(env.requests) == 2 == env.context.budget.steps_used
+    assert [payload["result_code"] for payload in _events(env, "exploration.protocol_error")] == [code]
+    # The refused response ran nothing: only the phase's own candidate was published, and
+    # the refused arguments never entered the conversation.
+    assert [item.name for item in (env.task / "candidates").iterdir()] == [result.candidate_id]
+    assert "not one object" not in json.dumps(env.requests[1]["messages"])
 
 
-@pytest.mark.parametrize('invalid', ['{}\n{}', '{"name":"read_file"}<DSML>invoke</DSML>', '[]',
-                                   {'name':[], 'parameters':{}}, {'name':{}, 'parameters':{}}])
-def test_action_format_is_corrected_with_each_attempt_counted(tmp_path, projects, facts, invalid):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    model = Responses(invalid, VALID_READ)
-    context = facts.context()
-    agent = ReproAgent(BudgetedGateway(model), context)
-    result = asyncio.run(agent.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert result.name == 'read_file' and result.parameters['path'] == 'example/parser.py'
-    assert context.budget.steps_used == context.budget.unknown_cost_calls == 2
-    repair = json.loads(model.requests[1].messages[-1]['content'])
-    assert repair['protocol_error'] and repair['contract']['contract_id'] == 'c'
+def test_protocol_correction_is_bounded_and_the_phase_stays_open(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    env.answers.extend([tool_reply(calls=[("Read", {"file_path": "a.py"}, "call-1"),
+                                          ("Read", {"file_path": "b.py"}, "call-2")])] * (PROTOCOL_ATTEMPTS + 1))
+    with pytest.raises(PhaseProtocolError) as failure:
+        explore(env)
+    assert failure.value.code == "MULTIPLE_TOOL_CALLS"
+    assert len(env.requests) == PROTOCOL_ATTEMPTS == 3
+    assert env.context.budget.steps_used == 3
+    # Neither call of any refused response ran, and the phase published nothing.
+    assert env.gate.result is None and not (env.task / "candidates").exists()
 
 
-def test_action_correction_is_finite_and_does_not_extract_an_ambiguous_first_action(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    model = Responses(json.dumps(VALID_READ) + '\n' + json.dumps(VALID_READ))
-    context = facts.context()
-    agent = ReproAgent(BudgetedGateway(model), context)
-    with pytest.raises(ValueError):
-        asyncio.run(agent.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert context.budget.steps_used == context.budget.unknown_cost_calls == len(model.requests) == 3
+def test_a_correction_cannot_exceed_the_remaining_step_budget(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=1))
+    env.answers.extend([tool_reply("Write", {"path": "tests/test_repro.py"}), text_reply()])
+    with pytest.raises(BudgetStopped) as failure:
+        explore(env)
+    assert failure.value.reason == "EXHAUSTED"
+    # The refused response cost its step, and the correction it asked for never left.
+    assert len(env.requests) == 1 == env.context.budget.steps_used
 
 
-def test_action_repair_cannot_exceed_remaining_budget(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    model = Responses('{}', VALID_READ)
-    context = facts.context(limits=BudgetLimits(agent_steps=1))
-    agent = ReproAgent(BudgetedGateway(model), context)
-    with pytest.raises(BudgetStopped):
-        asyncio.run(agent.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert context.budget.steps_used == len(model.requests) == 1
+def test_a_plain_answer_never_becomes_an_action(tmp_path, projects, facts):
+    """Two JSON objects in one text answer are text, not two actions.
+
+    The phase acts through tool calls, so an answer that contains JSON but calls no tool
+    runs nothing, publishes nothing and does not start a correction round.
+    """
+    env = environment(tmp_path, projects, facts)
+    env.answers.extend([
+        text_reply(json.dumps(write_payload()) + "\n" + json.dumps(write_payload())),
+        text_reply()])
+    result = explore(env)
+    assert result.kind == "no_candidate" and result.reason
+    assert len(env.requests) == 1 == env.context.budget.steps_used
+    assert not (env.task / "candidates").exists()
+    assert not _events(env, "exploration.protocol_error")
 
 
-def test_candidate_path_correction_preserves_configured_parent(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts, parent='repro_tests')
-    wrong = {'name': 'write_candidate', 'parameters': {'files': [{'path': 'tests/test_repro.py', 'content': 'def test_a(): assert False', 'role': 'test'}], 'hypothesis': 'empty'}}
-    right = json.loads(json.dumps(wrong)); right['parameters']['files'][0]['path'] = 'repro_tests/test_repro.py'
-    model = Responses(wrong, right)
-    context = facts.context()
-    agent = ReproAgent(BudgetedGateway(model), context, candidate_parent='repro_tests')
-    result = asyncio.run(agent.next_action(AgentContext(IssueContract('c', expected='return []'), ProjectView(snapshot))))
-    assert result.parameters['files'][0]['path'] == 'repro_tests/test_repro.py'
-    assert context.budget.steps_used == 2
+def test_cancel_between_corrections_sends_no_further_request(tmp_path, projects, facts):
+    """A cancelled task is not asked for the correction round its refusal would start."""
+    async def scenario():
+        seen, release = [], asyncio.Event()
+
+        async def held(request):
+            seen.append(json.loads(request.content))
+            await release.wait()
+            return tool_reply("Write", {"path": "tests/test_repro.py"})    # refused whole
+
+        env = environment(tmp_path, projects, facts, handler=held)
+        running = asyncio.ensure_future(env.runtime.explore(agent_context(env)))
+        await until(lambda: seen)
+        env.context.cancel_event.set()
+        release.set()
+        with pytest.raises(BudgetStopped) as failure:
+            await running
+        assert failure.value.reason == "CANCELLED"
+        # The refused response never bought a second request, whatever ended the first one.
+        assert len(seen) == 1 == env.context.budget.steps_used
+
+    asyncio.run(scenario())
 
 
-def test_cancel_between_action_corrections_sends_no_further_request(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    class CancellingModel(Responses):
-        async def complete(self, request, context):
-            response = await super().complete(request, context)
-            context.cancel_event.set()
-            return response
-    model = CancellingModel('{}', VALID_READ)
-    context = facts.context()
-    with pytest.raises(BudgetStopped):
-        asyncio.run(ReproAgent(BudgetedGateway(model), context).next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert len(model.requests) == 1
-
-
-def test_invalid_gateway_configuration_is_not_retried_as_action_output(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    class InvalidConfiguration(Responses):
-        async def complete(self, request, context):
-            self.requests.append(request)
-            raise ValueError('API key environment variable is missing')
-    model = InvalidConfiguration()
-    context = facts.context()
-    with pytest.raises(ValueError, match='API key environment variable is missing'):
-        asyncio.run(ReproAgent(model, context).next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert len(model.requests) == context.budget.steps_used == 1
-
-
-def test_action_keeps_raw_expectation_evidence_when_contract_rephrases_it(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    description = 'The validator returns a ValueError object; it does not raise that object.'
-    contract_response = {'trigger':'invalid value', 'expected':'raises ValueError', 'reported_actual':'returns True',
-                         'source_indices':[0], 'observable_checks':[], 'assumptions':[], 'missing_information':[]}
-    model = Responses(contract_response, VALID_READ)
-    agent = ReproAgent(model, facts.context())
-    source = SourceRef('input/issue.md', 'source-hash')
-    contract = asyncio.run(agent.analyze(IssueDescription(description, 'source-hash'), EvidenceContext((source,), (description,))))
-    asyncio.run(agent.next_action(AgentContext(contract, ProjectView(snapshot))))
-    payload = json.loads(model.requests[-1].messages[-1]['content'])
-    assert payload['authoritative_expectations']['description'] == description
-    assert payload['authoritative_expectations']['source_texts'] == [description]
-    assert payload['authoritative_expectations']['sources'][0]['content_hash'] == 'source-hash'
+def _events(env, kind):
+    stored, errors = env.store.read_events()
+    assert not errors
+    return [event.payload for event in stored if event.kind == kind]

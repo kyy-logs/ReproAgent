@@ -2,7 +2,6 @@ import os
 from .adapters.models.provider import ChatCompletionGateway
 from .core.budget import BudgetedGateway
 from .core.controller import Controller
-from .core.agent import ReproAgent
 from .core.verifier import Verifier
 from .exporter import Exporter
 from .runner import Runner
@@ -23,6 +22,7 @@ def create_controller(request, model, gateway=None, *, model_backend='native', a
         from .adapters.agentscope.dependency import require_agentscope
         info['agentscope_version'] = require_agentscope()
     store = TaskStore(request.output_dir)
+    injected = gateway is not None
     if gateway is None:
         if model_backend == 'agentscope':
             from .adapters.agentscope.gateway import AgentScopeModelGateway
@@ -31,11 +31,14 @@ def create_controller(request, model, gateway=None, *, model_backend='native', a
         else:
             gateway = ChatCompletionGateway(model)
     if explorer_factory is None:
-        if agent_backend == 'agentscope':
-            from .adapters.agentscope.explorer import AgentScopeExplorer
-            explorer_factory = AgentScopeExplorer
-        else:
-            explorer_factory = ReproAgent
+        # The Controller drives exploration phases, so the only product strategy it can
+        # build is the SDK one; an injected gateway is the caller's to pair with an
+        # explorer of its own.  The legacy backend flags still select the model boundary
+        # above and are mapped to the single infrastructure in Task 9 of the migration.
+        if injected:
+            raise ValueError('a Controller drives an exploration strategy: pass explorer_factory with an injected gateway')
+        from .adapters.agentscope.explorer import agentscope_explorer_factory
+        explorer_factory = agentscope_explorer_factory(model, store)
     workspace = Workspace(request.output_dir, store)
     runner = Runner(workspace, store)
     secrets = (os.environ.get(model.api_key_env, ''),)

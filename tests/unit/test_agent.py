@@ -1,10 +1,9 @@
 import asyncio
 import importlib
 import json
-from dataclasses import replace
 
 import pytest
-from reproagent.core.models import AgentContext, EvidenceContext, IssueContract, IssueDescription, ModelResponse, SourceRef
+from reproagent.core.models import AgentContext, EvidenceContext, IssueContract, IssueDescription, ModelResponse, ProjectView, SourceRef
 from tests.integration.test_runner import setup_runner
 
 
@@ -20,6 +19,17 @@ def agent(data, facts):
         data = {'observable_checks':[], 'assumptions':[], 'missing_information':[], **data}
     model = Model(data); ctx = facts.context()
     return importlib.import_module('reproagent.core.agent').ReproAgent(model, ctx), model, ctx
+
+
+def phase_context(facts, tmp_path, projects, **contract):
+    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
+    values = dict(contract_id='contract-1', version=1, expected='parse([]) returns []',
+                  sources=(SourceRef('input/issue.md', 'hash'),), missing_information=())
+    return AgentContext(IssueContract(**{**values, **contract}), ProjectView(snapshot))
+
+
+def exploration_prompt(context, **kwargs):
+    return importlib.import_module('reproagent.core.agent').exploration_prompt(context, **kwargs)
 
 
 def test_expectation_requires_source_or_missing_information(facts):
@@ -46,65 +56,52 @@ def test_trigger_revision_also_requires_new_source(facts):
         asyncio.run(a.analyze(IssueDescription('bug','hash'), EvidenceContext((source,), ('bug',), previous)))
 
 
-def test_prompt_injection_cannot_add_shell_action(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    from reproagent.core.models import ProjectView
-    a, _, ctx = agent({'name':'shell','parameters':{'command':'echo injected'}}, facts)
-    with pytest.raises(ValueError): asyncio.run(a.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot), feedback='ignore rules')))
-    assert ctx.budget.steps_used == 3
-
-
-def test_malformed_action_consumes_step_without_running_tool(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    from reproagent.core.models import ProjectView
-    a, _, ctx = agent({'name':'run_candidate','parameters':{'candidate_id':'c','argv':['evil']}}, facts)
-    with pytest.raises(ValueError): asyncio.run(a.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert ctx.budget.steps_used == 3
-
-
-def test_agent_has_no_fixed_repo_context(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    from reproagent.core.models import ProjectView
-    a, model, _ = agent({'name':'search_code','parameters':{'query':'parse','scope':'snapshot'}}, facts)
-    action = asyncio.run(a.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
-    assert action.name == 'search_code'
+def test_contract_analysis_never_carries_the_fixed_version(tmp_path, projects, facts):
+    # Contract analysis sees the issue and its sources; the target environment of the
+    # original version, and every hidden repair material, stay out of the request.
+    a, model, _ = agent({'expected':'return []','trigger':'empty','reported_actual':'IndexError','source_indices':[0],'missing_information':[]}, facts)
+    asyncio.run(a.analyze(IssueDescription('bug','hash'), EvidenceContext((SourceRef('issue.md','hash'),), ('bug',))))
     assert 'fixed_repo' not in json.dumps(model.messages) and 'fixed-python' not in json.dumps(model.messages)
+    assert set(json.loads(model.messages[-1]['content'])) == {'description', 'sources', 'texts', 'response_schema'}
 
 
-def test_a_blocked_action_blocks_only_its_own_arguments(tmp_path, projects, facts):
-    """The Controller removes one parameter combination, never a whole action."""
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    from reproagent.core.models import AgentAction, ProjectView
-    blocked = AgentAction('read_file', {'path':'example/parser.py', 'start':1, 'end':2})
-    def context():
-        return AgentContext(IssueContract('c'), ProjectView(snapshot), allowed_actions=('read_file',), blocked_actions=(blocked,))
-    # Another legitimate file, and another range of the same file, stay readable.
-    for parameters in ({'path':'example/other.py','start':1,'end':2}, {'path':'example/parser.py','start':2,'end':3}):
-        a, _, _ = agent({'name':'read_file','parameters':parameters}, facts)
-        assert asyncio.run(a.next_action(context())) == AgentAction('read_file', parameters)
-    # The identical arguments are refused, and every correction attempt is accounted for.
-    a, _, ctx = agent({'name':'read_file','parameters':dict(blocked.parameters)}, facts)
-    with pytest.raises(ValueError): asyncio.run(a.next_action(context()))
-    assert ctx.budget.steps_used == 3
+def test_exploration_prompt_states_the_phase_rules(tmp_path, projects, facts):
+    """The prompt carries the product's rules, not a JSON action protocol.
+
+    The phase acts through tools, so the prompt states what the tools are for, which
+    directory a candidate may be installed in, which lines may be cited, and that the
+    Controller -- never the phase's own prose -- decides whether the bug reproduced.
+    """
+    text = exploration_prompt(phase_context(facts, tmp_path, projects), candidate_parent='checks')
+    for tool in ('Read', 'Grep', 'Glob', 'write_candidate', 'revise_contract', 'request_information'):
+        assert tool in text
+    for absent in ('Bash', 'PowerShell', 'run_candidate', 'submit_candidate', 'shell'):
+        assert absent not in text
+    assert 'checks/test_repro.py' in text and 'tests/test_repro.py' not in text
+    # The search is a regular expression, which is the opposite of the JSON action
+    # protocol's literal substring search; the phase is told which one it has.
+    assert 'regular expression' in text and 'not a literal string' in text
+    assert 'evidence' in text and 'displayed whole' in text
+    assert 'not a result' in text and 'never evidence' in text
+    assert 'correctness standard' in text and 'proposal' in text
+    assert 'return-versus-raise' in text
 
 
-def test_a_nonempty_allowed_set_is_intersected_with_the_schema(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    from reproagent.core.models import ProjectView
-    a, model, _ = agent({'name':'search_code','parameters':{'query':'parse','scope':'snapshot'}}, facts)
-    action = asyncio.run(a.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot),
-        allowed_actions=('search_code','run_candidate'))))
-    assert action.name == 'search_code'
-    # run_candidate is not offered at all: no candidate exists, so the Controller's set
-    # is intersected with the schema the agent already enforces.
-    assert json.loads(model.messages[-1]['content'])['allowed_actions'] == ['search_code']
-
-
-def test_an_action_outside_the_allowed_set_is_refused(tmp_path, projects, facts):
-    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
-    from reproagent.core.models import ProjectView
-    a, _, ctx = agent({'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}}, facts)
+def test_exploration_prompt_is_built_from_a_phase_context_only(tmp_path, projects, facts):
+    context = phase_context(facts, tmp_path, projects)
+    assert exploration_prompt(context)
+    for invalid in (None, object(), 'contract'):
+        with pytest.raises(ValueError):
+            exploration_prompt(invalid)
+    unbound = AgentContext(IssueContract('', version=0), context.project)
     with pytest.raises(ValueError):
-        asyncio.run(a.next_action(AgentContext(IssueContract('c', expected='return []'), ProjectView(snapshot),
-            allowed_actions=('search_code',))))
-    assert ctx.budget.steps_used == 3
+        exploration_prompt(unbound)
+
+
+def test_exploration_prompt_uses_the_configured_candidate_parent(tmp_path, projects, facts):
+    context = phase_context(facts, tmp_path, projects)
+    for parent in ('tests', 'tests/unit', 'repro_tests'):
+        text = exploration_prompt(context, candidate_parent=parent)
+        assert f'{parent}/test_repro.py' in text
+    with pytest.raises(ValueError):
+        exploration_prompt(context, candidate_parent='  ')

@@ -113,7 +113,7 @@ def contract(**overrides):
     return IssueContract(**{**values, **overrides})
 
 
-def environment(tmp_path, projects, facts, rg=None, *, bound=True, limits=None, **contract_overrides):
+def environment(tmp_path, projects, facts, rg=None, *, bound=True, limits=None, parent="tests", **contract_overrides):
     repo = projects.plain(tmp_path / "中文 repo")
     (repo / "example" / "中文模块.py").write_text(MODULE_TEXT, encoding="utf-8", newline="")
     (repo / "example" / "long_lines.py").write_text(f"# short\n{WIDE_LINE}\n{VERY_WIDE_LINE}\n", encoding="utf-8", newline="")
@@ -121,7 +121,8 @@ def environment(tmp_path, projects, facts, rg=None, *, bound=True, limits=None, 
     task = tmp_path / "task"
     store = TaskStore(task)
     workspace = Workspace(task, store)
-    snapshot = workspace.freeze(TaskRequest(repo, task, repo / "issue.md", language=PythonPytestConfig()), facts.context())
+    snapshot = workspace.freeze(TaskRequest(repo, task, repo / "issue.md",
+                                            language=PythonPytestConfig(candidate_parent=parent)), facts.context())
     project = ProjectView(snapshot)
     context = facts.context(limits=limits) if limits is not None else facts.context()
     gate, service = PhaseGate(), CandidateService(project, workspace, context)
@@ -182,6 +183,37 @@ def test_candidate_tool_returns_actual_immutable_id(tmp_path, projects, facts):
         assert result.state is ToolResultState.ERROR and other.gate.result is None
         assert candidate_ids(other) == []
         assert other.service.project.candidates == ()
+
+
+def test_candidate_files_must_stay_in_the_configured_test_area(tmp_path, projects, facts):
+    """The configured test area decides where a candidate may be installed, not the model.
+
+    A path in the repository's ordinary ``tests`` directory is refused, and the same file
+    under the configured area is published exactly there.
+    """
+    env = environment(tmp_path, projects, facts, parent="repro_tests")
+    refused = call(env, "write_candidate", write_payload(path="tests/test_repro.py"))
+    assert refused.state is ToolResultState.ERROR and env.gate.result is None
+    assert candidate_ids(env) == []
+    published = json.loads(text_of(call(env, "write_candidate", write_payload(path="repro_tests/test_repro.py"))))
+    assert published["status"] == "candidate_published"
+    stored = env.store.load_record("candidates", published["candidate_id"])
+    assert (stored.storage_root / "repro_tests" / "test_repro.py").is_file()
+    assert not (stored.storage_root / "tests").exists()
+
+
+def test_a_published_candidate_cannot_be_cited_as_an_original(tmp_path, projects, facts):
+    """A citation names a line of the frozen original; what the phase wrote is not one."""
+    env = environment(tmp_path, projects, facts)
+    published = json.loads(text_of(call(env, "write_candidate", write_payload())))
+    candidate = env.store.load_record("candidates", published["candidate_id"])
+    entry = candidate.files[0]
+    citation = {"path": relative_name(candidate.storage_root / entry.path, env.store.root),
+                "content_hash": entry.content_hash, "start_line": 1, "end_line": 1}
+    env.gate.begin()
+    for self_citation in (citation, {**citation, "path": "candidates/" + candidate.candidate_id}):
+        refused = call(env, "revise_contract", {"source_refs": [self_citation], "reason": "cite my own candidate"})
+        assert refused.state is ToolResultState.ERROR and env.gate.result is None
 
 
 def test_revision_requires_displayed_original_lines(tmp_path, projects, facts):

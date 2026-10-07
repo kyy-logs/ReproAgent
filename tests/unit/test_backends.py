@@ -8,20 +8,25 @@ import sys
 import pytest
 
 from reproagent.app import create_controller
-from reproagent.core.agent import ReproAgent
 from reproagent.core.models import ModelConfig
 from tests.unit.test_controller import setup
 
 
 def test_controller_injects_explorer_factory_and_records_actual_backends(tmp_path, projects, facts):
+    """The factory is handed the gateway, the call context, the test area and the task."""
+    from tests.unit.test_controller import PhasePlan, publish
     request, model, _, context = setup(tmp_path, projects, facts)
     created = []
-    def factory(gateway, ctx, candidate_parent):
-        created.append((gateway, ctx, candidate_parent))
-        return ReproAgent(gateway, ctx, candidate_parent)
+    plan = PhasePlan([publish()])
+    def factory(gateway, ctx, candidate_parent, *, project, workspace):
+        created.append((gateway, ctx, candidate_parent, project, workspace))
+        return plan(gateway, ctx, candidate_parent, project=project, workspace=workspace)
     controller = create_controller(request, ModelConfig(), gateway=model, explorer_factory=factory)
     result = asyncio.run(controller.run(request, context))
     assert result.status.value == 'DONE' and len(created) == 1
+    gateway, ctx, candidate_parent, project, workspace = created[0]
+    assert gateway is controller.gateway and ctx is context and candidate_parent == 'tests'
+    assert project.snapshot.snapshot_id and workspace is controller.workspace
     events = controller.store.read_events()[0]
     backend = next(event for event in events if event.kind == 'backend.selected')
     assert backend.payload['model_backend'] == 'native'

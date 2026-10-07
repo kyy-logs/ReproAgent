@@ -34,7 +34,7 @@ from reproagent.paths import workspace_path
 from reproagent.runner import Runner
 from reproagent.store import TaskStore, atomic_write, safe_child
 from reproagent.workspace import Workspace, inventory
-from tests.unit.test_controller import ScriptedLifecycle, action_endings, read_action
+from tests.unit.test_controller import PhasePlan, ScriptedModel, ask
 
 MAX_PATH = 260
 WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="the long-path branch is Windows-only")
@@ -134,19 +134,6 @@ def test_deep_delivery_survives_paths_past_the_legacy_limit(tmp_path, projects, 
     assert read_probe(readable(replay_output / "probe.jsonl"), "export-replay").probe_complete
 
 
-class ReadsThenAsks(ScriptedLifecycle):
-    """Reads one snapshot file, then asks a question instead of writing a candidate."""
-
-    def __init__(self):
-        super().__init__()
-        self.reads = 0
-
-    def reply(self, request, data):
-        self.reads += 1
-        return read_action() if self.reads == 1 else {"name": "request_information",
-                                                      "parameters": {"question": "stop here"}}
-
-
 def band_workspace(tmp_path, projects):
     """A task directory in the band below the limit: snapshot root long, task root not.
 
@@ -172,15 +159,16 @@ def test_a_snapshot_root_past_the_limit_does_not_abort_the_run(tmp_path, project
     directory is ``task + 53`` characters, past the Windows directory limit but
     below the file limit -- so the run ends ``FAILED`` with an unhelpful
     ``export_state``.  What is checked here is what the snapshot-path mapping
-    decides: the run acts on the model's choices and stops for the model's reason
-    instead of aborting on the way in.
+    decides: the task is analysed, one exploration phase runs to its own result,
+    and the task stops for the phase's reason instead of aborting on the way in.
     """
     request, store, _ = band_workspace(tmp_path, projects)
-    model = ReadsThenAsks()
-    controller = create_controller(request, ModelConfig(), gateway=model)
+    model = ScriptedModel(missing=True)
+    controller = create_controller(request, ModelConfig(), gateway=model,
+                                   explorer_factory=PhasePlan([ask("stop here")]))
     result = asyncio.run(controller.run(request, facts.context(limits=request.limits)))
-    assert model.kinds[:2] == ["contract", "action"]
-    assert action_endings(store.read_events()[0])[0] == ("action.completed", "read_file", "OK")
+    assert model.kinds == ["contract"]
+    assert [context.contract.contract_id for context in controller.explorer.contexts]
     assert result.stop_reason == "MISSING_INFORMATION"
 
 
