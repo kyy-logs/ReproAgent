@@ -4,7 +4,8 @@
 
 ## 本机已准备的资料
 
-- 最新真实评测见 [2026-10-06 评测报告](evaluations/2026-10-06-swt-development.md)：第三轮 20 例中 8 例调用模型、12 例环境阻塞，有效差分交付 0；参考测试可区分版本的 5 例中为 0/5。官方判分未运行。
+- 最新真实评测见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方判分仍待判分。
+- 上一轮真实评测见 [2026-10-06 评测报告](evaluations/2026-10-06-swt-development.md)：第三轮 20 例中 8 例调用模型、12 例环境阻塞，有效差分交付 0；参考测试可区分版本的 5 例中为 0/5。官方判分未运行。
 - 固定快照与来源：`.local/swt-bench/data/snapshot.json`、`source.json`、`excluded.txt`。
 - 原始 test split 300 条；按官方 24 条排除项得到 276 条。过滤文件是排除项，不是白名单。
 - 生成资料 catalog：`.local/swt-bench/data/catalog.json`，不含 patch、test_patch、hints_text 内容。
@@ -40,6 +41,28 @@ cd E:\ReproAgent
 ```
 
 输出 catalog.json 和 dev20.json。网络获取、导入与运行均使用新目录，拒绝覆盖。原始问题按字节哈希绑定，Unicode/Emoji 不经 Windows GBK 改写。
+
+### 冻结未参与调试的新清单
+
+固定开发清单是调试用的，不能当作正式评测。正式清单用 `evals.datasets.swt_bench.select_holdout` 从同一 catalog 选出：传入 catalog、排除项集合（dev20 的身份加已调试历史案例）、`repos=` 已支持 Python/pytest 的仓库顺序，以及固定 `seed`（默认 `reproagent-swt-holdout-v1`）。选择只读生成侧公开元数据，按仓库轮询取每个仓库内 `sha256(seed + ':' + instance_id)` 最小的样本；数据集修复补丁、参考测试和参考对照结果都不是输入，生成结果也不参与，因此同一 catalog、排除项、仓库顺序与 seed 必然得到同一份 sealed manifest。仓库池不足时直接报错，不静默减少样本。缺绑定的案例仍留在分母里：选择在任何案例运行前冻结，失败不替换。
+
+清单以 sealed manifest 落盘后，用现有的 `run`、`preflight`、`control` 命令消费，不新增运行路径：
+
+```python
+# freeze-holdout.py：用本仓库 .venv 解释器运行，写出冻结清单
+import json
+
+from evals.datasets.swt_bench import DEV_REPOS, select_holdout
+
+catalog = json.load(open('.local/swt-bench/data/catalog.json', encoding='utf-8'))
+development = json.load(open('.local/swt-bench/data/dev20.json', encoding='utf-8'))
+debugged_ids = set()  # 已调试历史案例的身份，按实际清单补齐
+excluded = {case['instance_id'] for case in development['cases']} | debugged_ids
+manifest = select_holdout(catalog, excluded, repos=DEV_REPOS, count=10)
+open('.local/swt-bench/data/holdout10.json', 'w', encoding='utf-8').write(json.dumps(manifest, ensure_ascii=False))
+```
+
+该清单只说明“本项目未调试过”，不保证模型训练未见过这些公开数据。同一轮内若来源指纹变化，该轮不可用于对比。
 
 ## 项目环境与绑定
 
@@ -138,10 +161,14 @@ python -m evals.swt_bench official-run \
 
 旧项目 20 个历史案例仍用于开发回归。正式评测需另冻结未参与本项目调试的样本，并检查历史重叠；公开数据也可能被模型训练见过。
 
+冻结实现版本后的修复轮：原 dev20 复跑 20 例，8 例准备可用并执行，本地重复确认 4、本地差分确认 0，121 次 HTTP 尝试、953215 token，费用 unknown；计划命名的已知定点 Sphinx-8801 未达到，原因已定位（失败签名稳定器未覆盖 run 根之外的逐次状态、候选级环境不兼容），记录未修复。同一冻结配置下用 `select_holdout` 冻结 10 例未调试新样本，3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED，导出包在全新原版/修复版副本独立重跑 1/0；47 次 HTTP 尝试、385455 token。两轮来源状态均为 verified，可用于版本对比；官方判分仍为待判分，小样本不代表一般复现率。完整报告见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)。
+
 重新生成汇总不调用模型：
 
 ```powershell
 .\.venv\Scripts\python.exe -m evals.swt_bench summarize --round repro-results/swt-bench/dev20-native-001
 ```
+
+汇总把来源状态与各类计数分开列出，互不代偿：选定样本、准备可用、实际执行（运行器真正启动的案例）、本地重复确认、本地差分确认、独立交付确认/重跑未通过/待重跑、修复版对照（通过/未通过/受阻/未提供），以及官方判分。官方判分只认有来源回执的 verified 报告：全部案例齐了才记为已判分（最终）并给出 `official_rate`；只要还有一例未核验就记为 `待判分`，`official_rate` 为 null，不写成 0，也不把本地比例当作官方成绩。`official_total_rate` 仍保留“暂定下界”的旧口径，供需要分母的读者对照。没有这些字段的旧轮次照旧读取：来源读作 not_recorded，修复版读作 not_provided。
 
 实施记录和最新完整测试见 [实现记录](implementation-status.md)，具体接口见 [设计](superpowers/specs/2026-10-06-reproagent-swt-bench-design.md)。
