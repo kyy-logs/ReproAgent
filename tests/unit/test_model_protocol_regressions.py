@@ -382,3 +382,18 @@ def test_cancel_during_verdict_correction_sends_no_second_request(tmp_path,proje
     with pytest.raises(BudgetStopped) as error:
         asyncio.run(verifier.evaluate(contract,candidate,(execution,),facts.context()))
     assert error.value.reason == 'CANCELLED' and len(model.calls) == 1
+
+
+def test_prompts_ask_for_chinese_prose_and_verbatim_identifiers():
+    """The model's own prose is Chinese; anything it quotes keeps its original form.
+
+    The runtime reads that prose for English tokens -- the ModuleNotFoundError and
+    import checks on reported_actual decide blocked-environment versus invalid
+    candidate -- so a translated exception name or identifier would change
+    behaviour, not just wording. All three prompts carry both rules.
+    """
+    from importlib.resources import files
+    for name in ('analyze_issue','explore','review_evidence'):
+        text = files('reproagent').joinpath(f'prompts/{name}.md').read_text(encoding='utf-8')
+        assert '中文' in text, name
+        assert 'never translate' in text, name

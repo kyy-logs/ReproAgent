@@ -51,7 +51,7 @@ async def run():
     return execution
 execution = asyncio.run(run())
 markdown = render_report({'package_kind':'diagnostic', 'verified':False, 'status':'BLOCKED', 'stop_reason':'missing pytest'})
-print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':execution.raw.exit_code, 'markdown':markdown, 'prompt':files('reproagent').joinpath('prompts/analyze_issue.md').read_text(), 'module':__import__('reproagent').__file__}))
+print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':execution.raw.exit_code, 'markdown':markdown, 'prompt':files('reproagent').joinpath('prompts/analyze_issue.md').read_text(encoding='utf-8'), 'module':__import__('reproagent').__file__}))
 ''', encoding='utf-8')
     env = dict(os.environ); env.pop('PYTHONPATH', None)
     result = command([python_in(tool), script, repo, tmp_path / 'results', python_in(target)], cwd=tmp_path, env=env)
@@ -59,7 +59,9 @@ print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':e
     assert data['complete'] and data['exit_code'] == 1
     assert '未确认复现' in data['markdown'] and 'missing pytest' in data['markdown']
     assert Path(data['module']).is_relative_to(tool)
-    assert data['prompt'] == (checkout / 'src/reproagent/prompts/analyze_issue.md').read_text()
+    # The prompts carry Chinese, so the comparison must not depend on the locale
+    # codec (this test failed on a GBK machine until the reads named UTF-8).
+    assert data['prompt'] == (checkout / 'src/reproagent/prompts/analyze_issue.md').read_text(encoding='utf-8')
     missing = command([python_in(target), '-c', "import importlib.util; assert importlib.util.find_spec('reproagent') is None; assert importlib.util.find_spec('httpx') is None"], cwd=tmp_path, env=env)
     spec = json.loads(next((tmp_path / 'results/runs').glob('*/spec.json')).read_text())
     assert str(checkout / 'src') not in json.dumps(spec)
