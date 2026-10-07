@@ -5,7 +5,7 @@ dev20 修复轮：20 例中 8 例准备可用并实际调用模型，本地差�
 新样本轮：10 例中 3 例准备可用并执行，其中 `sphinx-doc__sphinx-11445` 达到 **DIFFERENTIAL_VALIDATED**，导出包在全新原版/修复版副本独立重跑为 **1/0**。
 计划中命名的已知定点 Sphinx-8801 **本轮仍未达到** DIFFERENTIAL_VALIDATED；报告给出定位到的两个原因，均为记录，不是修复。
 两轮合计覆盖 30 个真实样本（20 + 10），其中实际调用模型 11 例（8 + 3）；168 次 HTTP 尝试、1338670 token，费用 unknown，人工判断待完成。
-这是小样本诊断；官方 SWT-Bench Docker 判分尚未运行，任何本地比例都不是官方成绩，也不能推算一般复现率。
+官方 SWT-Bench harness 已在本机 WSL2 + Docker 上对新样本轮以 `unit_test` 模式判分：**RESOLVED 1 例（`sphinx-doc__sphinx-11445`）**、未解决 6 例、无官方报告 3 例；被判 resolved 的正是本地判为 DIFFERENTIAL_VALIDATED 的同一例。dev20 修复轮未做官方判分。整轮因仍有 3 例无 verified 报告而保持 `pending`，`official_rate` 为 null；1/10 不是比率。这是小样本诊断，不能推算一般复现率。
 
 ## 冻结配置
 
@@ -35,7 +35,7 @@ dev20 修复轮：20 例中 8 例准备可用并实际调用模型，本地差�
 | 记录 token | 953215 | 385455 |
 | 耗时 p50 / p90 | 159 秒 / 204 秒 | 152.6 秒 / 152.6 秒 |
 | 中断案例 | 2 | 2 |
-| 官方判分 | 待判分 | 待判分 |
+| 官方判分 | 待判分（未官方运行） | 待判分（已判分 7；RESOLVED 1；无报告 3） |
 | 人工审查 | 待审查 20 | 待审查 10 |
 
 费用未配置费率，仍为 unknown。本地的重复确认与差分确认分开列出，互不代偿：原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功；本地 DONE 不能代替 SWT 官方判分。表中“中断案例”指轮次结果状态为 EXHAUSTED 或 CANCELLED 的案例（`evals/swt_bench/results.py` 的 `interrupted_tasks`）；新样本轮的 2 例即两例 EXHAUSTED 的 Sphinx 案例。
@@ -73,18 +73,18 @@ Task 4 的强制生命周期在真实数据上触发了：第一个发布的候�
 
 清单 `E:/ReproAgent/.local/swt-bench/holdout-task8/holdout.json`：`select_holdout` 在同一 catalog 上按固定 seed `reproagent-swt-holdout-v1` 确定性选出 10 例——对已支持的仓库做轮询，仓库内按 `sha256(seed + ':' + instance_id)` 排序取最小；排除 dev20。本项目自身历史案例记录的 20 个 id（`evals/cases/cumulative-historical-results.json` 的 `case_ids`）与该 catalog 无交集。该清单只说明“本项目未调试过”，不保证模型训练未见过这些公开数据。
 
-| 样本 | 准备 | 最终状态 | 证据等级 | 修复版 | token |
-| --- | --- | --- | --- | --- | --- |
-| sphinx-doc__sphinx-11445 | ready | DONE | DIFFERENTIAL_VALIDATED | 通过 | 68267 |
-| sphinx-doc__sphinx-8474 | ready | EXHAUSTED | NONE | 未提供 | 166782 |
-| sphinx-doc__sphinx-8627 | ready | EXHAUSTED | NONE | 未提供 | 150406 |
-| pytest-dev__pytest-5221 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
-| pytest-dev__pytest-5227 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
-| pytest-dev__pytest-8365 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
-| pytest-dev__pytest-8906 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
-| sympy__sympy-15678 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
-| sympy__sympy-18621 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
-| sympy__sympy-24213 | 未准备 | NOT_PREPARED | NONE | 未提供 | — |
+| 样本 | 准备 | 最终状态 | 证据等级 | 修复版 | token | 官方 |
+| --- | --- | --- | --- | --- | --- | --- |
+| sphinx-doc__sphinx-11445 | ready | DONE | DIFFERENTIAL_VALIDATED | 通过 | 68267 | RESOLVED |
+| sphinx-doc__sphinx-8474 | ready | EXHAUSTED | NONE | 未提供 | 166782 | 未解决 |
+| sphinx-doc__sphinx-8627 | ready | EXHAUSTED | NONE | 未提供 | 150406 | 未解决 |
+| pytest-dev__pytest-5221 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 未解决 |
+| pytest-dev__pytest-5227 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 未解决 |
+| pytest-dev__pytest-8365 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 未解决 |
+| pytest-dev__pytest-8906 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 未解决 |
+| sympy__sympy-15678 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 无报告 |
+| sympy__sympy-18621 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 无报告 |
+| sympy__sympy-24213 | 未准备 | NOT_PREPARED | NONE | 未提供 | — | 无报告 |
 
 `sphinx-doc__sphinx-11445` 是唯一达到 DIFFERENTIAL_VALIDATED 的样本：修复版对照通过，已导出复现包。其导出包随后由控制器在全新副本上独立重放：
 
@@ -108,13 +108,33 @@ python <复现包>/replay.py \
 
 `sphinx-doc__sphinx-8627` 需披露一个既有环境限制：其 FAIL_TO_PASS 节点 `tests/test_util_typing.py::test_restify` 在任何可用解释器上都无法通过——Python 3.11+ 把 `typing.Any` 变成类，因而渲染为 `:class:` 而非 `:obj:`；它的原版副本 2/2 失败、修复版副本 1/2（`test_restify` 通过不了），因此它在本环境里不能充当可区分版本的对照。这不是准备缺陷。
 
-## 官方判分
+## 官方独立判分
 
-两轮的 `official_grade_status` 都是 `pending`，`official_rate` 为 `null`，两轮合计 30 例未核验。本机没有可用的 Docker 或 WSL，官方 SWT harness 未实际运行。官方成绩只来自独立 SWT harness 的 unit_test 模式；本地 DONE、原版重复或本地比例都不能替代，也不把本地比例写成官方成绩。旧口径字段 `official_total_rate` 的暂定下界含义保留，但本报告不引用它。
+本机已具备可用环境：WSL2 Ubuntu 发行版 + Docker。官方 harness（`logic-star-ai/swt-bench`，commit `330a649a…`）以 `unit_test` 模式、同一冻结 snapshot 与同一批预测，在本机以 `--max_workers 1` 对新样本 10 例判分。它按每个 instance 构建数据集自己的镜像（Ubuntu + Miniconda + 该仓库固定的依赖集），并把项目真实测试套件最多跑六次（base / gold / 我们的补丁各 pre、post）。判分不调用模型，因此不消耗 token；未计算覆盖率（`--compute_coverage false`），harness 的覆盖率数值为 0，不作为测量引用。
+
+新样本轮 10 例的官方结论：
+
+- RESOLVED：1 例——`sphinx-doc__sphinx-11445`。
+- 未解决：6 例——`pytest-dev__pytest-5221/5227/8365/8906`、`sphinx-doc__sphinx-8474`、`sphinx-doc__sphinx-8627`。
+- 无官方报告：3 例——`sympy__sympy-15678/18621/24213`；本轮三者都记录 EvaluationError：`Command '/bin/bash /eval.sh' timed out after 1800 seconds`，即 harness 自身的 1800 秒默认上限。
+
+接受的这次运行构建失败 0 例。此前几次尝试有若干 instance 镜像构建失败（容器内 `/root/setup_repo.sh` 返回 128，即仓库拉取失败），是本机环境缺口，改为让容器构建走代理后修复。
+
+本工具对该次运行的回执：`exit_code 0`、无 stop_reason、7 份 instance 报告哈希；报告经核验后导入轮次记录 `repro-results/swt-bench/holdout-repaired-001`（预测、manifest 与 snapshot 哈希都与回执一致）。轮次聚合：`official_graded 7`、`official_successes 1`、`official_not_verified 3`、`official_grade_status pending`、`official_rate null`——因为仍有 3 例没有 verified 报告，整轮保持待判分，1/10 不是比率。
+
+关键一点：官方 harness 认定 resolved 的这一例，正是我们自己的流水线判为 DIFFERENTIAL_VALIDATED、导出包在全新副本重放 1/0 的同一例。官方判据（原版红、数据集自带修复绿、无回归）与本地判据在该例上一致。
+
+这是官方代码在固定 commit 上由**我们**在本机运行，不是基准作者发布的榜单成绩。
+
+dev20 修复轮**未**做官方判分，记为待判分：它的 instance 需要同样的逐 instance 镜像构建；20 例中只有 4 例带着非空模型补丁（4 例 DONE），其余 16 例写空 `model_patch`，没有可判分的补丁，而这 4 例在本地修复版验证阶段就全部未通过。
+
+官方成绩只来自独立 SWT harness 的 unit_test 模式；本地 DONE、原版重复或本地比例都不能替代，也不把本地比例写成官方成绩。旧口径字段 `official_total_rate` 的暂定下界含义保留，但本报告不引用它。
 
 ## 这些数字支持与不支持什么
 
 - 在未参与本项目调试的新样本上，修复后的 Agent 交付了**一个**经独立重放验证的差分复现（`sphinx-doc__sphinx-11445`），其导出包在全新副本上复现 1/0。在此之前经过调试的 dev20 上，本轮**没有**交付任何差分复现，计划命名的已知定点（Sphinx-8801 达到 DIFFERENTIAL_VALIDATED）也**未**达到。
+- 官方 harness 在同一轮上判 **RESOLVED 1/10**，且正是 `sphinx-doc__sphinx-11445`——官方判据与本地判据在该例上一致。整轮仍记 `pending`，因为 3 例没有 verified 官方报告；这是“10 例里判分了 7 例、其中 1 例 resolved”，不是复现率，本报告不把它写成比率。
+- 官方判分是官方代码在固定 commit 上由我们本机运行的结果，不是基准作者的榜单成绩。
 - 这是小样本：holdout 只有 3 例实际执行，dev20 为 8 例。它不是一般复现率，计划也禁止把它当作复现率呈现；本报告不给出任何暗示能力估计的百分比。
 - 公开数据集可能已在模型训练数据中。holdout 只保证“本项目未调试过”，这比“模型未见过”弱。
 - 两个 Sphinx-8801 定位原因（原因 A 的失败签名稳定器、原因 B 的候选级环境不兼容）与 8627 的 typing 环境限制，都是有各自后续工作的开放项；本轮**只记录，未修复**。
@@ -128,6 +148,7 @@ python <复现包>/replay.py \
 - 新样本清单与准备：`.local/swt-bench/holdout-task8/holdout.json`、`preparation.json`、`bindings.json`；新建环境 `.local/swt-bench/envs-pinned/sphinx-doc__sphinx-7.1`。
 - sphinx-11445 导出包独立重放：`.local/swt-bench/export-replay-holdout/buggy-fresh`、`fixed-fresh` 及 `out-buggy/probe.jsonl`、`out-fixed/probe.jsonl`。
 - Sphinx-8801 逐候选判决与事件：`repro-results/swt-bench/dev20-repaired-001/cases/sphinx-doc__sphinx-8801/task/verdicts`、`events.jsonl`。
+- 官方判分：执行回执 `.local/swt-bench/official-grading/bundle-v3/holdout-repaired-001/official-execution.receipt.json`，harness 日志 `official.stdout.log`；导入的逐例报告 `repro-results/swt-bench/holdout-repaired-001/official/<instance_id>/`，聚合见同轮 `summary.json`、`report.md`。
 - 固定数据、来源哈希、筛选与复现命令见 [SWT 评测说明](../swt-bench.md)。
 
 [公开数据集](https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite) · [固定 SWT harness](https://github.com/logic-star-ai/swt-bench/tree/330a649a764fab2fadaea632776eeae87272f74b)

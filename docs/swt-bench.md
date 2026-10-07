@@ -4,7 +4,7 @@
 
 ## 本机已准备的资料
 
-- 最新真实评测见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方判分仍待判分。
+- 最新真实评测见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方 harness 已在本机对新样本轮 unit_test 判分：RESOLVED 1/10（即该例），6 例未解决、3 例无报告，整轮仍记待判分。
 - 上一轮真实评测见 [2026-10-06 评测报告](evaluations/2026-10-06-swt-development.md)：第三轮 20 例中 8 例调用模型、12 例环境阻塞，有效差分交付 0；参考测试可区分版本的 5 例中为 0/5。官方判分未运行。
 - 固定快照与来源：`.local/swt-bench/data/snapshot.json`、`source.json`、`excluded.txt`。
 - 原始 test split 300 条；按官方 24 条排除项得到 276 条。过滤文件是排除项，不是白名单。
@@ -126,7 +126,7 @@ Sphinx 按原版 version 分别固定扩展依赖：sphinxcontrib-applehelp 2.x 
 
 ## 官方独立判分
 
-本机未安装可用 Docker/WSL，本次没有实际运行官方 harness，因此没有官方分数。
+本机已具备 WSL2 Ubuntu + Docker，官方 harness 已实际运行。新样本轮以 `unit_test` 模式、同一冻结 snapshot 与预测、`--max_workers 1` 判分 10 例：官方认定 RESOLVED 1 例（`sphinx-doc__sphinx-11445`）、未解决 6 例、无官方报告 3 例（sympy 三例均记录 `Command '/bin/bash /eval.sh' timed out after 1800 seconds`，即 harness 自身的 1800 秒上限）；未计算覆盖率（`--compute_coverage false`），覆盖率为 0，不作测量引用。整轮因仍有 3 例无 verified 报告而保持待判分，`official_rate` 为 null，1/10 不写作比率。被判 resolved 的正是本地判为 DIFFERENTIAL_VALIDATED 的同一例；这是官方代码在固定 commit 上由本机运行，不是基准作者的榜单成绩。dev20 修复轮未做官方判分：20 例中只有 4 例带非空模型补丁，且这 4 例本地修复版验证已未通过。
 
 在准备好的 Linux/Docker 环境中，checkout 上述固定 harness commit，按官方说明安装依赖。复制本轮预测/来源记录和固定 snapshot.json；通过仓库评测工具执行：
 
@@ -161,7 +161,7 @@ python -m evals.swt_bench official-run \
 
 旧项目 20 个历史案例仍用于开发回归。正式评测需另冻结未参与本项目调试的样本，并检查历史重叠；公开数据也可能被模型训练见过。
 
-冻结实现版本后的修复轮：原 dev20 复跑 20 例，8 例准备可用并执行，本地重复确认 4、本地差分确认 0，121 次 HTTP 尝试、953215 token，费用 unknown；计划命名的已知定点 Sphinx-8801 未达到，原因已定位（失败签名稳定器未覆盖 run 根之外的逐次状态、候选级环境不兼容），记录未修复。同一冻结配置下用 `select_holdout` 冻结 10 例未调试新样本，3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED，导出包在全新原版/修复版副本独立重跑 1/0；47 次 HTTP 尝试、385455 token。两轮来源状态均为 verified，可用于版本对比；官方判分仍为待判分，小样本不代表一般复现率。完整报告见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)。
+冻结实现版本后的修复轮：原 dev20 复跑 20 例，8 例准备可用并执行，本地重复确认 4、本地差分确认 0，121 次 HTTP 尝试、953215 token，费用 unknown；计划命名的已知定点 Sphinx-8801 未达到，原因已定位（失败签名稳定器未覆盖 run 根之外的逐次状态、候选级环境不兼容），记录未修复。同一冻结配置下用 `select_holdout` 冻结 10 例未调试新样本，3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED，导出包在全新原版/修复版副本独立重跑 1/0；47 次 HTTP 尝试、385455 token。两轮来源状态均为 verified，可用于版本对比；新样本轮官方 harness 判分 RESOLVED 1/10（`sphinx-doc__sphinx-11445`），另 6 例未解决、3 例无报告，整轮仍为待判分；小样本不代表一般复现率。完整报告见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)。
 
 重新生成汇总不调用模型：
 
