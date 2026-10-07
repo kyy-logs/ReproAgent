@@ -22,10 +22,12 @@ def create_controller(request, model, gateway=None, *, model_backend='native', a
     if 'agentscope' in (model_backend, agent_backend):
         from .adapters.agentscope.dependency import require_agentscope
         info['agentscope_version'] = require_agentscope()
+    store = TaskStore(request.output_dir)
     if gateway is None:
         if model_backend == 'agentscope':
             from .adapters.agentscope.gateway import AgentScopeModelGateway
-            gateway = AgentScopeModelGateway(model)
+            from .adapters.agentscope.model_factory import AgentScopeModelFactory
+            gateway = AgentScopeModelGateway(AgentScopeModelFactory(model, store))
         else:
             gateway = ChatCompletionGateway(model)
     if explorer_factory is None:
@@ -34,7 +36,6 @@ def create_controller(request, model, gateway=None, *, model_backend='native', a
             explorer_factory = AgentScopeExplorer
         else:
             explorer_factory = ReproAgent
-    store = TaskStore(request.output_dir)
     workspace = Workspace(request.output_dir, store)
     runner = Runner(workspace, store)
     secrets = (os.environ.get(model.api_key_env, ''),)

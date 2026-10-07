@@ -5,6 +5,7 @@ import time
 import httpx
 
 from .options import resolve_model_options
+from reproagent.core.async_ops import bounded
 from reproagent.core.budget import BudgetStopped
 from reproagent.core.models import ModelResponse
 from reproagent.core.protocol import MODEL_OUTPUT_CODES, ModelOutputError
@@ -44,26 +45,6 @@ def attempt_payload(attempt, usage, cost_kind, cost_value, *, response_kind, eff
         'finish_reason':classify_finish_reason(finish_reason), 'content_bytes':content_bytes}
     if backend is not None: record['backend'] = backend
     return record
-
-
-async def bounded(awaitable, context):
-    context.budget.check()
-    if context.cancel_event.is_set():
-        if hasattr(awaitable, 'close'):
-            awaitable.close()
-        raise BudgetStopped('CANCELLED')
-    task = asyncio.ensure_future(awaitable)
-    try:
-        while not task.done():
-            if context.cancel_event.is_set():
-                raise BudgetStopped('CANCELLED')
-            context.budget.check()
-            await asyncio.wait((task,), timeout=0.05)
-        return await task
-    finally:
-        if not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
 
 
 class ChatCompletionGateway:
