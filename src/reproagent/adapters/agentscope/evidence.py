@@ -10,8 +10,11 @@ cached view the SDK kept.
 A citation names its file the way the rest of the task does — relative to the task
 store, carrying the raw-byte hash of the frozen original, which is what
 ``Verifier.resolve`` checks again before the range is ever treated as evidence.  Only
-real lines that the tool can display whole are citable: a line the SDK's Read truncates
-is not a full line of the original, so it never becomes a citation.
+real lines that the tool can display whole are citable: a line either tool truncates is
+not a full line of the original, so it never becomes a citation, and the default width
+is the stricter of the two (Grep's 500-byte ``--max-columns``).  Line numbers are
+counted the way the verifier counts them, so a range this ledger issues is a range the
+verifier accepts.
 """
 from __future__ import annotations
 
@@ -20,14 +23,30 @@ from ...paths import relative_name, workspace_path
 from ...store import TaskStore
 from .snapshot_backend import FrozenSnapshot, SnapshotRefusal, UnverifiedContent
 
-#: ``Read.__init__``'s default: a longer line is displayed with a "[truncated]" suffix,
-#: so it was never shown whole and cannot be cited as a complete original line.
-MAX_LINE_CHARACTERS = 2000
+#: The widest line a citation covers, in bytes.  The SDK's Grep always runs ripgrep with
+#: ``--max-columns 500``, so a wider line is never shown whole by Grep; Read shows a line
+#: whole up to its own ``max_line_characters`` (``READ_LINE_CHARACTERS``).  The ledger
+#: cannot tell which tool produced a view, so it defaults to the strictest of the two: a
+#: caller that knows the view came from Read may pass ``READ_LINE_CHARACTERS``.
+MAX_LINE_CHARACTERS = 500
+#: ``Read.__init__``'s default line width, for a caller whose view came from Read.
+READ_LINE_CHARACTERS = 2000
 
 
 def original_lines(data: bytes) -> list[str]:
-    """The lines of verified file bytes, split the way the SDK's Read splits them."""
-    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    """The lines of verified file bytes, exactly as ``Verifier.resolve`` will count them.
+
+    ``Verifier.resolve`` splits the raw bytes (on CR, LF and CRLF only), while the SDK's
+    Read splits the decoded text, which also breaks on a form feed, a vertical tab, ``U+2028``
+    and friends.  When the two counts disagree the file's line numbers are ambiguous — a
+    range the model saw is not the range the verifier would read — so no range from that
+    file is citable at all.  When they agree, the views name the same lines.
+    """
+    lines = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n").splitlines()
+    counted = len(data.splitlines())
+    if len(lines) != counted:
+        raise UnverifiedContent(f"the file's lines are counted differently by the SDK ({len(lines)}) and the verifier ({counted}), so no range in it is citable")
+    return lines
 
 
 class EvidenceLedger:
@@ -39,8 +58,10 @@ class EvidenceLedger:
         Args:
             project: the snapshot whose manifest decides what can be cited.
             store: the task store a citation's path is relative to.
-            max_line_characters (`int`, optional): the widest line the phase's Read tool
-                displays whole; a longer line is refused rather than cited.
+            max_line_characters (`int`, optional): the widest line, in bytes, that the tool
+                which produced the view displays whole.  The default is the stricter of the
+                two the phase uses — ripgrep's ``--max-columns 500``, which the SDK's Grep
+                always sets; pass ``READ_LINE_CHARACTERS`` for a view known to come from Read.
         """
         self.project, self.store = project, store
         self.snapshot = FrozenSnapshot(project, store)
@@ -60,8 +81,8 @@ class EvidenceLedger:
         if type(start) is not int or type(end) is not int or not 1 <= start <= end <= len(lines):
             raise UnverifiedContent(f"{start}-{end} is not a real line range of {item.path!r}")
         for number in range(start, end + 1):
-            if len(lines[number - 1]) > self.max_line_characters:
-                raise UnverifiedContent(f"line {number} of {item.path!r} is longer than the tool displays whole, so it is not citable")
+            if len(lines[number - 1].encode("utf-8")) > self.max_line_characters:
+                raise UnverifiedContent(f"line {number} of {item.path!r} is wider than the tool displays whole, so it is not citable")
         cited = EvidenceRef(relative_name(self.snapshot.path_of(item), self.store.root), item.content_hash, start, end)
         if cited not in self._issued:
             self._issued.append(cited)

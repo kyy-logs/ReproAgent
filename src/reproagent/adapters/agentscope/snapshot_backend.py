@@ -8,7 +8,9 @@ queries from the frozen manifest instead, refuses writes and deletes outright, a
 only the two program shapes the SDK actually issues:
 
 * its ripgrep argv, with the search path it was given replaced by the registered files
-  under that path;
+  under that path, searched in as many path-ordered runs as one command line allows
+  (ripgrep has no way to read a path list from a file, and it is never handed a
+  directory);
 * its ``_glob_helper.py`` invocation, run with this process's own interpreter and its
   matches filtered through the manifest.
 
@@ -33,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from agentscope.tool import BackendBase, DirEntry, ExecResult
@@ -61,6 +64,10 @@ MAX_STDERR_BYTES = 64 * 1024
 MAX_GLOB_BYTES = 4 * 1024 * 1024
 #: ``CreateProcess`` refuses a command line past 32767 characters; stay clear of it.
 MAX_COMMAND_CHARS = 24000
+#: How many command-line-sized search runs one search may take.  A repository does not fit
+#: on a single command line, so a search of the snapshot root is split into ordered runs;
+#: this ceiling keeps a pathological snapshot from turning one search into unbounded work.
+MAX_SEARCH_RUNS = 256
 MAX_PATTERN_CHARS = 1024
 MAX_PATH_CHARS = 4096
 MAX_GLOB_CHARS = 512
@@ -73,7 +80,7 @@ TRUNCATION_MARKER = "\n[... output truncated by the snapshot backend ...]\n"
 #: The options the SDK's ``Grep`` emits.  Anything absent from this pair of sets is
 #: refused, so ``--pre``, ``--files-from``, ``-f/--file``, ``--follow``, ``--no-ignore``
 #: and every other way to reach a file outside the manifest cannot be smuggled in.
-RG_FLAGS = frozenset({"--hidden", "-U", "--multiline-dotall", "-i", "-l", "-c", "-n"})
+RG_FLAGS = frozenset({"--hidden", "-U", "--multiline-dotall", "-i", "-l", "-c", "-n", "-H", "--with-filename"})
 RG_VALUED_FLAGS = frozenset({"--sort", "--glob", "--max-columns", "--type", "-A", "-B", "-C"})
 RG_INTEGERS = {"--max-columns": (1, 100_000), "-A": (0, 1000), "-B": (0, 1000), "-C": (0, 1000)}
 RG_TYPE = re.compile(r"[A-Za-z0-9_+-]{1,32}\Z")
@@ -391,10 +398,62 @@ class SnapshotBackend(BackendBase):
             # A snapshot directory with no registered file under it: an empty result, and
             # never a search of the directory itself (rg with no path searches its cwd).
             return ExecResult(1, b"", b"")
-        if sum(len(path) + 1 for path in files) + len(args) > MAX_COMMAND_CHARS:
-            return ExecResult(EXIT_RG_ERROR, b"", f"blocked: {len(files)} registered files under {str(target)!r} exceed the command line limit; narrow the search path".encode("utf-8"))
-        result, truncated = await self._spawn([self.rg_path, *args, *files], timeout)
-        return result if not truncated else ExecResult(result.exit_code, result.stdout + TRUNCATION_MARKER.encode("utf-8"), result.stderr)
+        runs = self._runs(args, sorted(files))
+        if len(runs) > MAX_SEARCH_RUNS:
+            return ExecResult(EXIT_RG_ERROR, b"", f"blocked: {len(files)} registered files under {str(target)!r} need more search runs than the snapshot backend allows; narrow the search path".encode("utf-8"))
+        result, truncated = await self._search(args, runs, timeout)
+        if not truncated:
+            return result
+        return ExecResult(result.exit_code, result.stdout + TRUNCATION_MARKER.encode("utf-8"), result.stderr)
+
+    def _runs(self, args: list[str], files: list[str]) -> list[list[str]]:
+        """Split *files*, already in path order, into command-line-sized ripgrep runs.
+
+        ripgrep cannot read a path list from a file (no ``--files-from``, verified against
+        13.0.0 and 15.1.0), so a search that does not fit on one command line is run as
+        several ordered runs instead.  The runs are contiguous in path order, so their
+        concatenated output is the path-sorted output one run would have produced.
+        """
+        fixed = len(self.rg_path or "") + sum(len(part) + 1 for part in args) + 2
+        runs: list[list[str]] = []
+        group: list[str] = []
+        size = fixed
+        for path in files:
+            if group and size + len(path) + 1 > MAX_COMMAND_CHARS:
+                runs.append(group)
+                group, size = [], fixed
+            group.append(path)
+            size += len(path) + 1
+        if group:
+            runs.append(group)
+        return runs
+
+    async def _search(self, args: list[str], runs: list[list[str]], timeout: float) -> tuple[ExecResult, bool]:
+        """Run ripgrep over every registered file, one command line at a time."""
+        if len(runs) > 1:
+            # A run that holds one file prints no path, so a split search would lose the
+            # file each match came from; -H keeps every run's output shaped like one run's.
+            args = ["-H", *args]
+        deadline = time.monotonic() + timeout
+        output, found, truncated = b"", False, False
+        for group in runs:
+            if len(output) >= MAX_STDOUT_BYTES:
+                truncated = True
+                break
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return ExecResult(EXIT_TIMEOUT, b"", b"timed out"), False
+            result, cut = await self._spawn([self.rg_path, *args, *group], remaining, limit=MAX_STDOUT_BYTES - len(output))
+            if result.exit_code not in (0, 1):
+                # Part of the search did not run: the failure is reported, never the matches
+                # found so far, which would read like a complete result.
+                return result, False
+            output += result.stdout
+            found = found or result.exit_code == 0
+            if cut:
+                truncated = True
+                break
+        return ExecResult(0 if found else 1, output, b""), truncated
 
     def _parse_ripgrep(self, argv: list[str]) -> tuple[list[str], Path]:
         """The SDK's ripgrep argv as (validated options plus pattern, search path).

@@ -10,6 +10,7 @@ backend runs.
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,7 +26,8 @@ from agentscope.message import TextBlock, ToolResultState
 from agentscope.state import AgentState
 from agentscope.tool import Glob, Grep, Read
 
-from reproagent.adapters.agentscope.evidence import EvidenceLedger
+from reproagent.adapters.agentscope import snapshot_backend
+from reproagent.adapters.agentscope.evidence import READ_LINE_CHARACTERS, EvidenceLedger
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend, SnapshotDenied, UnverifiedContent
 from reproagent.core.budget import BudgetStopped
 from reproagent.core.models import CandidateDraft, DraftFile, ProjectView, PythonPytestConfig, TaskRequest
@@ -50,6 +52,10 @@ MODULE_TEXT = (
 )
 MARKER_LINE = next(index for index, line in enumerate(MODULE_TEXT.splitlines(), 1) if MARKER in line)
 OTHER_ABSOLUTE = "C:/Windows/win.ini" if os.name == "nt" else "/etc/hostname"
+#: Wider than the 500 bytes the SDK's Grep shows whole, narrower than Read's 2000.
+WIDE_LINE = "# " + "x" * 598
+#: Wider than either tool displays whole.
+VERY_WIDE_LINE = "# " + "x" * 2098
 
 
 def chunk_text(chunk) -> str:
@@ -102,7 +108,12 @@ def environment(tmp_path, projects, facts, rg=None):
     (repo / "example" / "crlf.py").write_bytes(CRLF_BYTES)
     (repo / "example" / "binary.py").write_bytes(b"value = 1\x00\x02\n")
     (repo / "example" / "latin.py").write_bytes("note = 'café'\n".encode("latin-1"))
-    (repo / "example" / "long_lines.py").write_text("# " + "x" * 2100 + "\n# short\n", encoding="utf-8", newline="")
+    (repo / "example" / "form_feed.py").write_bytes(b"line1\x0cform\nsecond\n")
+    (repo / "example" / "long_lines.py").write_text(WIDE_LINE + "\n# short\n" + VERY_WIDE_LINE + "\n", encoding="utf-8", newline="")
+    # Two more registered files carry the marker, so a search that needs more than one
+    # command line still has to reach all of them.
+    (repo / "example" / "second.py").write_text(f"value = 2\n# {MARKER}\n", encoding="utf-8", newline="")
+    (repo / "tests" / "test_marker.py").write_text(f"# {MARKER}\n", encoding="utf-8", newline="")
     fixed = projects.fixed(tmp_path / "fixed-hidden")
     (fixed / "example" / "secret_fix.py").write_text(f"# {FIXED_SECRET}\n", encoding="utf-8")
     task = tmp_path / "task"
@@ -143,31 +154,58 @@ def test_real_sdk_glob_grep_read_use_registered_snapshot(tmp_path, projects, fac
     assert env.crlf.read_bytes() == CRLF_BYTES
     assert entry(env.snapshot, "example/crlf.py").content_hash == bytes_hash(CRLF_BYTES)
 
-    grep = asyncio.run(Grep(backend=env.backend).call(pattern=MARKER, path=str(env.root), output_mode="content"))
-    grep_text = chunk_text(grep)
-    if rg is None:
-        # No ripgrep here: the SDK search blocks explicitly instead of answering.
-        assert grep.state is ToolResultState.ERROR and "ripgrep" in grep_text.lower()
-        assert "No matches found" not in grep_text
-    else:
-        assert grep.state is ToolResultState.SUCCESS
-        assert f"{env.module_path}:{MARKER_LINE}:def {MARKER}(values):" in grep_text
-
     refused = asyncio.run(Read(backend=env.backend).call(file_path=str(env.fixed / "example" / "parser.py")))
     assert refused.state is ToolResultState.ERROR and "does not exist" in chunk_text(refused)
     # The hidden fix root and the candidate storage are not searchable either: outside the
-    # snapshot, both Glob and Grep report a refusal rather than listing what is there.
+    # snapshot, both Glob and Grep report a refusal rather than listing what is there (with
+    # ripgrep absent, the refusal is the explicit block — see the two tests below).
     hidden = chunk_text(asyncio.run(Glob(backend=env.backend).call(pattern="**/*.py", path=str(env.fixed))))
     assert "Directory not found" in hidden and "parser.py" not in hidden
+    refusals = []
     for path in (str(env.fixed), str(env.candidate.storage_root)):
-        assert asyncio.run(Grep(backend=env.backend).call(pattern=MARKER, path=path)).state is ToolResultState.ERROR
-    for text in (listing, content, grep_text):
-        # Nothing the manifest does not hold: not the candidate, not the hidden fix copy,
-        # not even the name of a file that was written into the frozen copy afterwards.
+        refused_grep = asyncio.run(Grep(backend=env.backend).call(pattern=MARKER, path=path))
+        assert refused_grep.state is ToolResultState.ERROR
+        refusals.append(chunk_text(refused_grep))
+    for text in (listing, content):
+        # Nothing the manifest does not hold appears in a served view: not the candidate, not
+        # the hidden fix copy, not even the name of a file written into the frozen copy later.
         assert CANDIDATE_SECRET not in text and FIXED_SECRET not in text and LATE_SECRET not in text
         assert "secret_fix.py" not in text and str(env.fixed) not in text and str(env.candidate.storage_root) not in text
-    # A refusal names only the path it was asked for, and never a byte of that file.
-    assert FIXED_SECRET not in chunk_text(refused)
+    for text in (hidden, chunk_text(refused), *refusals):
+        # A refusal names only the path that was asked for, and never a byte of what is there.
+        assert CANDIDATE_SECRET not in text and FIXED_SECRET not in text and "secret_fix.py" not in text
+
+
+@pytest.mark.skipif(find_ripgrep() is None, reason="no ripgrep on this host, so the SDK search blocks by design")
+def test_real_sdk_grep_content_hits_registered_lines(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts, rg=find_ripgrep())
+    grep = asyncio.run(Grep(backend=env.backend).call(pattern=MARKER, path=str(env.root), output_mode="content"))
+    assert grep.state is ToolResultState.SUCCESS
+    text = chunk_text(grep)
+    assert f"{env.module_path}:{MARKER_LINE}:def {MARKER}(values):" in text
+    assert CANDIDATE_SECRET not in text and FIXED_SECRET not in text and LATE_SECRET not in text
+    assert str(env.fixed) not in text and str(env.candidate.storage_root) not in text
+
+
+@pytest.mark.skipif(find_ripgrep() is None, reason="no ripgrep on this host, so the SDK search blocks by design")
+def test_a_search_larger_than_one_command_line_reaches_every_registered_file(tmp_path, projects, facts, monkeypatch):
+    # A repository does not fit on one command line, and ripgrep cannot read a path list from
+    # a file, so the registered files are searched in ordered runs.  A tiny command-line
+    # bound forces one run per file here.
+    monkeypatch.setattr(snapshot_backend, "MAX_COMMAND_CHARS", 260)
+    env = environment(tmp_path, projects, facts, rg=find_ripgrep())
+    result = asyncio.run(env.backend.exec_shell(["rg", "--hidden", "--sort", "path", "--max-columns", "500", "-n", MARKER, str(env.root)]))
+    assert result.ok(), result.stderr
+    relative = [line[len(str(env.root)) + 1:] for line in result.stdout.decode("utf-8").splitlines() if line]
+    assert all(re.fullmatch(r"[^:]+:\d+:.*", line) for line in relative)   # path:line:content
+    found = [line.split(":", 1)[0] for line in relative]
+    assert {Path(path).name for path in found} == {"中文模块.py", "second.py", "test_marker.py"}
+    assert found == sorted(found)                    # the runs stay in path order
+    grep = chunk_text(asyncio.run(Grep(backend=env.backend).call(pattern=MARKER, path=str(env.root), output_mode="content")))
+    for name in ("中文模块.py", "second.py", "test_marker.py"):
+        assert name in grep
+    # A path that is not in the snapshot is still refused before any run happens.
+    assert asyncio.run(env.backend.exec_shell(["rg", "--hidden", MARKER, str(env.fixed)])).exit_code == 2
 
 
 def test_traversal_symlink_and_cache_cannot_bypass_hash(tmp_path, projects, facts):
@@ -374,11 +412,42 @@ def test_ledger_cites_only_verified_original_lines(tmp_path, projects, facts):
     # A path outside the manifest is denied before any line is considered.
     with pytest.raises(SnapshotDenied):
         env.ledger.record_visible(str(env.fixed / "example" / "parser.py"), 1, 1)
-    # A line the tool displays truncated is not a complete original line, so it is not
-    # citable; the intact lines of the same file still are.
-    long_lines = str(env.root / "example" / "long_lines.py")
-    with pytest.raises(UnverifiedContent):
-        env.ledger.record_visible(long_lines, 1, 1)
-    assert env.ledger.contains(env.ledger.record_visible(long_lines, 2, 2))
     # Re-citing the very range the SDK displayed is stable.
     assert env.ledger.record_visible(env.module_path, MARKER_LINE, MARKER_LINE) == cited
+
+
+def test_ledger_counts_lines_the_way_the_verifier_does(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    # A CRLF file: the lines the verifier splits out of the bytes and the lines the SDK
+    # displays are the same lines.
+    counted = len(env.crlf.read_bytes().splitlines())
+    assert counted == 2
+    assert (env.ledger.record_visible(str(env.crlf), 1, counted).end_line) == counted
+    with pytest.raises(UnverifiedContent):
+        env.ledger.record_visible(str(env.crlf), 1, counted + 1)
+    # A form feed splits the SDK's view of the text but not the verifier's view of the bytes,
+    # so the two disagree about what line 2 is; nothing in that file is citable.
+    raw = (env.root / "example" / "form_feed.py").read_bytes()
+    assert (len(raw.splitlines()), len(raw.decode("utf-8").splitlines())) == (2, 3)
+    for start, end in ((1, 1), (2, 2), (3, 3), (1, 3)):
+        with pytest.raises(UnverifiedContent):
+            env.ledger.record_visible(str(env.root / "example" / "form_feed.py"), start, end)
+
+
+def test_a_line_grep_cannot_display_whole_is_not_citable(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    wide = str(env.root / "example" / "long_lines.py")
+    assert 500 < len(WIDE_LINE) <= READ_LINE_CHARACTERS < len(VERY_WIDE_LINE)
+    # The SDK's Grep always passes --max-columns 500, so its view of a 600-byte line is not
+    # the whole line and the line cannot be cited from a Grep view.
+    with pytest.raises(UnverifiedContent):
+        env.ledger.record_visible(wide, 1, 1)
+    # Read displays that line whole, so a caller whose view came from Read may say so.
+    reader = EvidenceLedger(env.project, env.store, max_line_characters=READ_LINE_CHARACTERS)
+    assert reader.contains(reader.record_visible(wide, 1, 1))
+    # Neither tool displays a 2100-byte line whole.
+    for ledger in (env.ledger, reader):
+        with pytest.raises(UnverifiedContent):
+            ledger.record_visible(wide, 3, 3)
+    # The intact lines of the same file are still citable.
+    assert env.ledger.contains(env.ledger.record_visible(wide, 2, 2))
