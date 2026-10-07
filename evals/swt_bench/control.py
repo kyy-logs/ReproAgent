@@ -169,6 +169,9 @@ def _role_summary(measured,targets):
 def _unusable(summary):
     """Why this role's run cannot stand as a control, in the order a reader checks."""
     reasons=[]
+    # A run that reported nothing measured nothing: no claim about collection, phases
+    # or skips can be made from it, so it is named before those.
+    if summary.get('runner_failed'): reasons.append('control run reported nothing: '+summary['runner_failed'])
     if summary['collection_errors']: reasons.append('collection error')
     if summary['uncollected']: reasons.append('target test never collected')
     if summary['errors']: reasons.append('setup/teardown error or a target test without a call phase')
@@ -177,8 +180,9 @@ def _unusable(summary):
 
 
 def _empty_summary(interpreter,exit_code,targets,message):
+    """A role whose run produced no measurement; it must not claim the nodes were seen."""
     return {'interpreter':interpreter,'exit_code':exit_code,'python_version':'','pytest_version':'',
-        'dependency_hash':'','collection_errors':[],'uncollected':list(targets),'errors':[],'skips':[],
+        'dependency_hash':'','collection_errors':[],'uncollected':[],'errors':[],'skips':[],
         'targets':{node:{} for node in targets},'failed_calls':[],'passed_calls':[],'runner_failed':message}
 
 

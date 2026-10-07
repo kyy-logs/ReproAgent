@@ -250,6 +250,28 @@ def test_control_never_mutates_generation_repositories(tmp_path):
     assert str(case.fixed_repo) not in published
 
 
+@pytest.mark.parametrize('failure',['timeout','unreadable-receipt'])
+def test_runner_failure_is_not_reported_as_an_uncollected_node(tmp_path,monkeypatch,failure):
+    """A run that reported nothing measured nothing, and the receipt must say so."""
+    from evals.swt_bench import control
+    fixed_files={**BASE_FILES,'example/parser.py':FIXED_PARSER}
+    row,binding=control_inputs(tmp_path,fix_patch=FIX_PATCH,test_patch=NEW_REFERENCE_TESTS,
+        targets=[TARGET],fixed_files=fixed_files)
+    if failure=='timeout':
+        monkeypatch.setattr(control,'RUN_TIMEOUT',0.001)
+    else:
+        # A real subprocess that exits without writing the run receipt.
+        monkeypatch.setattr(control,'RUNNER','import sys\nsys.exit(0)\n')
+    receipt=run_control(tmp_path,row,binding)
+    assert receipt['status']=='not_discriminating' and receipt['discriminating'] is False
+    assert 'control run reported nothing' in receipt['reason'],receipt['reason']
+    assert 'never collected' not in receipt['reason'],receipt['reason']
+    for role in ('buggy','fixed'):
+        assert receipt['roles'][role]['runner_failed']
+        assert receipt['roles'][role]['uncollected']==[]
+        assert receipt['roles'][role]['exit_code']==(None if failure=='timeout' else 0)
+
+
 def test_control_cli_records_every_selected_case(tmp_path):
     from evals.swt_bench.io import read_json,seal,write_json
     fixed_files={**BASE_FILES,'example/parser.py':FIXED_PARSER}
