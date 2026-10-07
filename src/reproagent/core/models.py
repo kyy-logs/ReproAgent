@@ -57,6 +57,9 @@ STRATEGY = "reproagent"
 STRATEGY_VERSION = "1"
 IDENTITY_FIELDS = ("infrastructure", "agentscope_version", "strategy", "strategy_version",
                    "model_backend", "agent_backend")
+# What a record that never carried one of these fields says, so a reader can tell "this run
+# did not record it" from an actual component name standing in for it.
+NOT_RECORDED = "not_recorded"
 
 
 def installed_agentscope_version():

@@ -43,13 +43,21 @@ def test_round_summary_states_the_component_identity_without_relabelling_a_round
     assert summary['model_backend']=='native' and summary['agent_backend']=='native'
     # A round recorded before any of this existed still summarises, and its outcome keeps
     # the truthful "no fixed version provided" default.
-    legacy=summarize_round({'outcomes':{'old':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION'}}})
+    legacy_data={'outcomes':{'old':{'status':'DONE','evidence_level':'REPEATED_OBSERVATION'}}}
+    legacy=summarize_round(legacy_data)
     assert legacy['fix_validation_not_provided']==1 and legacy['local_differential']==0
     assert legacy['infrastructure']=='agentscope' and legacy['strategy_version']=='1'
+    # A round that recorded no backend may not inherit a product constant in the slot that
+    # reports what the round itself recorded.
+    assert legacy['model_backend']=='not_recorded' and legacy['agent_backend']=='not_recorded'
     save_summary(tmp_path,round_data)
     text=(tmp_path/'report.md').read_text(encoding='utf-8')
     assert '基础设施：agentscope' in text and '复现策略：reproagent' in text
-    assert 'native' in text
+    assert '本轮记录的后端：模型 native；Agent native' in text
+    save_summary(tmp_path/'legacy',legacy_data)
+    text=(tmp_path/'legacy'/'report.md').read_text(encoding='utf-8')
+    assert '本轮记录的后端：模型 未记录；Agent 未记录' in text
+    assert 'agentscope' in text and '本轮记录的后端：模型 agentscope' not in text
 
 
 def test_unverified_external_report_is_not_counted_as_independent_success():

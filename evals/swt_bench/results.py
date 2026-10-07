@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from .io import read_json,write_json,verify_seal,seal,file_hash
-from reproagent.core.models import IDENTITY_FIELDS,component_identity
+from reproagent.core.models import IDENTITY_FIELDS,NOT_RECORDED,component_identity
 
 
 def percentile(values,fraction):
@@ -18,13 +18,22 @@ def round_identity(round_data):
     """The round's component identity: what it recorded, over the product's own identity.
 
     The round record may carry these fields at its top level or inside its configuration;
-    whatever it recorded wins, so a round that ran another backend keeps saying so.
+    whatever it recorded wins, so a round that ran another backend keeps saying so.  A round
+    that recorded no backend is marked as such rather than inheriting a product constant in
+    the slot that reports what the round itself recorded.
     """
     recorded={}
     for source in (round_data.get('configuration'),round_data):
         if isinstance(source,dict):
             recorded.update({key:value for key,value in source.items() if key in IDENTITY_FIELDS and value})
+    for key in ('model_backend','agent_backend'):
+        recorded.setdefault(key,NOT_RECORDED)
     return component_identity(**recorded)
+
+
+def recorded_label(value):
+    """A recorded backend name, or a plain statement that the round recorded none."""
+    return '未记录' if value == NOT_RECORDED else value
 
 
 def summarize_round(round_data):
@@ -73,7 +82,7 @@ def save_summary(root,round_data):
     root=Path(root); summary=summarize_round(round_data); write_json(root/'summary.json',summary)
     lines=['# SWT-Bench 开发子集评测','',f"选定样本：{summary['all_tasks']}；准备可用：{summary['ready_tasks']}。",
         f"基础设施：{summary['infrastructure']}；复现策略：{summary['strategy']}（版本 {summary['strategy_version']}）。",
-        f"本轮记录的后端：模型 {summary['model_backend']}；Agent {summary['agent_backend']}；AgentScope 版本：{summary['agentscope_version'] or '未安装'}。",
+        f"本轮记录的后端：模型 {recorded_label(summary['model_backend'])}；Agent {recorded_label(summary['agent_backend'])}；AgentScope 版本：{summary['agentscope_version'] or '未安装'}。",
         f"本地重复确认：{summary['local_repeated']}；本地差分确认：{summary['local_differential']}。",
         f"修复版对照：通过 {summary['fix_validation_passed']}；未通过 {summary['fix_validation_failed']}；受阻 {summary['fix_validation_blocked']}；未提供 {summary['fix_validation_not_provided']}。",
         '原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功。',
