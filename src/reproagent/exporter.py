@@ -8,6 +8,7 @@ from importlib.resources import files
 from .core.models import ArtifactManifest, EvidenceLevel, FileEntry, TaskState
 from .core.budget import BudgetStopped
 from .core.serialization import bytes_hash, canonical_bytes, canonical_hash, encode_record
+from .paths import shared_path_form, workspace_path
 from .store import atomic_write, safe_child
 from .workspace import candidate_hash
 from .reporting import render_report
@@ -29,6 +30,10 @@ class Exporter:
             if success and context:
                 context.budget.check()
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+        # One shared set of task-root spellings for bytes and for decoded records, longest
+        # first: the native form, its forward-slash form and the JSON-escaped form.
+        root_spellings = tuple(sorted({str(store.root), str(store.root).replace('\\', '/'),
+            json.dumps(str(store.root))[1:-1]}, key=len, reverse=True))
         def read(path):
             chunks = []
             with path.open('rb') as stream:
@@ -42,14 +47,14 @@ class Exporter:
             for secret in self.secrets:
                 for value in sorted({secret, json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1]}, key=lambda value: (len(value), value), reverse=True):
                     data = data.replace(value.encode(), b'[REDACTED]')
-            for prefix in (str(store.root), str(store.root).replace('\\', '/'), json.dumps(str(store.root))[1:-1]):
+            for prefix in root_spellings:
                 data = data.replace(prefix.encode(), b'<task>')
             return data
         def redact_record(value):
             if isinstance(value, str):
                 for secret in self.secrets:
                     value = value.replace(secret, '[REDACTED]')
-                for prefix in (str(store.root), str(store.root).replace('\\', '/')):
+                for prefix in root_spellings:
                     value = value.replace(prefix, '<task>')
                 return value
             if isinstance(value, dict):
@@ -59,14 +64,19 @@ class Exporter:
             return value
         check()
         kind = 'reproduction' if success else 'diagnostic'
-        root = store.root / 'artifacts' / kind
+        # The build directory is renamed onto the final one, so both names keep
+        # one representation even when only the longer build name needs it.
+        root, temporary = shared_path_form(store.root / 'artifacts' / kind,
+                                           store.root / 'artifacts' / ('.building-' + uuid.uuid4().hex))
         if root.exists():
             raise ValueError('export package already exists')
-        temporary = store.root / 'artifacts' / ('.building-' + uuid.uuid4().hex)
         temporary.mkdir(parents=True)
         events = store.read_events()[0]
         report = {'package_kind':kind, 'verified':bool(success), 'task_id':result.task_id, 'status':result.status.value,
             'stop_reason':result.stop_reason, 'evidence_level':result.evidence_level.value, 'uncertainties':list(result.uncertainties),
+            # Carried through unchanged so the report states the fixed-version outcome next to
+            # the evidence level instead of letting the repeated observation imply one.
+            'fix_validation_status':result.fix_validation_status,
             'event_cutoff':len(events) - 1, 'candidate_files':[], 'log_mapping':[], 'runs':[], 'source_mapping':[], 'verdict_mapping':[],
             'accepted_run_ids':[], 'environment_probes':[]}
         previews = {}
@@ -116,7 +126,8 @@ class Exporter:
                 if len(report['source_mapping']) < 4:
                     previews[export_path] = '\n'.join(exported.decode('utf-8', errors='replace').splitlines()[source.start_line - 1:source.end_line])[:2000]
                 report['source_mapping'].append({'source_path':source.path, 'source_hash':source.content_hash, 'export_path':export_path, 'export_hash':bytes_hash(exported), 'start_line':source.start_line, 'end_line':source.end_line})
-            for path in sorted((store.root / 'verdicts').glob('*.json')):
+            verdicts = workspace_path(store.root / 'verdicts')
+            for path in sorted(verdicts.glob('*.json')):
                 check()
                 verdict = store.load_record('verdicts', path.stem)
                 if verdict.candidate_id != candidate.candidate_id or verdict.manifest_hash != candidate.manifest_hash or verdict.contract_version != candidate.contract_version:
@@ -127,10 +138,11 @@ class Exporter:
                 if len(report['verdict_mapping']) < 2:
                     summary = f'{verdict.classification.value}: {verdict.reason}' if verdict.classification else verdict.reason
                     previews[export_path] = redact(summary.encode()).decode('utf-8', errors='replace')[:2000]
-                report['verdict_mapping'].append({'source_path':path.relative_to(store.root).as_posix(), 'source_hash':bytes_hash(original), 'export_path':export_path, 'export_hash':bytes_hash(exported)})
+                report['verdict_mapping'].append({'source_path':f'verdicts/{path.relative_to(verdicts).as_posix()}', 'source_hash':bytes_hash(original), 'export_path':export_path, 'export_hash':bytes_hash(exported)})
             atomic_write(temporary / 'probe/reproagent_pytest_probe.py', files('reproagent').joinpath('adapters/languages/python_pytest/probe/reproagent_pytest_probe.py').read_bytes())
             atomic_write(temporary / 'replay.py', files('reproagent').joinpath('resources/replay.py').read_bytes())
-        for path in sorted((store.root / 'runs').glob('*/execution.json')):
+        runs = workspace_path(store.root / 'runs')
+        for path in sorted(runs.glob('*/execution.json')):
             check()
             run = store.load_record('runs', path.parent.name)
             if success and run.candidate_id == candidate.candidate_id and run.manifest_hash == candidate.manifest_hash and run.contract_version == candidate.contract_version and run.execution_role == 'original':
@@ -154,9 +166,10 @@ class Exporter:
                 report.update(python=env.python, pytest_version=env.tool_version, source_roots=list(env.source_roots), target_modules=list(env.target_modules),
                     pytest_args=list(env.pytest_args), limitations=list(env.limitations),
                     argv=['<python>', '-m', 'pytest', *env.pytest_args, '-p', 'reproagent_pytest_probe', *candidate.selectors], env_names=['PYTHONPATH', 'REPROAGENT_RUN_ID', 'REPROAGENT_PROBE_PATH', 'REPROAGENT_TARGET_MODULES'])
-        for path in sorted((store.root / 'probes').glob('*/*.log')):
+        probes = workspace_path(store.root / 'probes')
+        for path in sorted(probes.glob('*/*.log')):
             original = read(path); exported = redact(original)
-            relative = path.relative_to(store.root).as_posix()
+            relative = f'probes/{path.relative_to(probes).as_posix()}'
             export_path = f"evidence/log-{len(report['log_mapping']):04d}.txt"
             atomic_write(safe_child(temporary, export_path), exported)
             report['environment_probes'].append(export_path)

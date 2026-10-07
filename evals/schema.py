@@ -56,3 +56,6 @@ class EvalResult:
     usage: dict[str, int] = field(default_factory=dict)
     known_cost_subtotal: float = 0
     unknown_cost_attempts: int = 0
+    # Mirrors the task record: not_provided/passed/failed/blocked. Kept last so existing
+    # positional construction and older imported rounds are unaffected.
+    fix_validation_status: str = 'not_provided'

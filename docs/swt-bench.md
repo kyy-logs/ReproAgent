@@ -10,6 +10,7 @@
 - 生成资料 catalog：`.local/swt-bench/data/catalog.json`，不含 patch、test_patch、hints_text 内容。
 - 固定开发清单：`.local/swt-bench/data/dev20.json`。五仓库、20 例，按固定 seed 和仓库轮询选取。
 - 原版/修复副本和独立解释器：`.local/swt-bench/cases`、`envs`；绑定为 `.local/swt-bench/bindings.json`。
+- 按原版 version 固定的对照绑定与依赖清单：`.local/swt-bench/reference-controls-006/bindings.json`、`dependencies.json`；本轮对照回执在 `reference-controls-006/controls`。
 - 修复后的独立预检：`.local/swt-bench/preflight-after-repairs/preparation.json`，20 例中 8 例 ready、12 例 blocked。
 - 真实模型首轮：`repro-results/swt-bench/dev20-native-001`，其报告、模型请求和失败记录都保留。
 
@@ -83,6 +84,22 @@ ready 表示原版/修复版的 Python、pytest 和指定目标模块来源探�
 运行输出：round.json、summary.json、report.md、manifest.json、bindings.json、cases 下的任务记录，以及每个选定 ID 都有一行的 predictions.jsonl。候选冻结时再次检查已审查源码哈希，避免预检之后的变化进入模型。
 
 预测使用已接受候选的原始字节和原安装路径。只增加受限测试目录中的 test/data 文件，拒绝覆盖源码、越界、链接或篡改。空文件、UTF-8 内容及无末尾换行得到保留；当前补丁文件名支持常规 ASCII 路径，其他文件名报 export_error。失败样本写空 model_patch，完整原因仍在 ledger。不要仅导出成功样本。
+
+## 环境参考对照
+
+参考对照证明目标测试确实执行过，而不是只看退出码：在独立副本里套用数据集修复补丁与参考测试，原版至少一个目标 call 失败、修复版全部目标 call 通过，且没有 collection、setup 或 teardown 错误、没有 skip，才算能区分版本。collection 报错、fixture setup 抛错和 skip 都会给出与“原版非零、修复版零”相同的形状，却没有真正执行目标测试。
+
+```powershell
+.\.venv\Scripts\python.exe -m evals.swt_bench control `
+  --snapshot .local/swt-bench/data/snapshot.json `
+  --manifest .local/swt-bench/data/dev20.json `
+  --bindings .local/swt-bench/reference-controls-006/bindings.json `
+  --output .local/swt-bench/reference-controls-006/controls
+```
+
+row 中的 patch、test_patch 与 FAIL_TO_PASS 只在独立评测端读取，不进入 run_case 的生成输入。每个副本是新目录加自己的 Git 仓库，参考补丁套用后按内容校验：返回 0 却没有改动任何目标文件记为 patch_error，外层 Git 忽略规则无法造成假对照；套用修复补丁后的源码哈希还必须等于已审查绑定的哈希。目标解释器子进程的环境按白名单重建，操作者导出的密钥不会传进去。逐例留下 control.json、buggy/fixed 的 stdout/stderr 日志与套用过的补丁；verification.json 保留固定清单的全部案例，缺绑定的记为 not_run。
+
+Sphinx 按原版 version 分别固定扩展依赖：sphinxcontrib-applehelp 2.x 要求 Sphinx >= 5，1.0.x 接受 3.x，所以 3.4/3.5 与 5.0 使用不同解释器与依赖集合。解释器、Python/pytest 版本、依赖集合哈希、源码哈希与补丁都进回执，见 `reference-controls-006/dependencies.json`。解释器缺失或无法启动、构建产物不全的案例仍为环境阻塞，继续留在分母中，不改业务代码、不放宽文件隔离。
 
 ## 官方独立判分
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from ...core.budget import BudgetStopped
 from ...core.models import EvidenceRef, ProbeArtifacts, RawExecution
 from ...core.serialization import bytes_hash
+from ...paths import workspace_path
 from .process_tree import ManagedProcess
 
 SYSTEM_ENV = {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "HOME", "USERPROFILE", "LANG"}
@@ -21,16 +22,17 @@ class LocalBackend:
             raise BudgetStopped("CANCELLED")
         started = time.monotonic()
         timeout = context.budget.command_timeout()
-        spec.cwd.mkdir(parents=True, exist_ok=True)
-        log_root = spec.probe_path.parent if spec.probe_path is not None else spec.cwd
+        cwd = workspace_path(spec.cwd)
+        cwd.mkdir(parents=True, exist_ok=True)
+        log_root = workspace_path(spec.probe_path).parent if spec.probe_path is not None else cwd
         log_root.mkdir(parents=True, exist_ok=True)
-        out_path, err_path = log_root / "stdout.log", log_root / "stderr.log"
+        out_path, err_path = workspace_path(log_root / "stdout.log"), workspace_path(log_root / "stderr.log")
         env = {key: value for key, value in os.environ.items() if key.upper() in SYSTEM_ENV or key in spec.env_names}
         env.update(context.private_env)
         env.update(spec.env_overrides)
         env["PYTHONUTF8"] = "1"
         env['REPROAGENT_PROBE_LIMIT'] = str(min(context.budget.limits.log_bytes, 33554432))
-        process = ManagedProcess.spawn(spec.argv, spec.cwd, env)
+        process = ManagedProcess.spawn(spec.argv, cwd, env)
         truncated = threading.Event()
         pump_errors = []
         lock = threading.Lock()

@@ -10,6 +10,7 @@ from .app import create_controller
 from .core.budget import Budget
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
+from .paths import display_path
 from .store import TaskStore
 
 EXIT_CODES = {TaskState.DONE:0, TaskState.BLOCKED:1, TaskState.NEEDS_INFORMATION:1, TaskState.EXHAUSTED:1, TaskState.FAILED:3, TaskState.CANCELLED:130}
@@ -46,7 +47,7 @@ def run_command(args):
         return await controller.run(request, context, fixed)
     result = asyncio.run(run())
     print(json.dumps({'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
-        'export_state':result.export_state, 'output_dir':str(output)}, ensure_ascii=False))
+        'export_state':result.export_state, 'output_dir':display_path(output)}, ensure_ascii=False))
     return EXIT_CODES[result.status]
 
 

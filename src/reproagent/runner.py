@@ -5,6 +5,7 @@ from pathlib import Path
 from .adapters.languages.python_pytest.adapter import PythonPytestAdapter
 from .adapters.runtimes.local import LocalBackend
 from .core.models import ExecutionResult, ProbeResults, ProjectView, ProtectionCheck
+from .paths import is_within, relative_name, workspace_path
 from .store import atomic_write
 from .core.serialization import bytes_hash, canonical_bytes
 
@@ -16,12 +17,13 @@ class Runner:
         self.backend = backend or LocalBackend()
 
     def relative_ref(self, ref):
-        return replace(ref, path=Path(ref.path).resolve().relative_to(self.store.root).as_posix())
+        path = workspace_path(Path(ref.path).resolve())
+        return replace(ref, path=relative_name(path, self.store.root))
 
     async def prepare(self, request, snapshot, context):
         context.budget.check()
         inspection = self.adapter.inspect(ProjectView(snapshot), request.language)
-        root = self.store.root / 'probes' / uuid.uuid4().hex
+        root = workspace_path(self.store.root / 'probes' / uuid.uuid4().hex)
         root.mkdir(parents=True)
         raw = await self.backend.execute(replace(inspection.probes[0], cwd=root), context)
         self.store.append_event('environment.probed', (self.relative_ref(raw.stdout_ref).path, self.relative_ref(raw.stderr_ref).path), {'exit_code':raw.exit_code, 'stop_reason':raw.stop_reason, 'cleanup_ok':raw.cleanup_ok})
@@ -55,8 +57,8 @@ class Runner:
         protected = {entry.path:entry.content_hash for entry in snapshot.files}
         def origin_ok(path):
             path = Path(path).resolve()
-            if not path.is_relative_to(run.root): return False
-            relative = path.relative_to(run.root).as_posix()
+            if not is_within(path, run.root): return False
+            relative = relative_name(path, run.root)
             return relative in protected and bytes_hash(path.read_bytes()) == protected[relative]
         origins_ok = bool(observation.target_origins) and all(origin_ok(path) for path in observation.target_origins.values())
         details = dict(observation.framework_details, source_binding_ok=origins_ok, run_root=str(run.root), preconditions=list(environment.preconditions))

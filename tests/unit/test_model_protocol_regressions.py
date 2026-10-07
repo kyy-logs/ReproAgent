@@ -120,7 +120,7 @@ def test_contract_schema_explains_required_text_fields(facts):
     assert result.trigger == 'parse([])' and result.expected == 'return []'
 
 
-@pytest.mark.parametrize('content,finish', [('', 'stop'), ('{"trigger":', 'length')])
+@pytest.mark.parametrize('content,finish', [('', 'stop'), ('{}', 'stop'), ('{"trigger":', 'stop')])
 def test_provider_rejected_output_gets_bounded_contract_correction(content, finish, facts):
     from tests.unit.test_model_gateway import gateway
     calls = []
@@ -133,6 +133,29 @@ def test_provider_rejected_output_gets_bounded_contract_correction(content, fini
     assert result.expected == 'return []' and len(calls) == 2
     assert context.budget.unknown_cost_calls == 2
     assert json.loads(calls[1]['messages'][-1]['content'])['protocol_error']
+
+
+def test_length_is_not_retried_with_identical_request(facts):
+    """A truncation at the configured ceiling cannot be corrected by asking again."""
+    from tests.unit.test_model_gateway import gateway
+    calls, events = [], []
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200,json={'choices':[{'finish_reason':'length','message':{'content':'{"trigger":'}}],
+                                      'usage':{'prompt_tokens':10,'completion_tokens':5}})
+    class Store:
+        def append_event(self, kind, refs, payload): events.append(payload)
+    context = facts.context()
+    agent = ReproAgent(BudgetedGateway(gateway(handler), Store()), context)
+    with pytest.raises(Exception) as error:
+        asyncio.run(agent.analyze(IssueDescription('bug','hash'), EvidenceContext((SourceRef('issue','hash'),),('bug',))))
+    assert type(error.value).__name__ == 'ModelProtocolError'
+    assert 'OUTPUT_TRUNCATED' in str(error.value)
+    assert len(calls) == 1 and calls[0]['max_completion_tokens'] == 4096
+    # The truncated attempt is still billed and timed even though it is not retried.
+    assert events[0]['outcome'] == 'OUTPUT_TRUNCATED' and events[0]['finish_reason'] == 'length'
+    assert events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5}
+    assert context.budget.unknown_cost_calls == 1
 
 
 def test_provider_empty_response_is_failed_not_invalid_user_input(tmp_path, projects, facts):
@@ -173,6 +196,11 @@ def test_generated_candidate_cannot_become_expectation_source(tmp_path,projects,
                     return ModelResponse(json.dumps({**VALID_CONTRACT,'expected':'invented behavior','source_indices':[1]}))
             if request.response_kind == 'action':
                 self.actions += 1
+                if self.actions == 1:
+                    # A candidate that passes leaves nothing to replay, so the Controller
+                    # stops forcing after running it and the explorer keeps choosing.
+                    return ModelResponse(json.dumps({'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
+                        'content':'from example.parser import parse\ndef test_nonempty(): assert parse([1]) == [1]\n'}],'hypothesis':'nonempty input'}}))
                 if self.actions == 2:
                     return ModelResponse(json.dumps({'name':'read_file','parameters':{'path':'tests/test_repro.py','start':1,'end':2}}))
                 if self.actions == 3:
@@ -186,6 +214,64 @@ def test_generated_candidate_cannot_become_expectation_source(tmp_path,projects,
     result = asyncio.run(controller.run(request,context))
     assert result.status == TaskState.NEEDS_INFORMATION and model.analyses == 1
     assert len(list((request.output_dir/'contracts').glob('*.json'))) == 1
+
+
+class ProposalModel:
+    """Records the issue's interface proposal as unconfirmed, then keeps proposing a candidate."""
+    def __init__(self): self.requests, self.actions = [], 0
+    async def complete(self, request, context):
+        self.requests.append(request)
+        if request.response_kind == 'contract':
+            return ModelResponse(json.dumps({'trigger':'from_file(path, load, mode="b")','expected':'',
+                'reported_actual':'TypeError: File must be opened in binary mode','source_indices':[],
+                'observable_checks':[],'assumptions':[],
+                'missing_information':['mode="b" is only proposed by the issue; confirm it against the from_file signature']}))
+        if request.response_kind == 'action':
+            self.actions += 1
+            if self.actions <= 3:
+                return ModelResponse(json.dumps({'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py',
+                    'role':'test','content':'from example.parser import parse\ndef test_mode(tmp_path):\n    assert parse([1], mode="b") == [1]\n'}],
+                    'hypothesis':'the proposed mode parameter'}}))
+            if self.actions == 4:
+                return ModelResponse(json.dumps({'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}}))
+            return ModelResponse(json.dumps({'name':'request_information','parameters':{'question':'Confirm the proposed mode parameter'}}))
+        raise AssertionError(request.response_kind)
+
+
+def test_interface_proposal_is_missing_information_not_an_expectation(tmp_path,projects,facts):
+    """A mode="b" parameter or a Domain column name proposed by the issue is an unconfirmed
+    proposal, not the standard of correctness: the Controller refuses to publish a candidate
+    built on it while leaving the original sources readable and revisable. This does not prove
+    the model recognises every proposal; it fixes the prompt rule and the Controller guard."""
+    from importlib.resources import files
+    from reproagent.core.models import BudgetLimits
+    from tests.unit.test_controller import controller_for
+    model = ProposalModel()
+    request, controller, context = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=6))
+    result = asyncio.run(controller.run(request, context))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert not list((request.output_dir / 'candidates').glob('*/manifest.json'))
+    events = controller.store.read_events()[0]
+    assert [event.payload['action'] for event in events if event.kind == 'action.selected'] == ['read_file','request_information']
+    assert ('action.completed','read_file','OK') in [(event.kind, event.payload['action'], event.payload['result_code'])
+        for event in events if event.kind in ('action.completed','action.rejected')]
+    # The refused writes leave one bounded protocol error, not a published candidate.
+    assert [event.payload['result_code'] for event in events if event.kind == 'protocol.error'] == ['INVALID_ACTION_RESPONSE']
+    assert 'choose an allowed action' in model.requests[2].messages[-1]['content']
+    assert {request_obj.response_kind for request_obj in model.requests} == {'contract','action'}
+    # The rule is carried by the prompts the Runtime sends, not only by these test doubles.
+    analyze_text = model.requests[0].messages[0]['content']
+    assert 'proposal' in analyze_text and 'mode="b"' in analyze_text and 'Domain' in analyze_text
+    assert 'signature' in analyze_text
+    explorer_text = model.requests[1].messages[0]['content']
+    assert 'proposal' in explorer_text and 'correctness standard' in explorer_text
+    review_text = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
+    assert 'proposal' in review_text and 'correctness standard' in review_text
+    # While the proposal stays unconfirmed, only reading, revising and asking are offered.
+    first_action = json.loads(model.requests[1].messages[-1]['content'])
+    assert 'write_candidate' not in first_action['allowed_actions']
+    assert {'read_file','revise_contract'} <= set(first_action['allowed_actions'])
+    assert any('mode="b"' in item for item in first_action['contract']['missing_information'])
 
 
 def test_verdict_text_check_is_corrected_to_boolean_with_original_evidence(tmp_path,projects,facts):
@@ -206,6 +292,45 @@ def test_verdict_text_check_is_corrected_to_boolean_with_original_evidence(tmp_p
     assert verdict.classification.value == 'REPRODUCED'
     assert len(model.calls) == 2 and context.budget.unknown_cost_calls == 2
     assert json.loads(model.calls[0].messages[-1]['content'])['available_refs'] == json.loads(model.calls[1].messages[-1]['content'])['available_refs']
+
+
+def test_complete_invalid_json_corrects_at_most_three_times(tmp_path,projects,facts):
+    """A complete but structurally wrong verdict is corrected, and only three times."""
+    from tests.unit.test_model_gateway import gateway
+    from tests.unit.test_verifier import prepare
+    contract,candidate,execution,verifier,*_ = prepare(tmp_path,projects,facts)
+    calls = []
+    def handler(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'{}'}}],
+                                      'usage':{'prompt_tokens':10,'completion_tokens':5}})
+    context = facts.context()
+    verifier.gateway = BudgetedGateway(gateway(handler), None)
+    verdict = asyncio.run(verifier.evaluate(contract,candidate,(execution,),context))
+    assert verdict.classification is None and 'MODEL_PROTOCOL_ERROR' in verdict.uncertainties
+    assert len(calls) == 3 and context.budget.unknown_cost_calls == 3
+    assert all(call['max_completion_tokens'] == 4096 for call in calls)
+    assert 'protocol_error' not in json.loads(calls[0]['messages'][-1]['content'])
+    assert json.loads(calls[1]['messages'][-1]['content'])['protocol_error']
+    assert json.loads(calls[2]['messages'][-1]['content'])['protocol_error']
+
+
+def test_negative_semantics_never_promoted(tmp_path,projects,facts):
+    """An explicit negative check cannot be corrected into a success."""
+    from tests.unit.test_model_gateway import gateway
+    from tests.unit.test_verifier import prepare
+    contract,candidate,execution,verifier,*_ = prepare(tmp_path,projects,facts)
+    calls = []
+    def handler(request):
+        data = json.loads(json.loads(request.content)['messages'][-1]['content'])
+        calls.append(data)
+        text = json.dumps({'classification':'REPRODUCED', 'reason':'a later answer would affirm this',
+            'evidence_refs':data['available_refs'] if len(calls)>1 else [{'path':'unknown','content_hash':'bad','start_line':1,'end_line':1}],
+            'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':len(calls)>1})
+        return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':text}}]})
+    verifier.gateway = gateway(handler)
+    verdict = asyncio.run(verifier.evaluate(contract,candidate,(execution,),facts.context()))
+    assert verdict.classification is None and len(calls) == 1
 
 
 def test_invalid_verdict_citations_stop_after_three_accounted_calls(tmp_path,projects,facts):

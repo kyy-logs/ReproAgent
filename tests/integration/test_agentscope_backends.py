@@ -32,7 +32,9 @@ def test_four_real_backend_combinations_share_validation_and_independent_replay(
     fixed=projects.fixed(tmp_path/'fixed-hidden')
     result=asyncio.run(controller.run(request,ctx,FixValidationRequest(fixed,sys.executable)))
     assert result.status.value=='DONE' and result.evidence_level.value=='DIFFERENTIAL_VALIDATED', result
-    assert calls==['contract','action','action','verdict','action','verdict']
+    # One decision writes the candidate; the Controller then runs and submits it
+    # itself, so the two verdicts are the only further model calls.
+    assert calls==['contract','action','verdict','verdict']
     assert ctx.budget.steps_used==3 and str(fixed) not in json.dumps(script.messages)
     root=request.output_dir/'artifacts/reproduction'
     report=json.loads((root/'report.json').read_text(encoding='utf-8'))

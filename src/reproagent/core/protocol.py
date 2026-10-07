@@ -5,8 +5,27 @@ class ModelProtocolError(Exception):
     """The model failed bounded correction of a structured response."""
 
 
+# Fixed classes for an unusable provider response; only these enter events, and none
+# of them carries provider text. Truncation, an explicit filter/abort and an oversized
+# body cannot be corrected by repeating the same request; a complete but structurally
+# wrong JSON object can, within the correction limit.
+MODEL_OUTPUT_CODES = frozenset({'OUTPUT_TRUNCATED', 'OUTPUT_FILTERED', 'EMPTY_OUTPUT',
+                                'RESPONSE_TOO_LARGE', 'INVALID_PROTOCOL'})
+
+
 class ModelOutputError(ValueError):
-    """Provider returned invalid output, distinct from invalid caller configuration."""
+    """Provider returned invalid output, distinct from invalid caller configuration.
+
+    ``code`` names the failure class and ``retryable`` says whether repeating the
+    same logical request can still help. The class stays a ``ValueError`` so that
+    existing ``except ValueError`` paths keep catching it.
+    """
+    def __init__(self, message, code='INVALID_PROTOCOL', retryable=True):
+        if code not in MODEL_OUTPUT_CODES:
+            raise ValueError(f'unknown model output code: {code}')
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
 
 
 def object_schema(properties):

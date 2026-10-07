@@ -10,8 +10,30 @@ from .protocol import ModelOutputError, ModelProtocolError, contract_schema, obj
 from .budget import BudgetStopped
 
 
+PROTOCOL_ERROR_CODES = frozenset({'INVALID_ACTION_RESPONSE'})
+
+
+class ActionProtocolError(ValueError):
+    """No usable action within the bounded correction attempts; only a fixed code is recorded."""
+    def __init__(self, code, message):
+        if code not in PROTOCOL_ERROR_CODES:
+            raise ValueError(f'unknown protocol error code: {code}')
+        super().__init__(message)
+        self.code = code
+
+
 def prompt(name):
     return files('reproagent').joinpath('prompts/' + name + '.md').read_text(encoding='utf-8')
+
+
+def require_correctable_output(error):
+    """A truncation, filter or oversized body cannot be corrected by asking again.
+
+    Repeating it would only spend another billed attempt on the same request, so the
+    logical call ends here and only the fixed code is reported.
+    """
+    if not error.retryable:
+        raise ModelProtocolError(f'{error.code}: repeating the same request cannot correct it') from None
 
 
 class ReproAgent:
@@ -30,6 +52,7 @@ class ReproAgent:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt('analyze_issue')},
                     {'role':'user','content':canonical_bytes(data).decode()}), 'contract'), self.context)
             except ModelOutputError as exc:
+                require_correctable_output(exc)
                 error = str(exc)
             else:
                 try:
@@ -78,6 +101,10 @@ class ReproAgent:
                 raise BudgetStopped('CANCELLED')
             remaining = self.context.budget.limits.agent_steps - self.context.budget.steps_used
             allowed = [name for name in SCHEMAS if context.project.candidates or name not in ('run_candidate', 'submit_candidate')]
+            # The Controller's deterministic policy narrows this further; an empty
+            # tuple means it left the whole schema to the Explorer.
+            if context.allowed_actions:
+                allowed = [name for name in allowed if name in context.allowed_actions]
             # Reserve first write/run/submit plus one possible correction. This
             # does not invent an expectation when authoritative facts are missing.
             if remaining <= 4 and context.contract.expected and not context.contract.missing_information:
@@ -92,12 +119,17 @@ class ReproAgent:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt('explore')},
                     {'role':'user','content':self._action_payload(data)}), 'action'), self.context)
             except ModelOutputError as exc:
+                require_correctable_output(exc)
                 error = str(exc)
             else:
                 try:
                     action = validate_action(parse_json(response.text))
                     if action.name not in allowed:
                         raise ValueError('choose an allowed action; reserve the remaining budget for writing, executing and submitting a candidate, or explain missing facts')
+                    if action in context.blocked_actions:
+                        # Only the exact arguments are refused: another file, range or
+                        # candidate stays a legitimate attempt.
+                        raise ValueError('this action with these arguments already produced the same result twice; change the arguments or choose a different action')
                     if action.name == 'write_candidate' and any(not f['path'].startswith(parent + '/') for f in action.parameters['files']):
                         raise ValueError(f'all candidate paths must start with {parent}/; for example {parent}/test_repro.py')
                 except ValueError as exc:
@@ -105,7 +137,7 @@ class ReproAgent:
                 else:
                     return action
             data['protocol_error'] = error[:512] + '; return exactly ONE complete JSON object, no DSML, XML, prose or additional actions'
-        raise ValueError('action response invalid after 3 attempts: ' + error[:512])
+        raise ActionProtocolError('INVALID_ACTION_RESPONSE', 'action response invalid after 3 attempts: ' + error[:512])
 
     def _action_payload(self, data):
         cap = self.context.budget.limits.tool_response_bytes

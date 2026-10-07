@@ -2,16 +2,17 @@ import asyncio
 from dataclasses import asdict
 
 from tests.unit.test_swt_prepare import binding_fixture
+from tests.unit.test_swt_provenance import tool_root
 
 
-def inputs(tmp_path,projects):
+def inputs(tmp_path,projects,count=2):
     from evals.swt_bench.io import seal
     row,binding=binding_fixture(tmp_path,projects)
-    second={**row,'instance_id':'fixture__repo-2'}
-    catalog=seal({'source':{'harness_commit':'a'*40},'entries':[row,second]},'catalog_hash')
+    entries=[{**row,'instance_id':f'fixture__repo-{index}'} for index in range(1,count+1)]
+    catalog=seal({'source':{'harness_commit':'a'*40},'entries':entries},'catalog_hash')
     manifest=seal({'catalog_hash':catalog['catalog_hash'],'source':catalog['source'],
-        'cases':[{key:entry[key] for key in ('instance_id','repo','base_commit','description_hash')} for entry in (row,second)]},'manifest_hash')
-    return catalog,manifest,{row['instance_id']:binding}
+        'cases':[{key:entry[key] for key in ('instance_id','repo','base_commit','description_hash')} for entry in entries]},'manifest_hash')
+    return catalog,manifest,{entries[0]['instance_id']:binding}
 
 
 def test_batch_preserves_missing_binding_and_failed_agent_as_predictions(tmp_path,projects):
@@ -60,3 +61,45 @@ def test_round_output_inside_target_is_rejected_before_writing(tmp_path,projects
     destination=tmp_path/'buggy'/'evaluation-output'
     with pytest.raises(ValueError): asyncio.run(run_batch(catalog,manifest,bindings,ModelConfig(),destination))
     assert not destination.exists()
+
+
+def test_unchanged_tool_source_records_a_comparable_round(tmp_path,projects):
+    from evals.schema import EvalResult
+    from evals.swt_bench.io import read_json
+    from evals.swt_bench.run import run_batch
+    from reproagent.core.models import ModelConfig
+    catalog,manifest,bindings=inputs(tmp_path,projects)
+    async def run_one(case,model,output,**kwargs): return EvalResult(case.case_id,status='EXHAUSTED')
+    result=asyncio.run(run_batch(catalog,manifest,bindings,ModelConfig(),tmp_path/'batch',run_one=run_one,
+        tool_root=tool_root(tmp_path)))
+    assert result['source_comparison_status']=='verified'
+    assert result['outcomes']['fixture__repo-1']['status']=='EXHAUSTED'
+    assert read_json(tmp_path/'batch'/'round.json')['source_comparison_status']=='verified'
+    assert 'src/reproagent/prompts/explore.md' in result['tool_source']['files']
+
+
+def test_source_change_invalidates_round_and_stops_later_model_calls(tmp_path,projects):
+    from evals.schema import EvalResult
+    from evals.swt_bench.io import read_json
+    from evals.swt_bench.run import run_batch
+    from reproagent.core.models import ModelConfig
+    root=tool_root(tmp_path)
+    catalog,manifest,bindings=inputs(tmp_path,projects,count=20)
+    identities=[case['instance_id'] for case in manifest['cases']]
+    first_binding=bindings[identities[0]]
+    bindings={identity:{**first_binding,'instance_id':identity} for identity in identities}
+    model_calls=[]
+    async def run_one(case,model,output,**kwargs):
+        model_calls.append(case.case_id)
+        if len(model_calls)==1:
+            (root/'src/reproagent/prompts/explore.md').write_text('parallel edit during the round\n',encoding='utf-8')
+        return EvalResult(case.case_id,status='EXHAUSTED')
+    result=asyncio.run(run_batch(catalog,manifest,bindings,ModelConfig(),tmp_path/'batch',run_one=run_one,tool_root=root))
+    assert model_calls==[identities[0]]
+    assert len(result['outcomes'])==20 and result['source_comparison_status']=='changed'
+    assert all(outcome['status'] in ('EXHAUSTED','SOURCE_CHANGED') for outcome in result['outcomes'].values())
+    assert result['outcomes'][identities[1]]['status']=='SOURCE_CHANGED'
+    assert result['outcomes'][identities[1]]['stop_reason']=='TOOL_SOURCE_CHANGED'
+    assert read_json(tmp_path/'batch'/'round.json')['source_comparison_status']=='changed'
+    assert read_json(tmp_path/'batch'/'summary.json')['all_tasks']==20
+    assert len((tmp_path/'batch'/'predictions.jsonl').read_text().splitlines())==20

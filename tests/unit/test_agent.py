@@ -69,3 +69,42 @@ def test_agent_has_no_fixed_repo_context(tmp_path, projects, facts):
     action = asyncio.run(a.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot))))
     assert action.name == 'search_code'
     assert 'fixed_repo' not in json.dumps(model.messages) and 'fixed-python' not in json.dumps(model.messages)
+
+
+def test_a_blocked_action_blocks_only_its_own_arguments(tmp_path, projects, facts):
+    """The Controller removes one parameter combination, never a whole action."""
+    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
+    from reproagent.core.models import AgentAction, ProjectView
+    blocked = AgentAction('read_file', {'path':'example/parser.py', 'start':1, 'end':2})
+    def context():
+        return AgentContext(IssueContract('c'), ProjectView(snapshot), allowed_actions=('read_file',), blocked_actions=(blocked,))
+    # Another legitimate file, and another range of the same file, stay readable.
+    for parameters in ({'path':'example/other.py','start':1,'end':2}, {'path':'example/parser.py','start':2,'end':3}):
+        a, _, _ = agent({'name':'read_file','parameters':parameters}, facts)
+        assert asyncio.run(a.next_action(context())) == AgentAction('read_file', parameters)
+    # The identical arguments are refused, and every correction attempt is accounted for.
+    a, _, ctx = agent({'name':'read_file','parameters':dict(blocked.parameters)}, facts)
+    with pytest.raises(ValueError): asyncio.run(a.next_action(context()))
+    assert ctx.budget.steps_used == 3
+
+
+def test_a_nonempty_allowed_set_is_intersected_with_the_schema(tmp_path, projects, facts):
+    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
+    from reproagent.core.models import ProjectView
+    a, model, _ = agent({'name':'search_code','parameters':{'query':'parse','scope':'snapshot'}}, facts)
+    action = asyncio.run(a.next_action(AgentContext(IssueContract('c'), ProjectView(snapshot),
+        allowed_actions=('search_code','run_candidate'))))
+    assert action.name == 'search_code'
+    # run_candidate is not offered at all: no candidate exists, so the Controller's set
+    # is intersected with the schema the agent already enforces.
+    assert json.loads(model.messages[-1]['content'])['allowed_actions'] == ['search_code']
+
+
+def test_an_action_outside_the_allowed_set_is_refused(tmp_path, projects, facts):
+    _, _, _, snapshot, _, _ = setup_runner(tmp_path, projects, facts)
+    from reproagent.core.models import ProjectView
+    a, _, ctx = agent({'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}}, facts)
+    with pytest.raises(ValueError):
+        asyncio.run(a.next_action(AgentContext(IssueContract('c', expected='return []'), ProjectView(snapshot),
+            allowed_actions=('search_code',))))
+    assert ctx.budget.steps_used == 3

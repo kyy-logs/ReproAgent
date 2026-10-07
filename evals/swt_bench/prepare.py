@@ -12,6 +12,44 @@ from reproagent.store import safe_child
 from reproagent.workspace import inventory,EXCLUDED_NAMES
 from ..schema import EvalCase
 
+#: A prepared environment is handed to a subprocess from this allow-list only, so a
+#: secret the operator exported in their shell is never inherited by a target run.
+ENVIRONMENT_KEYS = ('SYSTEMROOT','WINDIR','PATH','PATHEXT','TEMP','TMP','HOME','USERPROFILE','LANG')
+
+
+def isolated_environment(root,source_roots,**extra):
+    """The environment for a subprocess that runs inside ``root``.
+
+    Built from scratch rather than copied: an inherited variable would otherwise
+    reach every interpreter this module starts.
+    """
+    environment={key:value for key,value in os.environ.items() if key.upper() in ENVIRONMENT_KEYS}
+    environment.update(PYTHONIOENCODING='utf-8',
+        PYTHONPATH=os.pathsep.join(str(root if relative=='.' else safe_child(root,relative)) for relative in source_roots),
+        PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',PYTEST_ADDOPTS='')
+    environment.update(extra)
+    return environment
+
+
+def load_bindings(path):
+    """Load a bindings file with every path made absolute against that file.
+
+    Repositories stay ordinary resolved paths; an interpreter keeps its own form
+    (see ``absolute_python``), because resolving a venv link would run the base
+    interpreter without that venv's packages.
+    """
+    from .io import read_json
+    path=Path(path).resolve(); raw=read_json(path)
+    bindings={}
+    for identity,binding in raw.items():
+        binding=dict(binding)
+        for key in ('buggy_repo','fixed_repo'):
+            if key in binding: binding[key]=str((path.parent/binding[key]).resolve())
+        for key in ('buggy_python','fixed_python'):
+            if key in binding: binding[key]=absolute_python(path.parent/binding[key])
+        bindings[identity]=binding
+    return bindings
+
 
 def source_hash(repo):
     return canonical_hash({path:bytes_hash(data) for path,data in inventory(Path(repo)).items()})
@@ -71,9 +109,7 @@ def preflight(case):
         for role,repo,python,expected in [('buggy',case.buggy_repo,case.buggy_python,case.buggy_source_hash),
                                         ('fixed',case.fixed_repo,case.fixed_python,case.fixed_source_hash)]:
             if source_hash(repo)!=expected: raise ValueError('source changed before preflight')
-            environment={key:value for key,value in os.environ.items() if key.upper() in ('SYSTEMROOT','WINDIR','PATH','PATHEXT','TEMP','TMP','HOME','USERPROFILE','LANG')}
-            environment.update(PYTHONIOENCODING='utf-8',PYTHONPATH=os.pathsep.join(str(repo if root=='.' else safe_child(repo,root)) for root in case.source_roots),
-                PYTEST_DISABLE_PLUGIN_AUTOLOAD='1',PYTEST_ADDOPTS='')
+            environment=isolated_environment(repo,case.source_roots)
             code=('import importlib,json,sys,pytest; from pathlib import Path; '
                 'origins={name:str(Path(importlib.import_module(name).__file__).resolve()) for name in json.loads(sys.argv[1])}; '
                 'assert all(Path(path).is_relative_to(Path.cwd()) for path in origins.values()); '

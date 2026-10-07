@@ -4,7 +4,6 @@ import json
 import sys
 from pathlib import Path
 
-from reproagent.adapters.languages.python_pytest.adapter import absolute_python
 from reproagent.core.models import BudgetLimits,ModelConfig
 from .io import read_json,write_json,fresh_dir
 
@@ -24,6 +23,8 @@ def main(argv=None):
     reports=commands.add_parser('import-reports'); reports.add_argument('--round',required=True); reports.add_argument('--reports',required=True); reports.add_argument('--receipt')
     official=commands.add_parser('official-run'); official.add_argument('--round',required=True); official.add_argument('--harness',required=True); official.add_argument('--python'); official.add_argument('--snapshot',required=True)
     summarize=commands.add_parser('summarize'); summarize.add_argument('--round',required=True)
+    control=commands.add_parser('control'); control.add_argument('--snapshot',required=True); control.add_argument('--manifest',required=True)
+    control.add_argument('--bindings',required=True); control.add_argument('--output',required=True)
     args=parser.parse_args(argv)
     try:
         if args.command=='fetch':
@@ -35,17 +36,8 @@ def main(argv=None):
             output=fresh_dir(args.output); write_json(output/'catalog.json',catalog); write_json(output/'dev20.json',manifest)
             print(json.dumps({'total':catalog['total_rows'],'eligible':len(catalog['entries']),'selected':len(manifest['cases'])}))
         elif args.command in ('run','preflight'):
-            bindings_path=Path(args.bindings).resolve(); raw=read_json(bindings_path)
-            bindings={}
-            for identity,binding in raw.items():
-                binding=dict(binding)
-                for key in ('buggy_repo','fixed_repo'):
-                    if key in binding: binding[key]=str((bindings_path.parent/binding[key]).resolve())
-                for key in ('buggy_python','fixed_python'):
-                    # Absolute relative to this file, but never link-resolved: a
-                    # prepared venv interpreter must stay inside its own environment.
-                    if key in binding: binding[key]=absolute_python(bindings_path.parent/binding[key])
-                bindings[identity]=binding
+            from .prepare import load_bindings
+            bindings_path=Path(args.bindings).resolve(); bindings=load_bindings(bindings_path)
             if args.command=='preflight':
                 from .prepare import inspect_bindings,overlap
                 output=Path(args.output).resolve()
@@ -66,6 +58,9 @@ def main(argv=None):
         elif args.command=='import-reports':
             from .results import import_reports,summarize_round
             print(json.dumps(summarize_round(import_reports(args.round,args.reports,read_json(args.receipt) if args.receipt else None))))
+        elif args.command=='control':
+            from .control import run_controls
+            print(json.dumps(run_controls(args.snapshot,args.manifest,args.bindings,args.output)))
         elif args.command=='official-run':
             from .official import run_official
             run_official(args.round,args.harness,args.python,args.snapshot)

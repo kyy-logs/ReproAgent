@@ -40,6 +40,13 @@ class EvidenceLevel(StrEnum):
     DIFFERENTIAL_VALIDATED = "DIFFERENTIAL_VALIDATED"
 
 
+# Closed vocabulary for the fixed-version check. No value claims more than was observed:
+# "passed" means the same candidate passed on the fixed version, "failed" that it did not,
+# "blocked" that the fixed version could not be prepared, and "not_provided" that no
+# differential check was requested or reached.
+FIX_VALIDATION_STATUSES = frozenset({"not_provided", "passed", "failed", "blocked"})
+
+
 @dataclass(frozen=True, slots=True)
 class BudgetLimits:
     agent_steps: int = 20
@@ -81,12 +88,15 @@ class ModelConfig:
     output_limit_field: str = "max_completion_tokens"
     input_cost_per_million: float | None = None
     output_cost_per_million: float | None = None
+    thinking_mode: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.max_output_tokens, int) or isinstance(self.max_output_tokens, bool) or self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be a positive integer")
         if self.output_limit_field not in ("max_completion_tokens", "max_tokens"):
             raise ValueError("unsupported output_limit_field")
+        if self.thinking_mode not in (None, "enabled", "disabled"):
+            raise ValueError("thinking_mode must be one of None, enabled, disabled")
 
 
 @dataclass(frozen=True, slots=True)
@@ -350,7 +360,13 @@ class ToolResult:
 class ModelRequest:
     messages: tuple[dict[str, str], ...]
     response_kind: str = "action"
-    max_output_tokens: int = 4096
+    max_output_tokens: int | None = None
+
+    def __post_init__(self):
+        if self.max_output_tokens is None:
+            return
+        if isinstance(self.max_output_tokens, bool) or not isinstance(self.max_output_tokens, int) or self.max_output_tokens <= 0:
+            raise ValueError("max_output_tokens must be None or a positive integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -389,6 +405,8 @@ class AgentContext:
     project: ProjectView
     history: tuple[dict[str, Any], ...] = ()
     feedback: str = ""
+    allowed_actions: tuple[str, ...] = ()
+    blocked_actions: tuple[AgentAction, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,6 +434,15 @@ class TaskResult:
     export_state: str = "pending"
     uncertainties: tuple[str, ...] = ()
     duration: float = 0
+    # Whether an explicitly supplied fixed version was checked against the same candidate.
+    # A repeated observation of the original failure and a differential success are separate
+    # claims, so this stays its own field next to the evidence level. Records written before
+    # it existed load with the default.
+    fix_validation_status: str = "not_provided"
+
+    def __post_init__(self):
+        if self.fix_validation_status not in FIX_VALIDATION_STATUSES:
+            raise ValueError(f"unsupported fix_validation_status: {self.fix_validation_status}")
 
 
 @dataclass(frozen=True, slots=True)

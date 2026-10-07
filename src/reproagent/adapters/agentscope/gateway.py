@@ -6,7 +6,8 @@ import time
 import httpx
 
 from .dependency import require_agentscope
-from ..models.provider import bounded
+from ..models.options import resolve_model_options
+from ..models.provider import attempt_payload, bounded, classify_output
 from ...core.budget import BudgetStopped
 from ...core.models import ModelResponse
 from ...core.protocol import ModelOutputError
@@ -26,7 +27,9 @@ class LimitedResponseStream(httpx.AsyncByteStream):
                 raise BudgetStopped('CANCELLED')
             size += len(chunk)
             if size > 1048576:
-                raise ModelOutputError('provider response exceeds protocol limit')
+                # This is the path a real HTTP response takes, so it has to classify the
+                # size failure identically to the post-read check below.
+                raise ModelOutputError('provider response exceeds protocol limit', 'RESPONSE_TOO_LARGE', False)
             yield chunk
 
     async def aclose(self):
@@ -60,6 +63,8 @@ class AgentScopeModelGateway:
         if not key and self.transport is None:
             raise ValueError('API key environment variable is missing')
         started = time.monotonic()
+        options = resolve_model_options(self.config, request)
+        effective_limit = options.output_limit
         class TextFormatter(OpenAIChatFormatter):
             async def format(self, messages):
                 encoded = await super().format(messages)
@@ -73,27 +78,30 @@ class AgentScopeModelGateway:
         messages = [Msg(name=message['role'], role=message['role'], content=[TextBlock(text=message['content'])]) for message in request.messages]
         for attempt in range(3):
             context.budget.check()
-            observed = {'usage':{}, 'error':'', 'finish_reason':''}
+            observed = {'usage':{}, 'error':None, 'outcome':'unknown', 'finish_reason':'', 'content_bytes':0}
             reservation = context.budget.reserve_cost(None)
             cost = None
             async def observe(response):
                 # The SDK erases the provider's finish_reason during conversion.
                 # Inspect it before conversion, without saving response bodies.
                 if response.headers.get('content-encoding', 'identity').strip().lower() != 'identity':
-                    observed['error'] = 'unsupported provider content encoding; identity is required'
+                    # This client always asks for identity, so asking again changes nothing.
+                    observed['error'] = ModelOutputError('unsupported provider content encoding; identity is required', 'INVALID_PROTOCOL', False)
+                    observed['outcome'] = observed['error'].code
                     await response.aclose()
-                    raise ModelOutputError(observed['error'])
+                    raise observed['error']
                 if not response.is_stream_consumed:
                     response.stream = LimitedResponseStream(response.stream, context)
                 try:
                     await response.aread()
-                except ModelOutputError:
-                    observed['error'] = 'provider response exceeds protocol limit'
+                except ModelOutputError as error:
+                    observed['error'], observed['outcome'] = error, error.code
                     await response.aclose()
                     raise
                 if len(response.content) > 1048576:
-                    observed['error'] = 'provider response exceeds protocol limit'
-                    raise ModelOutputError(observed['error'])
+                    observed['error'] = ModelOutputError('provider response exceeds protocol limit', 'RESPONSE_TOO_LARGE', False)
+                    observed['outcome'] = observed['error'].code
+                    raise observed['error']
                 if response.status_code >= 400:
                     return
                 try:
@@ -103,13 +111,24 @@ class AgentScopeModelGateway:
                         raise ValueError('invalid provider usage')
                     observed['usage'] = {k:usage[k] for k in ('prompt_tokens','completion_tokens','total_tokens') if k in usage}
                     choice = data['choices'][0]
+                    message = choice['message']
+                    if not isinstance(message, dict):
+                        raise ValueError('invalid provider response structure')
                     observed['finish_reason'] = choice.get('finish_reason', '')
-                    text = choice['message']['content']
-                    if choice.get('finish_reason') != 'stop' or not isinstance(text, str) or not text or choice['message'].get('tool_calls'):
-                        raise ValueError('truncated, empty or incompatible provider response')
+                    text = message.get('content')
+                    observed['content_bytes'] = len(text.encode('utf-8')) if isinstance(text, str) else 0
+                    failure = classify_output(observed['finish_reason'], text, bool(message.get('tool_calls')))
+                    if failure is not None:
+                        observed['error'] = failure
+                        observed['outcome'] = failure.code
+                        raise failure
+                    observed['outcome'] = 'completed'
+                except ModelOutputError:
+                    raise
                 except (ValueError, KeyError, IndexError, TypeError):
-                    observed['error'] = 'invalid, truncated or incompatible provider response'
-                    raise ModelOutputError(observed['error']) from None
+                    observed['error'] = ModelOutputError('invalid, truncated or incompatible provider response')
+                    observed['outcome'] = observed['error'].code
+                    raise observed['error'] from None
 
             try:
                 async with httpx.AsyncClient(transport=self.transport,
@@ -119,38 +138,43 @@ class AgentScopeModelGateway:
                     sdk = OpenAIChatModel(
                         credential=OpenAICredential(api_key=key or 'offline-test', base_url=self.config.base_url),
                         model=self.config.model, stream=False, max_retries=0,
-                        formatter=TextFormatter(),
+                        formatter=TextFormatter(), extra_body=options.extra_body or None,
                         client_kwargs={'http_client':client, 'max_retries':0})
                     try:
                         result = await bounded(sdk(messages, response_format={'type':'json_object'},
-                            **{self.config.output_limit_field:min(request.max_output_tokens, self.config.max_output_tokens)}), context)
+                            **{self.config.output_limit_field:effective_limit}), context)
                     except (asyncio.CancelledError, BudgetStopped):
                         raise
                     except Exception as error:
-                        if observed['error']:
-                            raise ModelOutputError(observed['error']) from None
+                        if observed['error'] is not None:
+                            raise observed['error'] from None
                         if isinstance(error, openai.APIStatusError):
+                            observed['outcome'] = 'http_error'
                             status = error.status_code
                             if status in (408,429,500,502,503,504) and attempt < 2:
                                 await bounded(asyncio.sleep(0.1*(attempt+1)), context)
                                 continue
                             raise RuntimeError(f'provider HTTP {status}') from None
                         if isinstance(error, openai.APIConnectionError):
+                            observed['outcome'] = 'network_error'
                             if attempt < 2:
                                 await bounded(asyncio.sleep(0.1*(attempt+1)), context)
                                 continue
                             raise RuntimeError('provider network failure after 3 attempts') from None
+                        observed['outcome'] = 'INVALID_PROTOCOL'
                         raise ModelOutputError('incompatible AgentScope provider response') from None
                     context.budget.check()
                     if context.cancel_event.is_set() or str(result.finished_reason) == 'interrupted':
                         raise BudgetStopped('CANCELLED')
-                    if observed['error']:
-                        raise ModelOutputError(observed['error'])
+                    if observed['error'] is not None:
+                        raise observed['error']
                     if not result.is_last or observed['finish_reason'] != 'stop' or any(not isinstance(block, (TextBlock, ThinkingBlock)) for block in result.content):
-                        raise ModelOutputError('incomplete or non-text AgentScope response')
+                        observed['outcome'] = 'OUTPUT_FILTERED'
+                        raise ModelOutputError('incomplete or non-text AgentScope response', 'OUTPUT_FILTERED', False)
                     text = ''.join(block.text for block in result.content if isinstance(block, TextBlock))
                     if not text:
-                        raise ModelOutputError('empty AgentScope response')
+                        observed['outcome'] = 'EMPTY_OUTPUT'
+                        raise ModelOutputError('empty AgentScope response', 'EMPTY_OUTPUT')
                     usage = observed['usage']
                     if all(k in usage for k in ('prompt_tokens','completion_tokens')) and self.config.input_cost_per_million is not None and self.config.output_cost_per_million is not None:
                         cost = (usage['prompt_tokens']*self.config.input_cost_per_million+usage['completion_tokens']*self.config.output_cost_per_million)/1000000
@@ -162,6 +186,9 @@ class AgentScopeModelGateway:
                     cost = (usage['prompt_tokens']*self.config.input_cost_per_million+usage['completion_tokens']*self.config.output_cost_per_million)/1000000
                 context.budget.settle_cost(reservation, cost)
                 if self.attempt_store:
-                    self.attempt_store.append_event('model.attempt', (), {'attempt':attempt+1, 'backend':'agentscope',
-                        'usage':usage, 'cost_kind':'estimated' if cost is not None else 'unknown', 'cost_value':cost})
+                    self.attempt_store.append_event('model.attempt', (), attempt_payload(attempt + 1, usage,
+                        'estimated' if cost is not None else 'unknown', cost, outcome=observed['outcome'],
+                        response_kind=request.response_kind,
+                        effective_output_limit=effective_limit, finish_reason=observed['finish_reason'],
+                        content_bytes=observed['content_bytes'], backend='agentscope'))
         raise RuntimeError('provider produced no response')

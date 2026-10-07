@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 
 from reproagent.core.models import EnvironmentSnapshot, ExecutionSpec, FrameworkChecks, LanguageInspection
+from reproagent.paths import workspace_path
 from reproagent.store import safe_child
 from .collector import read_probe
 
@@ -17,6 +18,8 @@ def absolute_python(path):
     Resolving would replace a venv's interpreter with the base interpreter it
     links to, losing that venv's site-packages; commands run with cwd set to the
     run copy, so a relative path would otherwise resolve against the wrong root.
+    An interpreter path never passes through ``workspace_path`` either: the venv
+    identity is the point, so it is only made absolute.
     """
     return os.path.abspath(path)
 
@@ -32,7 +35,8 @@ class PythonPytestAdapter:
             if path != '.':
                 safe_child(project.snapshot.root, path)
         safe_child(project.snapshot.root, config.candidate_parent)
-        probe = ExecutionSpec('inspect-' + uuid.uuid4().hex, (python, '-c', 'import pytest; print(pytest.__version__)'), project.snapshot.root)
+        probe = ExecutionSpec('inspect-' + uuid.uuid4().hex, (python, '-c', 'import pytest; print(pytest.__version__)'),
+                              workspace_path(project.snapshot.root))
         return LanguageInspection(config, (probe,))
 
     def describe_environment(self, inspection, probes):
@@ -52,10 +56,13 @@ class PythonPytestAdapter:
         if any(not entry.path.startswith(parent) for entry in candidate.files if entry.role == 'test'):
             raise ValueError('candidate tests must inherit configured conftest location')
         probe = Path(__file__).parent / 'probe'
-        roots = [str(run.root if root == '.' else safe_child(run.root, root)) for root in environment.source_roots]
-        path = run.root.parent / 'probe.jsonl'
+        root = workspace_path(run.root)
+        # A deep source root is a workspace path the child has to import through,
+        # so it carries the same representation as the run copy it belongs to.
+        roots = [str(root if source == '.' else safe_child(root, source)) for source in environment.source_roots]
+        path = workspace_path(root.parent / 'probe.jsonl')
         return ExecutionSpec('spec-' + uuid.uuid4().hex,
-            (environment.python, '-m', 'pytest', *environment.pytest_args, '-p', 'reproagent_pytest_probe', *candidate.selectors), run.root,
+            (environment.python, '-m', 'pytest', *environment.pytest_args, '-p', 'reproagent_pytest_probe', *candidate.selectors), root,
             run.run_id, run.snapshot_id, candidate.candidate_id, candidate.manifest_hash, candidate.contract_id, candidate.contract_version,
             env_overrides={'PYTHONPATH': os.pathsep.join([str(probe), *roots]), 'PYTEST_ADDOPTS': '', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1',
                 'REPROAGENT_RUN_ID': run.run_id, 'REPROAGENT_PROBE_PATH': str(path), 'REPROAGENT_TARGET_MODULES': json.dumps(environment.target_modules),
