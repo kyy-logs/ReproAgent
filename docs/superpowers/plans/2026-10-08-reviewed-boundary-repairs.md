@@ -30,23 +30,23 @@
 
 **Interface:** AgentContext 追加 `issue: IssueDescription|None=None`。Controller 把原始 issue_text/issue_hash 传入所有阶段；runtime 将 issue 的 text/content_hash 序列化到阶段输入，重新验证哈希，脱敏已知 API key，整段计入容量。
 
-- [ ] 外部 Issue 独特事实在分析和探索 wire 都存在；返回/抛出事实不会因契约摘要而消失；已知密钥不进入探索 wire 或 SDK history。
-- [ ] 哈希不匹配或整体超限零探索 HTTP；原有旧调用兼容；写测试并运行 RED。
-- [ ] 实现最小变化，运行相关 SDK/Controller 回归 GREEN；提交 `fix: preserve original issue facts in SDK exploration`。
+- [x] 外部 Issue 独特事实在分析和探索 wire 都存在；返回/抛出事实不会因契约摘要而消失；已知密钥不进入探索 wire 或 SDK history。
+- [x] 哈希不匹配或整体超限零探索 HTTP；原有旧调用兼容；写测试并运行 RED。
+- [x] 实现最小变化，运行相关 SDK/Controller 回归 GREEN；提交 `fix: preserve original issue facts in SDK exploration`。
 
 ### Task 2: 导出器的实际子路径访问
 
 **Files:** exporter.py、tests/integration/test_windows_long_paths.py。
 
-- [ ] 任务根 208/209 字符，先用 atomic_write 写存在的长路径预检日志；导出诊断包并校验日志哈希和 manifest，运行 RED。
-- [ ] 所有 glob/rglob 结果进入 I/O 前提升路径表示；相对包路径继续通过 relative_name 计算，平台前缀不进入报告。
-- [ ] 跑 Exporter/长路径/报告回归 GREEN；提交 `fix: normalize discovered export file paths before IO`。
+- [x] 任务根 208/209 字符，先用 atomic_write 写存在的长路径预检日志；导出诊断包并校验日志哈希和 manifest，运行 RED。
+- [x] 所有 glob/rglob 结果进入 I/O 前提升路径表示；相对包路径继续通过 relative_name 计算，平台前缀不进入报告。
+- [x] 跑 Exporter/长路径/报告回归 GREEN；提交 `fix: normalize discovered export file paths before IO`。
 
 ### Task 3: 独立 replay 的目录与 cwd 边界
 
 **Files:** resources/replay.py、tests/integration/test_windows_long_paths.py、docs/agentscope.md、README.md、docs/implementation-status.md。
 
-- [ ] 真实导出包在全新原版/修复版目录重跑；输出目录长度 248/259 时 pytest 真执行，原版 1、修复版 0、probe 存在；安装文件父目录在窗口内正常 mkdir，运行 RED。
-- [ ] stdlib 脚本补目录保留长度表示，进程 cwd 超过 OS 限制时具名拒绝且不安装候选、不创建输出；不改变解释器链接身份。
-- [ ] 定点 GREEN、完整离线套件与 pip check；更新限制说明并提交 `fix: handle standalone replay directory boundaries`。
+- [x] 真实导出包在全新原版/修复版目录重跑；输出目录长度 248/259 时 pytest 真执行，原版 1、修复版 0、probe 存在；安装文件父目录在窗口内正常 mkdir，运行 RED。
+- [x] stdlib 脚本补目录保留长度表示，进程 cwd 超过 OS 限制时具名拒绝且不安装候选、不创建输出；不改变解释器链接身份。
+- [x] 定点 GREEN、完整离线套件与 pip check；更新限制说明并提交 `fix: handle standalone replay directory boundaries`。
 - [ ] 全分支独立审查；必要修复再走 RED→GREEN 与完整套件；本地 main 快进合入修复并刷新工具环境。不自动 push，不把离线测试当真实模型能力分数。
