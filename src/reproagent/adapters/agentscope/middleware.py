@@ -171,8 +171,8 @@ class ExplorationMiddleware(MiddlewareBase):
         The six phase tools are still decided by the SDK's own engine, so a configured
         deny rule keeps winning over them; what cannot happen is an answer that parks the
         phase on a confirmation nobody can give, or a tool the phase never registered.
-        Once a grounded contract has only the reserved steps left, the readers are refused
-        too, so a large repository cannot consume the budget the publish needs.
+        Once only the reserved steps are left, the readers are refused too, whatever the
+        contract holds, so a large repository cannot consume the budget the ending needs.
         """
         tool = input_kwargs.get("tool")
         name = getattr(tool, "name", "")
@@ -186,10 +186,8 @@ class ExplorationMiddleware(MiddlewareBase):
             elif self._reserved_for_publishing(name):
                 code = "RESERVED_FOR_PUBLISHING"
                 decision = PermissionDecision(
-                    behavior=PermissionBehavior.DENY, decision_reason="the last steps are reserved for publishing",
-                    message=(f"{name} is refused: {self.steps_remaining} step(s) remain and publishing needs them."
-                             " Write the candidate from what you already read, or use revise_contract or"
-                             " request_information."))
+                    behavior=PermissionBehavior.DENY, decision_reason="the last steps have to end the phase",
+                    message=self._reserved_message(name))
             else:
                 code = "ALLOWED"
         else:
@@ -201,10 +199,36 @@ class ExplorationMiddleware(MiddlewareBase):
         return decision
 
     def _reserved_for_publishing(self, name) -> bool:
-        """Whether this reader must wait: a grounded contract and only the reserved steps."""
-        contract = self.contract
+        """Whether this reader must wait: only the reserved steps remain to end the phase.
+
+        The reserve is not what the contract decides; it is what stops the SDK's ReAct loop
+        from consuming the whole budget on reading.  An earlier version refused readers only
+        for a grounded contract, on the reasoning that a contract missing facts is grounded
+        by reading them -- but nothing then made that phase end at all.  Five of the seven
+        holdout cases read at zero or one step remaining and produced no phase result, while
+        every case whose contract carried no missing facts turned to publishing instead.
+        """
         return (name in READER_TOOLS and self.steps_remaining <= RESERVED_FOR_PUBLISHING
-                and contract is not None and bool(contract.expected) and not contract.missing_information)
+                and self.contract is not None)
+
+    def _reserved_message(self, name) -> str:
+        """What the reserved steps are for, which depends on what the phase can still do.
+
+        A grounded contract holds everything a candidate needs, so those steps are for
+        publishing it.  A contract that still misses facts cannot be published honestly --
+        and the exploration phase is where those facts are found, which is why it keeps its
+        readers until the reserve -- so its reserved steps are for the two endings that
+        remain: the revision its reading justifies, or the report of what is missing.
+        """
+        contract = self.contract
+        grounded = contract is not None and bool(contract.expected) and not contract.missing_information
+        if grounded:
+            return (f"{name} is refused: {self.steps_remaining} step(s) remain and publishing needs them."
+                    " Write the candidate from what you already read, or use revise_contract or"
+                    " request_information.")
+        return (f"{name} is refused: {self.steps_remaining} step(s) remain and this phase has to end."
+                " Read no further: use revise_contract to cite the evidence you already read, or"
+                " request_information to report what is still missing.")
 
     async def on_compress_context(self, agent, input_kwargs, next_handler):
         """Stop compression at the only point that can: the compression call itself.

@@ -605,8 +605,11 @@ def test_the_last_steps_are_reserved_for_publishing(tmp_path, projects, facts):
     removed that loop and the reserve went with it, so a large repository could spend every
     decision reading -- 20 of 20 in the Sphinx-8801 fixed-point run -- and never publish a
     candidate. A grounded contract now loses its readers for the last steps, which stay
-    open for one publish and its protocol corrections; a contract that still misses facts
-    keeps them, because reading is how those facts are found.
+    open for one publish and its protocol corrections. A contract that still misses facts
+    keeps its readers while there is room, because reading is how those facts are found --
+    but not for the last steps. That phase has to end too, with a revision request or a
+    report of what is missing; reading it to the last step produces no phase result at
+    all, which is what five of the seven holdout cases did at zero or one step remaining.
     """
     env = environment(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=6),
                       answers=[tool_reply("request_information", {"question": "which behaviour is expected"})])
@@ -626,10 +629,25 @@ def test_the_last_steps_are_reserved_for_publishing(tmp_path, projects, facts):
     explore(env)  # one phase, which is where the runtime hands over the contract
     assert middleware.contract is not None
 
+    # Facts still missing: reads stay open while there is room to gather them, because
+    # reading is how a contract is grounded.
+    middleware.contract = contract(missing_information=("which behaviour is expected",))
     leave(4)
     assert check("Read", {"file_path": "a.py"}).behavior is PermissionBehavior.ALLOW
 
+    # The reserved steps end that phase too, and they end it with the revision its reading
+    # justifies or with what is missing -- never with reading until nothing is left.
     leave(3)
+    refused = check("Read", {"file_path": "a.py"})
+    assert refused.behavior is PermissionBehavior.DENY
+    assert "revise_contract" in refused.message and "request_information" in refused.message
+    assert check("write_candidate", write_payload()).behavior is PermissionBehavior.ALLOW
+    assert check("revise_contract", {"source_refs": [], "reason": "new evidence"}).behavior is PermissionBehavior.ALLOW
+    assert check("request_information", {"question": "still missing"}).behavior is PermissionBehavior.ALLOW
+
+    # A grounded contract holds everything a candidate needs, so the same steps are for
+    # publishing it and the refusal says so.
+    middleware.contract = contract()
     for name, tool_input in (("Read", {"file_path": "a.py"}),
                              ("Grep", {"pattern": "def parse"}),
                              ("Glob", {"pattern": "*.py"})):
@@ -638,10 +656,5 @@ def test_the_last_steps_are_reserved_for_publishing(tmp_path, projects, facts):
     assert check("write_candidate", write_payload()).behavior is PermissionBehavior.ALLOW
     assert check("revise_contract", {"source_refs": [], "reason": "new evidence"}).behavior is PermissionBehavior.ALLOW
     assert check("request_information", {"question": "still missing"}).behavior is PermissionBehavior.ALLOW
-
-    # Facts still missing: reads stay open to the very last step.
-    middleware.contract = contract(missing_information=("which behaviour is expected",))
-    leave(1)
-    assert check("Read", {"file_path": "a.py"}).behavior is PermissionBehavior.ALLOW
 
     assert "RESERVED_FOR_PUBLISHING" in [payload["result_code"] for payload in events(env, "exploration.action")]
