@@ -46,6 +46,16 @@ PHASE_PROTOCOL_CODES = ("MULTIPLE_TOOL_CALLS", "UNKNOWN_TOOL", "INVALID_TOOL_INP
 #: How many responses one phase may spend on protocol correction, budget permitting.
 PROTOCOL_ATTEMPTS = 3
 
+#: The tools that only read.  They are the ones a phase can spend its whole budget on: the
+#: SDK's ReAct loop has no reason to stop reading a large repository, and the fixed-point
+#: run spent 20 of 20 decisions on Read/Grep/Glob without ever publishing a candidate.
+READER_TOOLS = ("Read", "Grep", "Glob")
+
+#: Steps kept for publishing and its bounded protocol corrections.  The controller runs,
+#: repeats and submits the candidate itself, so those steps cost no budget of their own.
+#: A contract that still misses facts keeps its readers: reading is how facts are found.
+RESERVED_FOR_PUBLISHING = 3
+
 
 class PhaseEnded(Exception):
     """The phase already has its result, so no further model call may be made.
@@ -96,6 +106,9 @@ class ExplorationMiddleware(MiddlewareBase):
         require_agentscope()
         self.context, self.gate, self.store = context, gate, store
         self.components = component_versions()
+        #: The phase's contract, handed over by the runtime when the phase starts.  Until
+        #: then there is nothing to reserve the last steps for.
+        self.contract = None
 
     @property
     def steps_remaining(self) -> int:
@@ -157,23 +170,40 @@ class ExplorationMiddleware(MiddlewareBase):
         The six phase tools are still decided by the SDK's own engine, so a configured
         deny rule keeps winning over them; what cannot happen is an answer that parks the
         phase on a confirmation nobody can give, or a tool the phase never registered.
+        Once a grounded contract has only the reserved steps left, the readers are refused
+        too, so a large repository cannot consume the budget the publish needs.
         """
         tool = input_kwargs.get("tool")
         name = getattr(tool, "name", "")
+        code = "DENIED"
         if name in TOOL_NAMES:
             decision = await next_handler(**input_kwargs)
             if decision.behavior is not PermissionBehavior.ALLOW:
                 decision = PermissionDecision(
                     behavior=PermissionBehavior.DENY, decision_reason="not allowed in this phase",
                     message=f"{name} was not allowed in this phase; the phase's own checks were not reached")
+            elif self._reserved_for_publishing(name):
+                code = "RESERVED_FOR_PUBLISHING"
+                decision = PermissionDecision(
+                    behavior=PermissionBehavior.DENY, decision_reason="the last steps are reserved for publishing",
+                    message=(f"{name} is refused: {self.steps_remaining} step(s) remain and publishing needs them."
+                             " Write the candidate from what you already read, or use revise_contract or"
+                             " request_information."))
+            else:
+                code = "ALLOWED"
         else:
             decision = PermissionDecision(
                 behavior=PermissionBehavior.DENY, decision_reason="outside the phase tool set",
                 message=f"{name or 'this tool'} is not part of the exploration phase")
-        self.record("exploration.action", action=name if name in TOOL_NAMES else "",
-                    result_code="ALLOWED" if decision.behavior is PermissionBehavior.ALLOW else "DENIED",
+        self.record("exploration.action", action=name if name in TOOL_NAMES else "", result_code=code,
                     arguments_hash=self._arguments_hash(input_kwargs.get("tool_input")))
         return decision
+
+    def _reserved_for_publishing(self, name) -> bool:
+        """Whether this reader must wait: a grounded contract and only the reserved steps."""
+        contract = self.contract
+        return (name in READER_TOOLS and self.steps_remaining <= RESERVED_FOR_PUBLISHING
+                and contract is not None and bool(contract.expected) and not contract.missing_information)
 
     async def on_compress_context(self, agent, input_kwargs, next_handler):
         """Stop compression at the only point that can: the compression call itself.

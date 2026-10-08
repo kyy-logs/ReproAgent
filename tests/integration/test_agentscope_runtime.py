@@ -596,3 +596,52 @@ def test_original_issue_is_kept_when_contract_changes_between_phases(tmp_path, p
     second_input = json.loads(env.requests[-1]['messages'][-1]['content'])
     assert second_input['issue']['text'] == issue.text
     assert second_input['contract']['version'] == 2
+
+
+def test_the_last_steps_are_reserved_for_publishing(tmp_path, projects, facts):
+    """Reads stop when the budget is nearly spent, so the phase can still publish.
+
+    The pre-SDK action loop kept a reserve for writing and submitting; the migration
+    removed that loop and the reserve went with it, so a large repository could spend every
+    decision reading -- 20 of 20 in the Sphinx-8801 fixed-point run -- and never publish a
+    candidate. A grounded contract now loses its readers for the last steps, which stay
+    open for one publish and its protocol corrections; a contract that still misses facts
+    keeps them, because reading is how those facts are found.
+    """
+    env = environment(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=6),
+                      answers=[tool_reply("request_information", {"question": "which behaviour is expected"})])
+    middleware = env.runtime.middleware
+
+    def check(name, tool_input):
+        async def next_handler(**kwargs):
+            return PermissionDecision(behavior=PermissionBehavior.ALLOW, message="")
+
+        return asyncio.run(middleware.on_check_permission(
+            agent=None, input_kwargs={"tool": _Stub(name), "tool_input": tool_input}, next_handler=next_handler))
+
+    def leave(remaining):
+        while env.context.budget.limits.agent_steps - env.context.budget.steps_used > remaining:
+            env.context.budget.take_step()
+
+    explore(env)  # one phase, which is where the runtime hands over the contract
+    assert middleware.contract is not None
+
+    leave(4)
+    assert check("Read", {"file_path": "a.py"}).behavior is PermissionBehavior.ALLOW
+
+    leave(3)
+    for name, tool_input in (("Read", {"file_path": "a.py"}),
+                             ("Grep", {"pattern": "def parse"}),
+                             ("Glob", {"pattern": "*.py"})):
+        refused = check(name, tool_input)
+        assert refused.behavior is PermissionBehavior.DENY and "publish" in refused.message
+    assert check("write_candidate", write_payload()).behavior is PermissionBehavior.ALLOW
+    assert check("revise_contract", {"source_refs": [], "reason": "new evidence"}).behavior is PermissionBehavior.ALLOW
+    assert check("request_information", {"question": "still missing"}).behavior is PermissionBehavior.ALLOW
+
+    # Facts still missing: reads stay open to the very last step.
+    middleware.contract = contract(missing_information=("which behaviour is expected",))
+    leave(1)
+    assert check("Read", {"file_path": "a.py"}).behavior is PermissionBehavior.ALLOW
+
+    assert "RESERVED_FOR_PUBLISHING" in [payload["result_code"] for payload in events(env, "exploration.action")]
