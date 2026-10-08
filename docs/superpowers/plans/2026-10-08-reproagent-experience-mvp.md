@@ -71,7 +71,7 @@ experience.LearningInput(payload: dict, evidence_map: dict[str,EvidenceRef],
     source_task_id: str, event_cutoff: int)                            # frozen envelope
 experience.LearningResult(code: str, experience_id: str = '', duration: float = 0,
     http_attempts: int = 0, usage: dict = {}, known_cost_subtotal: float = 0,
-    unknown_cost_attempts: int = 0)                                   # mutable defaults用factory
+    unknown_cost_attempts: int = 0, event_recorded: bool = True)                                   # mutable defaults用factory
 
 load_experience_snapshot(path: Path, *, secrets: tuple[str,...] = ()) -> ExperienceSnapshot
 append_experience(path: Path, card: ExperienceCard, context: CallContext) -> str

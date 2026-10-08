@@ -535,7 +535,7 @@ class Controller:
                 self.learning_result = await self.experience_service.learn(result, context)
             except Exception:
                 from ..experience import LearningResult
-                self.learning_result = LearningResult("store_error")
+                self.learning_result = LearningResult("store_error", event_recorded=False)
         return result
 
     async def close_explorer(self):

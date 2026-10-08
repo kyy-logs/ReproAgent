@@ -57,6 +57,8 @@ def run_command(args):
         'export_state':result.export_state, 'output_dir':display_path(output)}
     if getattr(controller, 'learning_result', None) is not None:
         summary['learning'] = asdict(controller.learning_result)
+        if not controller.learning_result.event_recorded:
+            print('Learning summary could not be saved; the sealed task result is unchanged.', file=sys.stderr)
     print(json.dumps(summary, ensure_ascii=False))
     return EXIT_CODES[result.status]
 

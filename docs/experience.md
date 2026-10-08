@@ -66,3 +66,5 @@ python -m evals.swt_bench run ... --experience-file path/to/experiences.json
 HTTP/token/费用总计已经包含真实学习尝试一次，learning 分项只用于拆解，不再叠加。缺计价或缺 usage 的费用仍为 unknown。
 
 离线测试验证真实 SDK + MockTransport + pytest 的调用、时序、引用和交付。提高复现率的结论必须来自固定模型/预算/环境、学习集与评测集分离、冻结库的关闭/开启对照；当前未执行真实模型 A/B。
+
+CLI learning.event_recorded=false 表示学习汇总事件未保存；已收集的 HTTP、token、费用和经验 ID 仍保留在内存返回结果中，stderr 提示保存失败，主退出码保持原值。过深或损坏的库 JSON 按 store_error 关闭本任务的经验功能，不停止主复现，也不覆盖旧库。

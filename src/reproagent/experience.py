@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import re
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from .core.budget import BudgetStopped
@@ -48,6 +48,7 @@ class LearningResult:
     usage: dict = field(default_factory=dict)
     known_cost_subtotal: float = 0
     unknown_cost_attempts: int = 0
+    event_recorded: bool = True
 
 
 def _normalized(text):
@@ -104,7 +105,10 @@ def _read_library(path):
         return b"", ()
     if len(content) > LIBRARY_BYTES:
         raise ValueError("experience library exceeds byte limit")
-    root = parse_json(content.decode("utf-8"))
+    try:
+        root = parse_json(content.decode("utf-8"))
+    except RecursionError as exc:
+        raise ValueError("invalid experience library nesting") from exc
     if set(root) != {"schema_version", "items"} or type(root["schema_version"]) is not int or root["schema_version"] != 1 or not isinstance(root["items"], list):
         raise ValueError("invalid experience library schema")
     cards = tuple(_card(item) for item in root["items"])
@@ -531,8 +535,13 @@ class ExperienceService:
                 time.monotonic() - started, len(attempts), usage,
                 sum(item["cost_value"] for item in attempts if item.get("cost_value") is not None),
                 sum(item.get("cost_value") is None for item in attempts))
+        except (OSError, ValueError, TypeError):
+            outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
+                duration=time.monotonic() - started)
+        try:
             self.store.append_event("experience.learning", (), asdict(outcome))
         except (OSError, ValueError, TypeError):
-            outcome = LearningResult(code, duration=time.monotonic() - started)
+            # The accounting and write outcome are known even if their final event cannot be saved.
+            outcome = replace(outcome, event_recorded=False)
         self._learning_result = outcome
         return outcome

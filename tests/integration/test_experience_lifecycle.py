@@ -12,7 +12,7 @@ from tests.unit.test_experience_store import card, library, exp
 from tests.integration.test_agentscope_backends import CANDIDATE, tool_response, text_response
 
 
-def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED"):
+def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED", priced=False):
     request, _, _, ctx = setup(tmp_path, projects, facts)
     path = tmp_path / "shared-experiences.json"
     if seed:
@@ -68,7 +68,8 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
         main_calls.append(kind)
         response = await script.complete(ModelRequest(tuple(payload["messages"]), kind), ctx)
         return text_response(response.text)
-    model = ModelConfig(base_url="https://offline.example/v1", model="offline", output_limit_field="max_tokens")
+    model = ModelConfig(base_url="https://offline.example/v1", model="offline", output_limit_field="max_tokens",
+        input_cost_per_million=100 if priced else None, output_cost_per_million=200 if priced else None)
     controller = create_controller(request, model, transport=httpx.MockTransport(handle))
     holder["controller"] = controller
     if fail_export:
@@ -228,3 +229,37 @@ sys.stdin.readline()
         assert len(calls) == 1 and path.read_bytes() == before
     finally:
         child.communicate(chr(10), timeout=10)
+
+
+@pytest.mark.parametrize("learning,priced", [("empty",False),("valid",True)])
+def test_unrecorded_learning_preserves_collected_usage(tmp_path, projects, facts, monkeypatch, learning, priced):
+    from reproagent.store import TaskStore
+    append = TaskStore.append_event
+    def fail_only_final_summary(self, kind, refs=(), payload=None):
+        if kind == "experience.learning":
+            raise OSError("summary cannot be saved")
+        return append(self, kind, refs, payload)
+    monkeypatch.setattr(TaskStore, "append_event", fail_only_final_summary)
+    request, controller, result, _, _, calls = run_sdk_task(tmp_path, projects, facts, learning=learning, priced=priced)
+    assert result.status == TaskState.DONE and len(calls) == 1
+    events, errors = controller.store.read_events()
+    attempts = [e.payload for e in events if e.kind == "model.attempt" and e.payload.get("response_kind") == "learning"]
+    outcome = controller.learning_result
+    assert outcome.code == ("written" if priced else "empty") and outcome.http_attempts == len(attempts) == 1
+    assert outcome.usage["total_tokens"] == sum(a["usage"]["total_tokens"] for a in attempts) > 0
+    assert outcome.unknown_cost_attempts == (0 if priced else 1) and not outcome.event_recorded
+    if priced:
+        assert outcome.known_cost_subtotal == sum(a["cost_value"] for a in attempts) > 0
+        assert outcome.experience_id in {c.id for c in exp().load_experience_snapshot(request.experience_file).cards}
+    assert controller.store.load_record("task", result.task_id) == result
+
+
+def test_deeply_corrupt_optional_library_does_not_stop_main_task(tmp_path, projects, facts):
+    path = tmp_path / "shared-experiences.json"
+    content = b'{"schema_version":1,"items":' + b"[" * 10000 + b"]" * 10000 + b"}"
+    path.write_bytes(content)
+    request, controller, result, seen, main, learning = run_sdk_task(tmp_path, projects, facts, seed=False)
+    assert result.status == TaskState.DONE and not learning
+    assert controller.learning_result.code == "store_error"
+    assert all(len(p["tools"]) == 6 for p in seen if p.get("tools"))
+    assert path.read_bytes() == content

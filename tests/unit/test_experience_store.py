@@ -197,3 +197,12 @@ def test_library_symlink_cannot_escape_into_fixed_repo(tmp_path):
     request = TaskRequest(tmp_path / "repo", tmp_path / "out", tmp_path / "issue")
     with pytest.raises(ValueError):
         exp().validate_experience_path(link / "exp.json", request, FixValidationRequest(target))
+
+
+def test_deeply_nested_library_is_nonfatal_and_never_overwritten(tmp_path):
+    path = tmp_path / "corrupt.json"
+    content = b'{"schema_version":1,"items":' + b"[" * 10000 + b"]" * 10000 + b"}"
+    path.write_bytes(content)
+    assert exp().load_experience_snapshot(path).state == "store_error"
+    assert exp().append_experience(path, card(), None) == "store_error"
+    assert path.read_bytes() == content

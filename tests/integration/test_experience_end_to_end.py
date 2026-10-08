@@ -99,3 +99,24 @@ def test_cancelled_task_never_teaches(tmp_path, projects, facts):
     assert result.status == TaskState.CANCELLED
     assert controller.learning_result.http_attempts == 0
     assert not request.experience_file.exists()
+
+
+def test_cli_warns_when_learning_summary_could_not_be_saved(tmp_path, projects, monkeypatch, capsys):
+    from reproagent import cli
+    repo = projects.plain(tmp_path / "repo")
+    config = tmp_path / "task.json"
+    config.write_text(json.dumps({"schema_version":1,"repo":str(repo),"issue_file":str(repo/"issue.md"),
+        "output_dir":str(tmp_path/"task")}), encoding="utf-8")
+    model = tmp_path / "model.json"
+    model.write_text('{"base_url":"https://offline.example/v1","model":"offline"}', encoding="utf-8")
+    class Controller:
+        learning_result = LearningResult("empty", http_attempts=1, usage={"total_tokens":15}, event_recorded=False)
+        runner = SimpleNamespace(adapter=SimpleNamespace(inspect=lambda *args: None))
+        async def run(self, *args):
+            return TaskResult("task", TaskState.DONE)
+    monkeypatch.setattr(cli, "create_controller", lambda *args, **kwargs: Controller())
+    monkeypatch.setenv("REPROAGENT_API_KEY", "offline-test")
+    assert cli.main(["run", "--config", str(config), "--model-config", str(model)]) == 0
+    output = capsys.readouterr()
+    assert json.loads(output.out)["learning"]["http_attempts"] == 1
+    assert "could not be saved" in output.err
