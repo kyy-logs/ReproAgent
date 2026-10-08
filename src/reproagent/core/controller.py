@@ -433,7 +433,8 @@ class Controller:
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
                 result = self.state(result, TaskState.GENERATING)
                 try:
-                    phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback))
+                    phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
+                        issue=IssueDescription(issue_text, issue_hash)))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:

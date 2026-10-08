@@ -15,6 +15,7 @@ that ran out of budget keeps raising ``EXHAUSTED`` rather than being reported as
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict, is_dataclass
 
 from agentscope.agent import Agent, ContextConfig, InjectionConfig, ReActConfig
 from agentscope.agent import ModelConfig as SDKModelConfig
@@ -28,7 +29,7 @@ from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
-from ...core.serialization import canonical_bytes
+from ...core.serialization import bytes_hash, canonical_bytes
 
 #: The SDK agent's name; it is the name of every message the SDK writes for this task.
 AGENT_NAME = "reproagent-exploration"
@@ -72,12 +73,13 @@ class AgentScopeRuntime:
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None) -> None:
+    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None, secrets=()) -> None:
         require_agentscope()
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             raise ValueError("an exploration phase needs the product's system prompt")
         self._require_guardable(model)
         self.model, self.toolkit, self.gate, self.context = model, toolkit, gate, context
+        self.secrets = tuple(secret for secret in secrets if secret)
         self.middleware = ExplorationMiddleware(context, gate, store)
         self._task: asyncio.Task | None = None
         self._agent = Agent(
@@ -251,14 +253,33 @@ class AgentScopeRuntime:
         data = {"contract": context.contract, "feedback": context.feedback, "history": list(context.history),
                 "budget": {"steps_remaining_including_this_attempt": self._steps_remaining(),
                            "seconds_remaining": max(0, self.context.budget.deadline - self.context.budget.clock())}}
+        if context.issue is not None:
+            if bytes_hash(context.issue.text.encode('utf-8')) != context.issue.content_hash:
+                raise BudgetStopped('NEEDS_INFORMATION', 'original issue content hash mismatch')
+            data['issue'] = context.issue
+        # Redact before JSON encoding so keys containing quotes/newlines cannot corrupt
+        # the message. Keep the original hash as the reference to frozen local evidence.
+        def redact(value):
+            if is_dataclass(value):
+                value = asdict(value)
+            if isinstance(value, str):
+                for secret in self.secrets:
+                    value = value.replace(secret, '[REDACTED]')
+                return value
+            if isinstance(value, dict):
+                return {key: redact(item) for key, item in value.items()}
+            if isinstance(value, (list, tuple)):
+                return [redact(item) for item in value]
+            return value
+        data = redact(data)
         text = canonical_bytes(data).decode("utf-8")
         while len(text.encode("utf-8")) > cap and data["history"]:
             data["history"].pop(0)
             text = canonical_bytes(data).decode("utf-8")
         if len(text.encode("utf-8")) > cap:
             raise BudgetStopped("NEEDS_INFORMATION",
-                                "the phase contract does not fit the configured context budget; "
-                                "no source reference is dropped to make it fit")
+                                "the original issue and phase contract do not fit the configured context budget; "
+                                "no original fact or source reference is dropped to make them fit")
         return UserMsg(name="user", content=text)
 
     @staticmethod

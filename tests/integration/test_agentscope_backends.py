@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -313,3 +314,36 @@ def test_a_phase_that_only_claims_success_publishes_and_runs_nothing(tmp_path, p
     assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
     assert script.kinds == ['contract']                  # nothing was ever submitted for a verdict
 
+
+def test_external_original_issue_reaches_exploration_without_known_key(tmp_path, projects, facts, monkeypatch):
+    from reproagent.core.serialization import bytes_hash
+    request, script, _, ctx = setup(tmp_path, projects, facts)
+    issue_text = 'Return a ValidationError object; do not raise it. ORIGINAL_FACT_8e219\n'
+    key = 'offline-review-key-"quoted"-8e219'
+    external = tmp_path / 'external-issue.md'
+    external.write_text(issue_text + key, encoding='utf-8')
+    request = replace(request, issue_file=external)
+    monkeypatch.setenv('REVIEW_OFFLINE_KEY', key)
+    model = ModelConfig(base_url='https://offline.example/v1', model='offline',
+                        output_limit_field='max_tokens', api_key_env='REVIEW_OFFLINE_KEY')
+    wire = []
+
+    async def handle(http_request):
+        payload = json.loads(http_request.content)
+        wire.append(payload)
+        if payload.get('tools'):
+            return httpx.Response(200, json={'id':'mock', 'object':'chat.completion', 'model':'offline', 'created':1,
+                'choices':[{'index':0, 'finish_reason':'stop', 'message':{'role':'assistant','content':'Need information.'}}]})
+        reply = await script.complete(ModelRequest(tuple(payload['messages']), 'contract'), ctx)
+        return httpx.Response(200, json={'id':'mock', 'object':'chat.completion', 'model':'offline', 'created':1,
+            'choices':[{'index':0,'finish_reason':'stop','message':{'role':'assistant','content':reply.text}}]})
+
+    controller = create_controller(request, model, transport=httpx.MockTransport(handle))
+    result = asyncio.run(controller.run(request, ctx))
+    phase = next(payload for payload in wire if payload.get('tools'))
+    text = json.dumps(phase, ensure_ascii=False)
+    assert issue_text.strip() in text
+    phase_data = json.loads(phase['messages'][-1]['content'])
+    assert phase_data['issue']['content_hash'] == bytes_hash(external.read_bytes())
+    assert key not in text and '[REDACTED]' in phase_data['issue']['text']
+    assert result.status.value == 'NEEDS_INFORMATION'

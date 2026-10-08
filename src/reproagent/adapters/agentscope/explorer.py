@@ -91,7 +91,7 @@ class AgentScopeExplorer(ReproAgent):
         toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context)
         return AgentScopeRuntime(model, toolkit, self.gate, self.context,
                                  system_prompt=exploration_prompt(phase, self.candidate_parent),
-                                 store=self.store)
+                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()))
 
 
 def agentscope_explorer_factory(config, store, *, transport=None):

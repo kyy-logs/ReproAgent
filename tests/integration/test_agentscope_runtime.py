@@ -14,6 +14,7 @@ import os
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -562,3 +563,36 @@ def test_the_runtime_is_the_exploration_port(tmp_path, projects, facts):
     env = environment(tmp_path, projects, facts)
     assert isinstance(env.runtime, ExplorationRuntime)
     assert asyncio.run(env.runtime.aclose()) is None
+
+
+@pytest.mark.parametrize('invalid_hash', [False, True], ids=['over-budget', 'hash-mismatch'])
+def test_original_issue_cannot_be_dropped_or_read_with_wrong_hash(tmp_path, projects, facts, invalid_hash):
+    from reproagent.core.models import IssueDescription
+    from reproagent.core.serialization import bytes_hash
+    env = environment(tmp_path, projects, facts, answers=[text_reply()])
+    text = 'fact' if invalid_hash else 'X' * 32768
+    issue = IssueDescription(text, '0' * 64 if invalid_hash else bytes_hash(text.encode()))
+    phase = replace(agent_context(env), issue=issue)
+    with pytest.raises(BudgetStopped) as stopped:
+        asyncio.run(env.runtime.explore(phase))
+    assert stopped.value.reason == 'NEEDS_INFORMATION'
+    assert not env.requests and env.context.budget.steps_used == 0
+
+
+def test_original_issue_is_kept_when_contract_changes_between_phases(tmp_path, projects, facts):
+    from reproagent.core.models import IssueDescription
+    from reproagent.core.serialization import bytes_hash
+    env = environment(tmp_path, projects, facts, answers=[text_reply(), text_reply()])
+    issue = IssueDescription('return an error value, do not raise', bytes_hash(b'return an error value, do not raise'))
+    first = replace(agent_context(env), issue=issue)
+    second = replace(first, contract=replace(first.contract, version=2))
+
+    async def run():
+        await env.runtime.explore(first)
+        await env.runtime.explore(second)
+        await env.runtime.aclose()
+        await env.factory.aclose()
+    asyncio.run(run())
+    second_input = json.loads(env.requests[-1]['messages'][-1]['content'])
+    assert second_input['issue']['text'] == issue.text
+    assert second_input['contract']['version'] == 2

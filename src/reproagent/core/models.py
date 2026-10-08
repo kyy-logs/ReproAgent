@@ -429,6 +429,7 @@ class AgentContext:
     project: ProjectView
     history: tuple[dict[str, Any], ...] = ()
     feedback: str = ""
+    issue: IssueDescription | None = None
 
 
 @dataclass(frozen=True, slots=True)
