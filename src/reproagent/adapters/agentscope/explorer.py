@@ -43,11 +43,12 @@ class AgentScopeExplorer(ReproAgent):
             runtime installs its own guard on the model it creates.
     """
 
-    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, model_factory):
+    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, model_factory, experience_view=None):
         require_agentscope()
         super().__init__(gateway, context, candidate_parent)
         self.project, self.workspace, self.model_factory = project, workspace, model_factory
         self.store = workspace.store
+        self.experience_view = experience_view
         self.gate = PhaseGate()
         self.candidates = CandidateService(project, workspace, context)
         self.backend = SnapshotBackend(project, self.store, context)
@@ -88,10 +89,10 @@ class AgentScopeExplorer(ReproAgent):
         its own message, never as a rewritten system prompt.
         """
         model = self.model_factory.create(self.context, 'exploration')
-        toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context)
+        toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context, experience_view=self.experience_view)
         return AgentScopeRuntime(model, toolkit, self.gate, self.context,
                                  system_prompt=exploration_prompt(phase, self.candidate_parent),
-                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()))
+                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()), experience_view=self.experience_view)
 
 
 def agentscope_explorer_factory(config, store, *, transport=None):
@@ -104,9 +105,9 @@ def agentscope_explorer_factory(config, store, *, transport=None):
     """
     require_agentscope()
 
-    def factory(gateway, context, candidate_parent, *, project, workspace):
+    def factory(gateway, context, candidate_parent, *, project, workspace, experience_view=None):
         return AgentScopeExplorer(gateway, context, candidate_parent, project=project, workspace=workspace,
-                                  model_factory=AgentScopeModelFactory(config, store, transport=transport))
+                                  model_factory=AgentScopeModelFactory(config, store, transport=transport), experience_view=experience_view)
     return factory
 
 

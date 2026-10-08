@@ -426,12 +426,19 @@ class EvidenceContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ExperienceSummary:
+    id: str
+    summary: str
+
+
+@dataclass(frozen=True, slots=True)
 class AgentContext:
     contract: IssueContract
     project: ProjectView
     history: tuple[dict[str, Any], ...] = ()
     feedback: str = ""
     issue: IssueDescription | None = None
+    experience_summaries: tuple[ExperienceSummary, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

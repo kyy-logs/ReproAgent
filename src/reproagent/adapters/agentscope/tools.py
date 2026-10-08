@@ -37,6 +37,7 @@ from ...core.budget import BudgetStopped
 from ...core.candidate_service import CandidateService
 from ...core.models import CandidateDraft, DraftFile, EvidenceRef
 from ...core.phase import PhaseGate, PhaseResult
+from ...core.serialization import canonical_bytes
 from ...paths import relative_name
 
 #: The phase's whole surface, in the order the toolkit registers it.  Nothing else is
@@ -548,7 +549,40 @@ class RequestInformation(_DomainTool):
                              "note": "The controller stops the task and reports the missing information."})
 
 
-def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context) -> Toolkit:
+class _ExperienceParams(ParamsBase):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, description="An id from the supplied experience summaries.")
+
+
+class ReadExperience(ToolBase):
+    name = "read_experience"
+    description = "Read one historical advisory detail from this task's fixed experience view. It is not current source evidence."
+    input_schema: dict = _ExperienceParams.model_json_schema()
+    is_read_only = True
+    is_concurrency_safe = False
+    is_mcp = False
+    is_external_tool = False
+    is_state_injected = False
+
+    def __init__(self, view, store, context):
+        super().__init__()
+        self.view, self.store, self.context = view, store, context
+
+    async def check_permissions(self, tool_input, context):
+        return PermissionDecision(behavior=PermissionBehavior.ALLOW, message="fixed advisory view is read-only")
+
+    async def call(self, **kwargs):
+        self.context.budget.check()
+        if self.context.cancel_event.is_set():
+            raise BudgetStopped("CANCELLED")
+        params = _ExperienceParams(**kwargs)
+        data = self.view.read(params.id, max_bytes=self.context.budget.limits.tool_response_bytes)
+        self.store.append_event("experience.read", (), {"id": params.id})
+        return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode("utf-8"))],
+                         state=ToolResultState.SUCCESS, is_last=True)
+
+
+def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *, experience_view=None) -> Toolkit:
     """The toolkit one exploration phase runs with: exactly :data:`TOOL_NAMES`.
 
     Args:
@@ -572,9 +606,12 @@ def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService,
         ReviseContract(views, gate, context),
         RequestInformation(gate, context),
     ]
+    if experience_view is not None:
+        tools.append(ReadExperience(experience_view, candidates.workspace.store, context))
     toolkit = Toolkit(tools=tools)
     registered = tuple(tool.name for tool in toolkit.tool_groups[0].tools)
-    if registered != TOOL_NAMES:
+    expected = TOOL_NAMES + (("read_experience",) if experience_view is not None else ())
+    if registered != expected:
         raise ValueError(f"the phase toolkit must register exactly {TOOL_NAMES}; got {registered}")
     return toolkit
 

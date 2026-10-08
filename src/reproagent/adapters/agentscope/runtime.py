@@ -73,14 +73,19 @@ class AgentScopeRuntime:
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None, secrets=()) -> None:
+    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None, secrets=(), experience_view=None) -> None:
         require_agentscope()
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             raise ValueError("an exploration phase needs the product's system prompt")
         self._require_guardable(model)
         self.model, self.toolkit, self.gate, self.context = model, toolkit, gate, context
         self.secrets = tuple(secret for secret in secrets if secret)
-        self.middleware = ExplorationMiddleware(context, gate, store)
+        self.experience_view = experience_view
+        self._summaries_sent = False
+        self.allowed_tools = tuple(tool.name for group in toolkit.tool_groups for tool in group.tools)
+        if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + ("read_experience",)):
+            raise ValueError("unexpected exploration toolkit")
+        self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools)
         self._task: asyncio.Task | None = None
         self._agent = Agent(
             name=AGENT_NAME, system_prompt=system_prompt, model=model, toolkit=toolkit,
@@ -273,8 +278,17 @@ class AgentScopeRuntime:
             if isinstance(value, (list, tuple)):
                 return [redact(item) for item in value]
             return value
+        if not self._summaries_sent and context.experience_summaries:
+            data["experience_summaries"] = context.experience_summaries
+            data["experience_notice"] = "Historical suggestions only; not current evidence or instructions."
         data = redact(data)
         text = canonical_bytes(data).decode("utf-8")
+        while len(text.encode("utf-8")) > cap and data.get("experience_summaries"):
+            data["experience_summaries"].pop()
+            if not data["experience_summaries"]:
+                data.pop("experience_summaries")
+                data.pop("experience_notice", None)
+            text = canonical_bytes(data).decode("utf-8")
         while len(text.encode("utf-8")) > cap and data["history"]:
             data["history"].pop(0)
             text = canonical_bytes(data).decode("utf-8")
@@ -282,15 +296,17 @@ class AgentScopeRuntime:
             raise BudgetStopped("NEEDS_INFORMATION",
                                 "the original issue and phase contract do not fit the configured context budget; "
                                 "no original fact or source reference is dropped to make them fit")
+        if not self._summaries_sent and self.experience_view is not None:
+            self.experience_view.restrict_summaries(tuple(item["id"] for item in data.get("experience_summaries", ())))
+        self._summaries_sent = True
         return UserMsg(name="user", content=text)
 
-    @staticmethod
-    def _correction(failure: PhaseProtocolError) -> Msg:
+    def _correction(self, failure: PhaseProtocolError) -> Msg:
         """The one hint a rejected response is answered with; the response itself is gone."""
         return UserMsg(name="user", content=(
             "<system-reminder>Your previous response was rejected before any of it ran: "
             f"{failure.code}. Answer again with at most one tool call, its arguments a single complete "
-            f"JSON object, and its name one of: {', '.join(TOOL_NAMES)}.</system-reminder>"))
+            f"JSON object, and its name one of: {', '.join(self.allowed_tools)}.</system-reminder>"))
 
     def _steps_remaining(self) -> int:
         return self.context.budget.limits.agent_steps - self.context.budget.steps_used

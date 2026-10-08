@@ -197,3 +197,62 @@ def append_experience(path: Path, card: ExperienceCard, context) -> str:
         return "skipped_cancelled" if exc.reason == "CANCELLED" else "timeout"
     except (OSError, ValueError, UnicodeError, TypeError):
         return "store_error"
+
+def _keywords(text):
+    words = set(re.findall(r"[a-z0-9_.-]+", text.casefold()))
+    for part in re.findall(r"[\u4e00-\u9fff]+", text):
+        words.update(part[i:i + 2] for i in range(len(part) - 1))
+    return words
+
+
+class ExperienceView:
+    """One immutable library snapshot and one task's bounded, advisory read allowance."""
+    def __init__(self, snapshot: ExperienceSnapshot, *, secrets=()):
+        self.snapshot = snapshot
+        self.secrets = tuple(s for s in secrets if s)
+        self._selected = None
+        self._read_ids = ()
+
+    @property
+    def read_ids(self):
+        return self._read_ids
+
+    def select(self, issue_text, target_modules):
+        from .core.models import ExperienceSummary
+        if self._selected is not None:
+            return tuple(ExperienceSummary(c.id, c.summary) for c in self._selected)
+        query = _normalized(issue_text + " " + " ".join(target_modules))
+        words = _keywords(query)
+        scored = []
+        for card in self.snapshot.cards:
+            score = sum(_normalized(tag) in query for tag in card.tags) + len(_keywords(card.summary) & words)
+            if score > 0:
+                scored.append((-score, card.id, card))
+        selected = []
+        for _, _, card in sorted(scored):
+            draft = [{"id": c.id, "summary": c.summary} for c in (*selected, card)]
+            if len(canonical_bytes(draft)) <= VISIBLE_BYTES:
+                selected.append(card)
+            if len(selected) == 3:
+                break
+        self._selected = tuple(selected)
+        return tuple(ExperienceSummary(c.id, c.summary) for c in selected)
+
+    def restrict_summaries(self, ids):
+        self._selected = tuple(c for c in (self._selected or ()) if c.id in ids)
+
+    def read(self, identifier, *, max_bytes=VISIBLE_BYTES):
+        if self._read_ids:
+            raise ValueError("only one successful experience detail read is allowed per task")
+        card = next((c for c in (self._selected or ()) if c.id == identifier), None)
+        if card is None:
+            raise ValueError("experience id was not displayed in this task")
+        data = {"id": card.id, "summary": card.summary, "detail": card.detail}
+        for key in ("summary", "detail"):
+            for secret in self.secrets:
+                data[key] = data[key].replace(secret, "[REDACTED]")
+        summaries = [{"id": c.id, "summary": c.summary} for c in self._selected]
+        if len(canonical_bytes(data)) > max_bytes or len(canonical_bytes(summaries)) + len(canonical_bytes(data)) > VISIBLE_BYTES:
+            raise ValueError("experience detail exceeds shared visible budget")
+        self._read_ids = (identifier,)
+        return data
