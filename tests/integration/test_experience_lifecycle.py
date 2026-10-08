@@ -12,13 +12,13 @@ from tests.unit.test_experience_store import card, library, exp
 from tests.integration.test_agentscope_backends import CANDIDATE, tool_response, text_response
 
 
-def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False):
+def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED"):
     request, _, _, ctx = setup(tmp_path, projects, facts)
     path = tmp_path / "shared-experiences.json"
     if seed:
         library(path, card(summary="empty input advice", detail="HISTORICAL_HINT"))
     request = replace(request, experience_file=path, learn_experience=learn)
-    script = ScriptedModel()
+    script = ScriptedModel(classification=classification)
     seen, main_calls, learning_calls = [], [], []
     holder = {}
     read = False

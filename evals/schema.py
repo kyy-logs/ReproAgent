@@ -59,3 +59,7 @@ class EvalResult:
     # Mirrors the task record: not_provided/passed/failed/blocked. Kept last so existing
     # positional construction and older imported rounds are unaffected.
     fix_validation_status: str = 'not_provided'
+
+    experience_library_hash: str = ''
+    experience_read_ids: tuple[str, ...] = ()
+    learning: dict[str, Any] = field(default_factory=dict)

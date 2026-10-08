@@ -3,7 +3,7 @@ import asyncio
 import json
 import signal
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from .app import LEGACY_BACKENDS, create_controller
@@ -53,8 +53,11 @@ def run_command(args):
     async def run():
         return await controller.run(request, context, fixed)
     result = asyncio.run(run())
-    print(json.dumps({'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
-        'export_state':result.export_state, 'output_dir':display_path(output)}, ensure_ascii=False))
+    summary = {'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
+        'export_state':result.export_state, 'output_dir':display_path(output)}
+    if getattr(controller, 'learning_result', None) is not None:
+        summary['learning'] = asdict(controller.learning_result)
+    print(json.dumps(summary, ensure_ascii=False))
     return EXIT_CODES[result.status]
 
 

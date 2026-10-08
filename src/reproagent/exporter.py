@@ -82,7 +82,9 @@ class Exporter:
             # evidence-level string: a failed or blocked fixed version never reaches it.
             'differential_validated':result.evidence_level == EvidenceLevel.DIFFERENTIAL_VALIDATED,
             'event_cutoff':len(events) - 1, 'candidate_files':[], 'log_mapping':[], 'runs':[], 'source_mapping':[], 'verdict_mapping':[],
-            'accepted_run_ids':[], 'environment_probes':[]}
+            'accepted_run_ids':[], 'environment_probes':[],
+            'experience_read_ids':list(dict.fromkeys(event.payload['id'] for event in events
+                if event.kind == 'experience.read' and isinstance(event.payload.get('id'), str)))}
         previews = {}
         report['backends'] = next((dict(event.payload) for event in reversed(events) if event.kind == 'backend.selected'), {})
         issue_path = safe_child(store.root, 'input/issue.md')

@@ -157,3 +157,10 @@ Glob → Grep → Read → `write_candidate`，再由 Controller 自动执行原
 都没有运行，没有产生任何真实模型结果，也没有可用于对比的 HTTP/token 计数。保留集 manifest 已按固定
 策略离线冻结（见 [评测说明](swt-bench.md)），但**没有执行**。结论：**迁移代码验证通过，能力验收未通过。**
 详见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
+
+## 2026-10-08 automatic experience MVP
+
+Implemented bounded three-category storage, first-exploration summaries and one SDK detail read, independent post-sealing extraction, immutable learning evidence, atomic append/deduplication, report read IDs, and readonly frozen-library evaluation. No exploration-stage constraints were added. See [usage and lifecycle](experience.md).
+
+SDK + MockTransport + actual pytest covered A learning/B reading, cancellation, misleading advice rejected by current verification, original/fixed differential checks and independent package replay. Legacy evaluation-controller injection failures found during full regression were reproduced and corrected with optional-field defaults; real-model A/B has not run. Final suite and independent review are recorded in the feature verification receipt when complete.
+

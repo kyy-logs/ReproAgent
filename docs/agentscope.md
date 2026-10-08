@@ -109,3 +109,7 @@ Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时�
 
 真实模型的定点与冻结轮次的执行状态见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)；
 历史验证记录见 [实现记录](implementation-status.md)。
+
+## Optional experience infrastructure
+
+When an experience snapshot is enabled, the toolkit adds one readonly `read_experience` tool to the existing six. The task keeps one snapshot, first-round summaries and at most one successful detail read. Post-sealing learning uses a separate SDK client with purpose=learning, no tools or exploration history, and an independent deadline. Controller, Verifier and evidence rules remain the domain authority. See [experience lifecycle and configuration](experience.md).
