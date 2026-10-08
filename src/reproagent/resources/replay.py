@@ -80,7 +80,8 @@ def main():
     if report['package_kind'] != 'reproduction':
         raise ValueError('diagnostic package has no accepted reproduction')
     repo = directory_path(args.repo.resolve())
-    if os.name == 'nt' and len(location_key(repo)) > PROCESS_CWD_LIMIT:
+    cwd = location_key(repo) if os.name == 'nt' else repo
+    if os.name == 'nt' and len(cwd) > PROCESS_CWD_LIMIT:
         raise ValueError('PROCESS_CWD_TOO_LONG: Windows cannot start pytest in this repository; use a shorter repository path')
     for entry in report['candidate_files']:
         destination = child(args.repo, entry['path'])
@@ -101,7 +102,9 @@ def main():
     # Absolute, but not link-resolved: resolving a venv's interpreter would run
     # the base interpreter and drop that venv's packages.
     argv = [os.path.abspath(args.python), '-m', 'pytest', *report['pytest_args'], '-p', 'reproagent_pytest_probe', *report['selectors']]
-    return subprocess.call(argv, cwd=repo, env=env)
+    # CreateProcess counts the prefix too: extended spelling can push an otherwise
+    # supported 255–258 character cwd over its limit. Only filesystem I/O uses it.
+    return subprocess.call(argv, cwd=cwd, env=env)
 
 
 if __name__ == '__main__':

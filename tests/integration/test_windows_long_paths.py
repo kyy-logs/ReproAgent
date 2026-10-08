@@ -176,6 +176,27 @@ def test_standalone_replay_refuses_unstartable_cwd_before_install(tmp_path, proj
     assert not (tmp_path / 'output').exists()
 
 
+@WINDOWS_ONLY
+@pytest.mark.parametrize('length', [255, 258])
+def test_standalone_replay_starts_pytest_in_supported_plain_cwd(tmp_path, projects, facts, length):
+    from tests.integration.test_exporter import export_setup
+    exporter, result, store, *_ = export_setup(tmp_path / 'package', projects, facts)
+    package = exporter.export(result, store).root
+    parent = deep_directory(tmp_path / 'deep-parent', 240)
+    repo = parent / ('r' * (length - 241))
+    projects.plain(Path('\\\\?\\' + str(repo)))
+    assert len(str(repo)) == length
+    output = tmp_path / 'replay'
+    run = subprocess.run([sys.executable, str(package / 'replay.py'), '--repo', str(repo), '--python', sys.executable,
+                          '--output', str(output), '--install'], capture_output=True, timeout=60)
+    assert b'WinError 267' not in run.stderr, run.stderr.decode(errors='replace')
+    records = [json.loads(line) for line in (output / 'probe.jsonl').read_text(encoding='utf-8').splitlines()]
+    assert records[0]['event'] == 'session_start'
+    assert records[-1]['event'] == 'session_finish'
+    # A target dependency can still fail on its own long file I/O. This test proves
+    # that the allowed working directory launches pytest, not that such code passes.
+
+
 def atomic_temporary(path: Path) -> Path:
     """Where ``store.atomic_write`` stages the bytes it renames over ``path``."""
     return path.with_name(f'.{path.name}.{"0" * 32}.tmp')
