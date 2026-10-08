@@ -83,11 +83,8 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 - xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索暂未支持。
 - 带不可重置外部前置资源的候选不能升级重复复现；运行不起来时报告环境阻塞，缩小运行范围属于后续优化。
 - 语义核对依赖模型，证据引用与硬性检查降低误报，不能替代人的审查。
-- 探索阶段的输入是契约、历史与反馈，不含原始 Issue 正文。契约若把"返回一个 ValidationError"改写成
-  "抛出一个 ValidationError"，阶段输入里没有能反驳它的材料；两个提示词都固定了"返回而非抛出"的规则，
-  但这条规则无法从输入本身交叉验证。
-- 导出包内的 `replay.py` 不为目录预留长度余量：普通路径在 248–259 字符区间时可能触发 `WinError 206`，
-  它的子进程工作目录也会碰到工具自身已经在别处拒绝的 259 字符上限。
+- 原始 Issue 和契约共同计入探索输入容量；整体放不下时明确停止，不静默删掉原始事实。模型仍可能误解事实，最终依赖证据核验。
+- Windows 的导出与独立 replay 支持目录保留长度窗口；子进程 cwd 超过系统可启动长度时明确拒绝。目标 pytest 或依赖自身的长路径限制仍可能阻止测试启动。
 - 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1；CI 矩阵（Windows/Ubuntu × 目标 Python 3.10–3.12 × pytest 7.4–9）18/18 通过，含 AgentScope SDK 模块与 SWT 链路。其他组合见 `docs/compatibility.md`，首次执行的失败与修复记录见 `docs/implementation-status.md`。
 
 ## 开发与评估

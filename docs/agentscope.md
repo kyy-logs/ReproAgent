@@ -47,6 +47,9 @@ inspect 和 replay 不调用模型。
 - **契约分析**：`analyze` 通过 gateway 发出一个结构化请求（无 tools、`response_format=json_object`）。
 - **探索阶段**：`AgentScopeExplorer` 每个任务创建一个 `AgentScopeRuntime`，由 SDK `Agent` 在自己的
   `AgentState` 里跑 ReAct 循环。同一个任务的所有阶段共用这段历史；每个阶段开始前绑定当前契约版本。
+  阶段输入同时携带冻结的原始 Issue 正文与哈希，包括位于仓库外的 issue_file；先校验原始字节哈希，
+  再脱敏已知 API key 后发送。契约是解释，Agent 可对照原文核对返回/抛出和触发条件；原文与契约合计
+  超过输入容量时明确停止，不能删去原始事实后继续。修订契约不改变这份原文。
 - **业务推进**：阶段结果交回 Controller。候选随即在原版执行、被语义核验，并在复现时独立重复一次；
   给出 `--fixed-repo` 时再在固定版执行同一候选。没有"是否执行"或"是否提交"的模型决策。
 - **交付**：导出与 replay 不依赖 SDK，也不需要 AgentScope。

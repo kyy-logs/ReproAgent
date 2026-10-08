@@ -108,6 +108,74 @@ def test_diagnostic_export_reads_existing_long_glob_children(tmp_path, length):
     assert '\\\\?\\' not in json.dumps(report)
 
 
+@WINDOWS_ONLY
+@pytest.mark.parametrize('length', [248, 259])
+def test_standalone_replay_creates_reserved_window_output_and_runs_pytest(tmp_path, projects, facts, length):
+    from tests.integration.test_exporter import export_setup
+    exporter, result, store, *_ = export_setup(tmp_path / 'package', projects, facts)
+    package = exporter.export(result, store).root
+    base = deep_directory(tmp_path / 'output-parent', 240)
+    parent = base / ('p' * (length - 246))
+    Path('\\\\?\\' + str(parent)).mkdir()
+    output = parent / 'logs'
+    assert len(str(output)) == length
+    for label, factory, expected in [('buggy', projects.plain, 1), ('fixed', projects.fixed, 0)]:
+        fresh = factory(tmp_path / label)
+        run_output = output if label == 'buggy' else output.with_name('pass')
+        run = subprocess.run([sys.executable, str(package / 'replay.py'), '--repo', str(fresh),
+                              '--python', sys.executable, '--output', str(run_output), '--install'],
+                             capture_output=True, timeout=60)
+        assert run.returncode == expected, run.stderr.decode(errors='replace')
+        assert read_probe(readable(run_output / 'probe.jsonl'), 'export-replay').probe_complete
+
+
+@WINDOWS_ONLY
+def test_standalone_replay_promotes_install_parent_before_directory_limit(tmp_path, projects, facts):
+    from tests.integration.test_exporter import export_setup
+    from reproagent.core.serialization import bytes_hash
+    exporter, result, store, *_ = export_setup(tmp_path / 'package', projects, facts)
+    package = exporter.export(result, store).root
+    fresh = projects.plain(tmp_path / 'fresh')
+    nested_parent = 'fixtures/' + 'd' * (249 - len(str(fresh)) - 10)
+    install_path = nested_parent + '/s.txt'
+    content = b'fixture\n'
+    atomic_write(package / 'candidate' / install_path, content)
+    report_path = package / 'report.json'
+    report = json.loads(report_path.read_text(encoding='utf-8'))
+    report['candidate_files'].append({'path': install_path, 'role': 'data'})
+    report['pytest_args'] = [*report['pytest_args'], '--ignore=fixtures']
+    atomic_write(report_path, json.dumps(report).encode())
+    manifest_path = package / 'manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    for entry in manifest['files']:
+        if entry['path'] == 'report.json':
+            entry['content_hash'] = bytes_hash(report_path.read_bytes())
+    manifest['files'].append({'path': 'candidate/' + install_path, 'content_hash': bytes_hash(content)})
+    atomic_write(manifest_path, json.dumps(manifest).encode())
+    assert len(str(fresh / nested_parent)) == 249
+    assert len(str(fresh / install_path)) < 260
+    run = subprocess.run([sys.executable, str(package / 'replay.py'), '--repo', str(fresh), '--python', sys.executable,
+                          '--output', str(tmp_path / 'replay'), '--install'], capture_output=True, timeout=60)
+    assert run.returncode == 1, run.stderr.decode(errors='replace')
+    assert readable(fresh / install_path).read_bytes() == content
+    assert read_probe(tmp_path / 'replay/probe.jsonl', 'export-replay').probe_complete
+
+
+@WINDOWS_ONLY
+def test_standalone_replay_refuses_unstartable_cwd_before_install(tmp_path, projects, facts):
+    from tests.integration.test_exporter import export_setup
+    from reproagent.paths import directory_path
+    exporter, result, store, *_ = export_setup(tmp_path / 'package', projects, facts)
+    package = exporter.export(result, store).root
+    deep = deep_directory(tmp_path / 'deep-parent', 240) / ('r' * 25)
+    directory_path(deep).mkdir()
+    run = subprocess.run([sys.executable, str(package / 'replay.py'), '--repo', str(deep), '--python', sys.executable,
+                          '--output', str(tmp_path / 'output'), '--install'], capture_output=True, timeout=60)
+    assert b'PROCESS_CWD_TOO_LONG' in run.stderr
+    assert not readable(deep / 'tests/test_repro.py').exists()
+    assert not (tmp_path / 'output').exists()
+
+
 def atomic_temporary(path: Path) -> Path:
     """Where ``store.atomic_write`` stages the bytes it renames over ``path``."""
     return path.with_name(f'.{path.name}.{"0" * 32}.tmp')

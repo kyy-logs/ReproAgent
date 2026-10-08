@@ -9,9 +9,11 @@ import sys
 from pathlib import Path
 
 MAX_PATH = 260
+RESERVED_NAME = 12
+PROCESS_CWD_LIMIT = 258
 
 
-def long_path(path):
+def long_path(path, *, directory=False):
     """Absolute long-path-safe form, mirroring ``reproagent.paths.workspace_path``.
 
     The reader may unpack this package deeper than the legacy Windows limit, and
@@ -22,11 +24,17 @@ def long_path(path):
     if os.name != 'nt':
         return path
     text = os.path.abspath(path)
-    if text.startswith('\\\\?\\') or len(text) < MAX_PATH:
+    limit = MAX_PATH - RESERVED_NAME if directory else MAX_PATH
+    if text.startswith('\\\\?\\') or len(text) < limit:
         return Path(text)
     if text.startswith('\\\\'):
         return Path('\\\\?\\UNC\\' + text[2:])
     return Path('\\\\?\\' + text)
+
+
+def directory_path(path):
+    """Windows reserves name space inside a directory before the file limit."""
+    return long_path(path, directory=True)
 
 
 def location_key(path):
@@ -71,17 +79,20 @@ def main():
             raise ValueError('package file changed: ' + entry['path'])
     if report['package_kind'] != 'reproduction':
         raise ValueError('diagnostic package has no accepted reproduction')
+    repo = directory_path(args.repo.resolve())
+    if os.name == 'nt' and len(location_key(repo)) > PROCESS_CWD_LIMIT:
+        raise ValueError('PROCESS_CWD_TOO_LONG: Windows cannot start pytest in this repository; use a shorter repository path')
     for entry in report['candidate_files']:
         destination = child(args.repo, entry['path'])
         content = child(root / 'candidate', entry['path']).read_bytes()
         if args.install:
             if destination.exists():
                 raise ValueError('refusing to overwrite: ' + entry['path'])
-            destination.parent.mkdir(parents=True, exist_ok=True)
+            directory_path(destination.parent).mkdir(parents=True, exist_ok=True)
             destination.write_bytes(content)
         elif not destination.exists() or destination.read_bytes() != content:
             raise ValueError('candidate not installed; pass --install')
-    output = long_path(args.output)
+    output = directory_path(args.output)
     output.mkdir(parents=True, exist_ok=False)
     env = {key: value for key, value in os.environ.items() if key.upper() in ('SYSTEMROOT', 'WINDIR', 'PATH', 'PATHEXT', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'LANG')}
     env.update({'PYTHONPATH': os.pathsep.join([str(long_path(root / 'probe')), *[str(long_path(args.repo.resolve() if r == '.' else child(args.repo, r))) for r in report['source_roots']]]),
@@ -90,7 +101,7 @@ def main():
     # Absolute, but not link-resolved: resolving a venv's interpreter would run
     # the base interpreter and drop that venv's packages.
     argv = [os.path.abspath(args.python), '-m', 'pytest', *report['pytest_args'], '-p', 'reproagent_pytest_probe', *report['selectors']]
-    return subprocess.call(argv, cwd=args.repo.resolve(), env=env)
+    return subprocess.call(argv, cwd=repo, env=env)
 
 
 if __name__ == '__main__':
