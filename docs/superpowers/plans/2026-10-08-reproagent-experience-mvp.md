@@ -175,8 +175,8 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 - [x] **Step 4: 实现评测入口。** run_case末尾扩展可选experience_file=None、learn_experience=False；EvalResult末尾追加experience_library_hash、experience_read_ids、learning字典默认值，不改旧字段含义。run_batch/CLI可选传只读经验路径（CLI参数为--experience-file），拒绝库位于轮次输出/原版/修复目录，固定起始库哈希，写入configuration及其哈希并在每case前核对；使用已有分母保留机制，库变化时保存EXPERIENCE_SOURCE_CHANGED并标记该轮不可比较。默认评测无经验，学习集由普通任务开启写入产生库，评测集不自动学回。原usage/http_attempts/cost继续表示全部真实请求，新增learning汇总只用于分解，不再重复加到总数；results.py单列learning_duration/learning_http_attempts/learning_token_total，未知费用不冒充精确值。检查run_one测试注入签名的兼容性，disabled不增加kwargs。
 - [x] **Step 5: 端到端失败测试。** `test_task_a_learns_and_task_b_reads_without_changing_verdict`使用真实SDK+MockTransport和真实pytest：任务A得到原版观察并写卡，A报告无新卡；新任务B命中摘要、调用一次详情、发布候选、完成原版/重复/可选修复检查，verdict请求不直接加载经验，导出包在新副本replay。`test_cancelled_task_never_teaches`与`test_advice_cannot_override_current_evidence`覆盖取消、历史误导建议/伪造引用/当前断言依据不足；不能因为经验说有效而绕过验收。
 - [x] **Step 6: 验证绿色并更新使用文档。** 新端到端、评测、reporting/CLI/既有SDK链路通过；说明三分类选择规则、开启配置、读取/写入时机、总容量、额外30秒、只读评测、建议可能错误及第一版不自动维护旧卡。示例使用目标仓库之外的工具侧路径，不提交实际经验数据、API密钥或机器专属配置。
-- [ ] **Step 7: 最终验证。** 设置REPROAGENT_RG_PATH后运行 `.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q -rs` 和 `.venv\Scripts\python.exe -m pip check`；wheel/replay测试包含在现有套件。Windows/Linux矩阵沿用现有工作流，不降低断言或因为经验未启用跳过核心链路。记录实际结果，不复用历史460/468通过数。
-- [ ] **Step 8: 提交并记录实现状态。** 建议提交 `feat: report experience usage and freeze experience evaluations`；实现计划逐项勾选，注明真实模型A/B尚未执行。发布/push按用户授权另行处理，保留当前工作区其他改动。
+- [x] **Step 7: 最终验证。** 设置REPROAGENT_RG_PATH后运行 `.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q -rs` 和 `.venv\Scripts\python.exe -m pip check`；wheel/replay测试包含在现有套件。Windows/Linux矩阵沿用现有工作流，不降低断言或因为经验未启用跳过核心链路。记录实际结果，不复用历史460/468通过数。
+- [x] **Step 8: 提交并记录实现状态。** 建议提交 `feat: report experience usage and freeze experience evaluations`；实现计划逐项勾选，注明真实模型A/B尚未执行。发布/push按用户授权另行处理，保留当前工作区其他改动。
 
 ## Acceptance and Handoff
 
@@ -191,3 +191,7 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 - 五项Review Focus分别有命名行为测试；覆盖Unicode字节限制、真实跨进程锁、库漂移、可选输入挤占、隐藏材料、引用稳定、取消和成本重复统计。
 - 计划按五个可独立验收的交付块拆分，保留RED→GREEN和提交步骤，不复制实现函数体。最后的真实A/B评测与代码功能验收分开。
 - 执行方式沿用当前会话逐项实现；本次仅写计划，未启动产品代码实现。
+
+## Execution verification (2026-10-08)
+
+All five tasks implemented. Full offline suite: 549 passed, 5 skipped in 664.81s; skips concern Windows links/interpreter path. pip check: no broken requirements. Real-model A/B has not run. Whole-branch independent review follows before local integration.
