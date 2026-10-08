@@ -147,6 +147,8 @@ class TaskRequest:
     runtime_id: str = "local"
     limits: BudgetLimits = field(default_factory=BudgetLimits)
     language: PythonPytestConfig = field(default_factory=PythonPytestConfig)
+    experience_file: Path | None = None
+    learn_experience: bool = True
 
 
 @dataclass(frozen=True, slots=True)

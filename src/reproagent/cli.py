@@ -24,7 +24,8 @@ def load_request(path):
     path = Path(path).resolve()
     request = decode_record('request', parse_json(path.read_text(encoding='utf-8')))
     def resolved(value): return (path.parent / value).resolve() if not value.is_absolute() else value.resolve()
-    return replace(request, repo=resolved(request.repo), output_dir=resolved(request.output_dir), issue_file=resolved(request.issue_file))
+    return replace(request, repo=resolved(request.repo), output_dir=resolved(request.output_dir), issue_file=resolved(request.issue_file),
+        experience_file=resolved(request.experience_file) if request.experience_file is not None else None)
 
 
 def run_command(args):
