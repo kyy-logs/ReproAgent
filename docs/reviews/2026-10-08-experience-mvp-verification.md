@@ -53,3 +53,5 @@ REPROAGENT_RG_PATH=<installed rg>
 ## 本地交付
 
 功能和修复使用 codex/experience-mvp 分支实现，再本地合入 E:/ReproAgent，保留主分支并行的 7a87625 文档提交。未 push；未创建新 PR。完整日志及执行台账保存在 .local/experience-mvp-verification（不提交）。
+
+本地合并提交 ac6927a。仅 docs/implementation-status.md 有文档冲突，保留双方记录；git diff codex/experience-mvp HEAD -- src evals tests pyproject.toml 为空。主目录实际导入 E:/ReproAgent/src/reproagent/experience.py，SDK 2.0.9；主环境针对性检查 40 passed、1 skipped（18.93 秒），pip check 通过。
