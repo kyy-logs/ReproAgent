@@ -95,6 +95,44 @@ def test_request_body_carries_the_thinking_switch_only_when_configured():
     assert calls[0]['thinking'] == {'type': 'disabled'}
 
 
+def test_sampling_temperature_reaches_the_wire_only_when_configured():
+    """A run that does not fix the temperature is not a measurement to compare.
+
+    Three rounds of the same configuration over the same cases produced three different
+    outcome sets because the provider's own default applied, so a comparison of two
+    architectures could not be read at all.
+    """
+    calls, handler = recorder()
+    asyncio.run(gateway(handler).complete(request(), context()))
+    assert 'temperature' not in calls[0]
+    calls, handler = recorder()
+    asyncio.run(gateway(handler, temperature=0).complete(request(), context()))
+    assert calls[0]['temperature'] == 0
+
+
+def test_temperature_is_resolved_next_to_the_thinking_switch():
+    assert resolve_model_options(config(temperature=0.0), request()).extra_body == {'temperature': 0.0}
+    assert resolve_model_options(config(temperature=0.0, thinking_mode='disabled'), request()).extra_body == {
+        'temperature': 0.0, 'thinking': {'type': 'disabled'}}
+
+
+def test_shipped_deterministic_example_round_trips_into_model_config():
+    examples = Path(__file__).resolve().parents[2] / 'examples'
+    non_thinking = ModelConfig(**json.loads((examples / 'model.deepseek.non-thinking.json').read_text(encoding='utf-8')))
+    deterministic = ModelConfig(**json.loads((examples / 'model.deepseek.deterministic.json').read_text(encoding='utf-8')))
+    assert deterministic.temperature == 0
+    assert (deterministic.base_url, deterministic.model, deterministic.api_key_env, deterministic.max_output_tokens,
+            deterministic.output_limit_field, deterministic.thinking_mode) == (
+            non_thinking.base_url, non_thinking.model, non_thinking.api_key_env, non_thinking.max_output_tokens,
+            non_thinking.output_limit_field, non_thinking.thinking_mode)
+
+
+@pytest.mark.parametrize('kwargs', [{'temperature':-0.1}, {'temperature':2.1}, {'temperature':True}, {'temperature':'0'}])
+def test_invalid_temperature_rejected(kwargs):
+    with pytest.raises(ValueError):
+        config(**kwargs)
+
+
 @pytest.mark.parametrize('value', [0, -1, True, 1.5, '4096'])
 def test_invalid_request_limit_rejected(value):
     with pytest.raises(ValueError):

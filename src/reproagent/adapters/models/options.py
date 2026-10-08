@@ -19,4 +19,6 @@ def resolve_model_options(config, request):
     if request.max_output_tokens is not None:
         limit = min(request.max_output_tokens, limit)
     extra_body = {} if config.thinking_mode is None else {'thinking': {'type': config.thinking_mode}}
+    if config.temperature is not None:
+        extra_body['temperature'] = config.temperature
     return ProviderRequestOptions(limit, extra_body)

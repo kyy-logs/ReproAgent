@@ -1,0 +1,9 @@
+{
+  "base_url": "https://api.deepseek.com",
+  "model": "deepseek-flash",
+  "api_key_env": "DEEPSEEK_API_KEY",
+  "max_output_tokens": 4096,
+  "output_limit_field": "max_tokens",
+  "thinking_mode": "disabled",
+  "temperature": 0
+}

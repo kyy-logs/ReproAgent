@@ -127,6 +127,10 @@ class ModelConfig:
     input_cost_per_million: float | None = None
     output_cost_per_million: float | None = None
     thinking_mode: str | None = None
+    #: The provider's sampling temperature, left to the provider when it is not set.  A run
+    #: that does not fix it cannot be compared with another: the same configuration over the
+    #: same cases produced different outcomes each time while the default applied.
+    temperature: float | None = None
 
     def __post_init__(self):
         if not isinstance(self.max_output_tokens, int) or isinstance(self.max_output_tokens, bool) or self.max_output_tokens <= 0:
@@ -135,6 +139,10 @@ class ModelConfig:
             raise ValueError("unsupported output_limit_field")
         if self.thinking_mode not in (None, "enabled", "disabled"):
             raise ValueError("thinking_mode must be one of None, enabled, disabled")
+        if self.temperature is not None and (isinstance(self.temperature, bool)
+                                            or not isinstance(self.temperature, (int, float))
+                                            or not 0.0 <= self.temperature <= 2.0):
+            raise ValueError("temperature must be a number between 0 and 2, or None")
 
 
 @dataclass(frozen=True, slots=True)
