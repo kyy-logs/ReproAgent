@@ -1,10 +1,22 @@
-# AgentScope 接入与使用
+# AgentScope 基础设施
 
-ReproAgent 可分别选择模型后端和 Agent 策略后端。当前工具环境已安装 AgentScope 2.0.9；新环境按下面命令安装可选依赖。普通安装仍以原生后端运行。
+ReproAgent 只有一套基础设施：AgentScope。模型调用、受限文件工具、阶段内 ReAct 执行和消息历史都由
+SDK 提供，复现策略、业务编排、证据核验与独立交付仍属于 ReproAgent。没有第二个运行时可以切换，
+也没有 native 备选路径可以回退。
+
+AgentScope 是主依赖（`pyproject.toml` 的 `dependencies` 固定 `agentscope==2.0.9`），随产品一起安装：
 
 ```powershell
 cd E:\ReproAgent
-.\.venv\Scripts\python.exe -m pip install -e ".[agentscope]"
+.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+```
+
+已安装 `reproagent-local` 的环境无需额外步骤。空的可选 extra `[agentscope]` 仅为一个弃用周期保留，
+使旧的 `pip install reproagent-local[agentscope]` 命令仍可执行；它不安装任何额外内容。
+依赖缺失或版本不是 2.0.9 时，装配阶段明确报错，不会退回其他实现：
+
+```text
+the AgentScope infrastructure requires agentscope==2.0.9; installed <version>
 ```
 
 ## 运行
@@ -13,44 +25,84 @@ cd E:\ReproAgent
 
 ```powershell
 .\.venv\Scripts\python.exe -m reproagent run `
-  --config <task.json> --model-config examples/model.deepseek.json `
-  --model-backend agentscope --agent-backend agentscope
+  --config <task.json> --model-config examples/model.deepseek.json
 ```
 
-两个参数均默认为 `native`，可以分别选择：
+`--model-backend` / `--agent-backend` 是迁移前的两个旧参数，现在都已弃用且不再选择运行时：传入任一
+旧值（`native` 或 `agentscope`）都会打印弃用提示并照常运行同一套基础设施，其他值直接拒绝。
+Windows / Claude Code 启动器的 `-ModelBackend` / `-AgentBackend` 同样保留为弃用别名。
 
-| model-backend | agent-backend | 用途 |
-| --- | --- | --- |
-| native | native | 原生基线 |
-| agentscope | native | 单独对照 SDK 模型调用 |
-| native | agentscope | 单独对照 SDK Agent 生命周期 |
-| agentscope | agentscope | 两层都经过 SDK |
+可继续传入 `--fixed-repo`、`--fixed-python`；修复材料只用于冻结后的验证。需要新的 output_dir，
+inspect 和 replay 不调用模型。
 
-可继续传入 `--fixed-repo`、`--fixed-python`；修复材料只用于冻结后的验证。需要新的 output_dir，inspect 和 replay 不调用模型。选择 SDK 后端而没有安装依赖，或版本不同于 2.0.9，会明确报错。
+## 一条任务里有什么
 
-Windows / Claude Code 启动器同样支持选择：
+`create_controller` 是唯一装配点，它构建一个 `AgentScopeModelGateway`（领域结构化请求）和一个
+`AgentScopeExplorer` 工厂（探索阶段）。两者都从同一份模型配置与同一个任务 store 构建
+`AgentScopeModelFactory`（每条路径各有自己的工厂实例，探索模型按任务创建），所以每条模型路径都经过
+同一套有界 HTTP 尝试循环、响应检查与记账规则；阶段守卫由运行时装在探索模型上，因此只有探索请求计
+探索步数。注入自定义 gateway/explorer 只用于测试与自定义策略，记录会标为 `not_recorded`/`custom`，
+不会冒充产品自身的基础设施。
 
-```powershell
-powershell.exe -NoProfile -File E:/ReproAgent/.claude/skills/reproagent/scripts/reproagent.ps1 `
-  -TaskConfig <task.json> -ModelBackend agentscope -AgentBackend agentscope
-```
+- **契约分析**：`analyze` 通过 gateway 发出一个结构化请求（无 tools、`response_format=json_object`）。
+- **探索阶段**：`AgentScopeExplorer` 每个任务创建一个 `AgentScopeRuntime`，由 SDK `Agent` 在自己的
+  `AgentState` 里跑 ReAct 循环。同一个任务的所有阶段共用这段历史；每个阶段开始前绑定当前契约版本。
+- **业务推进**：阶段结果交回 Controller。候选随即在原版执行、被语义核验，并在复现时独立重复一次；
+  给出 `--fixed-repo` 时再在固定版执行同一候选。没有"是否执行"或"是否提交"的模型决策。
+- **交付**：导出与 replay 不依赖 SDK，也不需要 AgentScope。
 
-本机全局入口引用该启动器，默认仍使用原生组合。项目 Skill 已说明新参数；在 Claude Code 请求使用 SDK 时明确写出这两个后端选项。
+## 阶段工具面
 
-## 实现边界
+一个探索阶段只注册六个工具，顺序固定：
 
-`AgentScopeModelGateway` 使用真实 SDK 的 OpenAIChatModel 调用兼容 Chat Completions 的 JSON 文本接口。支持现有 DeepSeek 配置、输出 token 上限、供应商 usage 和可选估算费率。当前没有将 SDK 的所有供应商、流式输出、多模态或工具调用暴露为产品接口。
+| 工具 | 作用 |
+| --- | --- |
+| `Read` | 读取注册快照中的文件，行号格式与 SDK 相同 |
+| `Grep` | 用 ripgrep 搜索注册快照，只在 `content` 模式下显示整行 |
+| `Glob` | 在注册快照内做文件名匹配 |
+| `write_candidate` | 发布一个候选并结束本阶段 |
+| `revise_contract` | 引用本阶段显示过的原版行，申请契约修订 |
+| `request_information` | 报告无法继续所缺的信息并结束本阶段 |
 
-`AgentScopeExplorer` 每次分析或动作决策创建独立的真实 SDK Agent，通过模型桥接调用共享 BudgetedGateway。每个决策最多一次模型调用，无业务工具注册、上下文自动压缩或运行状态注入。动作纠正与探索循环仍由现有协议层和 Controller 管理。这是受控的 SDK 单决策接入，后续可以经 Explorer 工厂增加不同策略；当前没有证明 SDK 策略能提高复现率。
+不注册 Bash/PowerShell/通用 Write/Edit，也不注册 `run_candidate`/`submit_candidate`。文件工具的
+`BackendBase` 由 `SnapshotBackend` 实现：只服务冻结清单里的文件，拒绝写入和删除，只执行 SDK 自己
+发出的两种程序形状（ripgrep argv 与 SDK 的 `_glob_helper.py`），并拒绝该名字触发的敏感文件读取。
+其他文件系统查询从清单回答，因此冻结后写入快照的文件不可见，字节变化的注册文件在每次读取时被拒。
 
-两种后端共用契约来源、目录与动作验证、执行预算、Probe、Verifier、重复复现、修复版对照和独立导出。SDK 不能自行宣布复现成功。SDK 和底层客户端隐藏重试关闭；适配器最多三次 HTTP 尝试，逐次记账。取消和任务超时会终止调用；费用不完整时保持 unknown，仍拒绝无法保证的硬费用上限。
+Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时搜索被明确拒绝为"无法运行"，
+而不是报"无匹配"；`REPROAGENT_RG_PATH` 只被测试用来指定一个已知的二进制位置。
 
-适配器在 SDK 转换前检查原始 finish_reason，拒绝截断、空文本、工具调用和不兼容结构。HTTP 响应限制为 1 MiB，超限停止读取并关闭响应。请求要求 `Accept-Encoding: identity`，非 identity 响应在解压前拒绝；不支持强制压缩的代理。错误信息不复制供应商响应正文或重复字段名。
+## 证据与阶段结果
 
-## 结果与对照评测
+工具响应受 `tool_response_bytes`（默认 32768）限制，被截断时带明确标记；一个文件工具把它完整显示
+过的行写进响应的 `<evidence>` 边车，只有这些行可以被 `revise_contract` 引用。Read 一行最多
+2000 字符，Grep 因 ripgrep `--max-columns 500` 最多 500 字节：被任一工具截断的行不是完整原版行，
+不是证据。引用由 `EvidenceLedger` 签发，`Verifier.resolve` 再次核验，伪造的路径、哈希或行号没有
+可以附着的对象。
 
-`events.jsonl` 的 `backend.selected` 事件，以及导出 `report.json` 的 `backends` 字段，记录模型后端、Agent 后端、model ID、是否注入自定义网关和 SDK 版本。`report.md` 也展示组合，历史包保持原样。
+阶段结果由领域工具通过 `PhaseGate` 产生，一个阶段只产生一个：先到者生效。`write_candidate` 只发布
+不可变候选并给出真实 id，它不执行候选、也不是判定。SDK 的自然语言结尾不产生阶段结果，也不会成为
+成功；模型说"已复现"而没有任何工具调用时，这个阶段是 `no_candidate`，任务以诊断结束。
 
-对照评测应固定原版源码、Bug 描述、目标环境、模型配置、预算及修复版；四种组合分别使用新的结果目录，记录成功证据等级、HTTP 尝试、token、费用未知情况、耗时与失败原因。后端接通或合成样本通过不等于能力提升；历史 20 个案例尚未针对这次 SDK 接入重新评测。
+## 预算、权限与压缩
 
-验证记录见 [实现记录](implementation-status.md)，设计与实施清单见 [设计](superpowers/specs/2026-10-06-reproagent-agentscope-design.md) 和 [实施计划](superpowers/plans/2026-10-06-reproagent-agentscope.md)。
+一次探索模型逻辑请求计一步（默认 20）；网络重试是同一逻辑请求的另一次 HTTP 尝试，不额外计步，
+单逻辑请求最多 3 次 HTTP。单命令 60 秒，任务 900 秒，HTTP 响应上限 1 MiB，只接受
+`Accept-Encoding: identity`。契约分析和语义核验不占探索步数，但计时间、HTTP、token 和费用。
+
+阶段运行在 `DONT_ASK` 权限模式：没有用户可以回答确认，因此领域工具的权限决策是 `ALLOW`（`DENY`
+规则仍然优先），`EXPLORE` 模式会拒绝非只读工具，阶段不应在其中运行。一次响应最多一个工具调用，
+整份响应在任何一项执行前就被检查：多于一个调用、未知工具名或非法 JSON 参数都会被整份拒绝，并按
+固定的协议码在有限次尝试内纠正。
+
+自动压缩被显式阻止：`on_compress_context` 在上下文达到阈值时以 `NEEDS_INFORMATION` 停止阶段，
+而不是用摘要替换携带来源引用的历史。SDK 的 grace、总结与压缩都不能绕过预算。
+
+## MockTransport 与真实模型
+
+离线测试用 `httpx.MockTransport` 走完整链路：探索 wire 携带 tools 且每个阶段工具都真实执行，
+领域请求是无 tools 的结构化请求，Controller 的执行业务步骤不经过模型。这些测试证明的是产品行为
+（边界、预算、证据、装配），**不是模型能力**，也不能用来宣称复现率提升。
+
+真实模型的定点与冻结轮次的执行状态见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)；
+历史验证记录见 [实现记录](implementation-status.md)。

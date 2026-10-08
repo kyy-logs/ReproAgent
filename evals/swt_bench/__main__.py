@@ -4,6 +4,7 @@ import json
 import sys
 from pathlib import Path
 
+from reproagent.app import LEGACY_BACKENDS
 from reproagent.core.models import BudgetLimits,ModelConfig
 from .io import read_json,write_json,fresh_dir
 
@@ -16,7 +17,8 @@ def main(argv=None):
     convert.add_argument('--source',required=True); convert.add_argument('--output',required=True)
     run=commands.add_parser('run'); run.add_argument('--catalog',required=True); run.add_argument('--manifest',required=True)
     run.add_argument('--bindings',required=True); run.add_argument('--model-config',required=True); run.add_argument('--output',required=True)
-    run.add_argument('--model-backend',choices=('native','agentscope'),default='native'); run.add_argument('--agent-backend',choices=('native','agentscope'),default='native')
+    run.add_argument('--model-backend',choices=LEGACY_BACKENDS,help='deprecated: both legacy values select the one AgentScope infrastructure')
+    run.add_argument('--agent-backend',choices=LEGACY_BACKENDS,help='deprecated: both legacy values select the one AgentScope infrastructure')
     run.add_argument('--limits'); run.add_argument('--name')
     preflight=commands.add_parser('preflight'); preflight.add_argument('--catalog',required=True); preflight.add_argument('--manifest',required=True)
     preflight.add_argument('--bindings',required=True); preflight.add_argument('--output',required=True)

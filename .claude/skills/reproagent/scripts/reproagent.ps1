@@ -14,10 +14,10 @@ param(
     [string]$FixedPython,
     [Parameter(ParameterSetName = 'Run')]
     [ValidateSet('native', 'agentscope')]
-    [string]$ModelBackend = 'native',
+    [string]$ModelBackend,
     [Parameter(ParameterSetName = 'Run')]
     [ValidateSet('native', 'agentscope')]
-    [string]$AgentBackend = 'native'
+    [string]$AgentBackend
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,7 +65,14 @@ try {
                 } catch { throw 'Unable to load the local encrypted credential. Set the configured API key environment variable in the launching terminal.' }
             }
             $reproArgs = @('-m', 'reproagent', 'run', '--config', $TaskConfig, '--model-config', $ModelConfig)
-            $reproArgs += @('--model-backend', $ModelBackend, '--agent-backend', $AgentBackend)
+            # Both backends are one infrastructure now, so the launcher selects nothing of
+            # its own: an old command that names one is forwarded as the deprecated alias
+            # it is and the CLI says so, and a new command leaves the choice out entirely.
+            if ($ModelBackend) { $reproArgs += @('--model-backend', $ModelBackend) }
+            if ($AgentBackend) { $reproArgs += @('--agent-backend', $AgentBackend) }
+            if ($ModelBackend -or $AgentBackend) {
+                [Console]::Error.WriteLine('-ModelBackend/-AgentBackend are deprecated and no longer select a runtime: ReproAgent runs on the AgentScope infrastructure only.')
+            }
             if ($FixedRepo) { $reproArgs += @('--fixed-repo', $FixedRepo) }
             if ($FixedPython) { $reproArgs += @('--fixed-python', $FixedPython) }
             & $ToolPython @reproArgs

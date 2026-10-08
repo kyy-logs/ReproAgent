@@ -5,7 +5,7 @@ from pathlib import Path
 from .adapters.languages.python_pytest.adapter import PythonPytestAdapter
 from .adapters.runtimes.local import LocalBackend
 from .core.models import ExecutionResult, ProbeResults, ProjectView, ProtectionCheck
-from .paths import is_within, relative_name, workspace_path
+from .paths import directory_path, is_within, relative_name, workspace_path
 from .store import atomic_write
 from .core.serialization import bytes_hash, canonical_bytes
 
@@ -24,7 +24,7 @@ class Runner:
         context.budget.check()
         inspection = self.adapter.inspect(ProjectView(snapshot), request.language)
         root = workspace_path(self.store.root / 'probes' / uuid.uuid4().hex)
-        root.mkdir(parents=True)
+        directory_path(root).mkdir(parents=True)
         raw = await self.backend.execute(replace(inspection.probes[0], cwd=root), context)
         self.store.append_event('environment.probed', (self.relative_ref(raw.stdout_ref).path, self.relative_ref(raw.stderr_ref).path), {'exit_code':raw.exit_code, 'stop_reason':raw.stop_reason, 'cleanup_ok':raw.cleanup_ok})
         environment = self.adapter.describe_environment(inspection, ProbeResults((raw,)))

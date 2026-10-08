@@ -1,206 +1,471 @@
+"""The Controller's business state machine, driven by scripted exploration phases.
+
+The phases here are planned, not explored: a plan entry is what one phase decided, and the
+scripted explorer publishes through the same product candidate service the SDK phase tools
+use, so publication rules, contract binding and the snapshot are the real ones.  Every
+phase also charges the one step a phase's own model request costs, because that is the
+port's unit of work -- the Controller's execute and confirm steps are not exploration and
+do not spend one.
+"""
 import asyncio
 import importlib
 import json
 import sys
+import time
 from dataclasses import replace
 
-from reproagent.core.models import BudgetLimits, EvidenceLevel, FixValidationRequest, ModelConfig, ModelResponse, PythonPytestConfig, TaskRequest, TaskState
+from reproagent.core.budget import Budget, BudgetStopped
+from reproagent.core.candidate_service import CandidateService
+from reproagent.core.models import (BudgetLimits, CandidateDraft, DraftFile, EvidenceLevel, EvidenceRef,
+    FixValidationRequest, ModelConfig, ModelResponse, PythonPytestConfig, RunContext, TaskRequest, TaskState)
+from reproagent.core.phase import PhaseResult
+from reproagent.core.protocol import ModelProtocolError
+from reproagent.core.agent import ReproAgent
+from reproagent.paths import relative_name
+
+BUGGY = 'from example.parser import parse\ndef test_empty(): assert parse([]) == []\n'
+PASSING = 'from example.parser import parse\ndef test_nonempty(): assert parse([1]) == [1]\n'
+
+
+class Clock:
+    """A monotonic clock the test moves, so a deadline can be reached deliberately."""
+
+    def __init__(self, now=0.0):
+        self.now = now
+
+    def __call__(self):
+        return self.now
 
 
 class ScriptedModel:
-    def __init__(self, missing=False): self.messages=[]; self.step=0; self.candidate_id=''; self.missing=missing
-    async def complete(self, request, context):
-        self.messages.extend(request.messages)
-        data = json.loads(request.messages[-1]['content'])
-        if request.response_kind == 'contract':
-            result = {'trigger':'empty list','expected':'' if self.missing else 'parse([]) returns []','reported_actual':'IndexError','source_indices':[] if self.missing else [0], 'missing_information':['expected?'] if self.missing else [], 'observable_checks':[], 'assumptions':[]}
-        elif request.response_kind == 'verdict':
-            result = {'classification':'REPRODUCED','reason':'reported IndexError on empty input', 'evidence_refs':data['available_refs'], 'expected_assertion':True,'target_triggered':True,'failure_matches_issue':True}
-        else:
-            if self.missing:
-                return ModelResponse('{"name":"request_information","parameters":{"question":"Provide expected behavior"}}')
-            names = ('write_candidate', 'run_candidate', 'submit_candidate')
-            name = names[min(self.step, 2)]; self.step += 1
-            self.candidate_id = (data['candidate_ids'] or [''])[0]
-            parameters = {'files':[{'path':'tests/test_repro.py','content':'from example.parser import parse\ndef test_empty(): assert parse([]) == []\n','role':'test'}], 'hypothesis':'empty input'} if name == 'write_candidate' else {'candidate_id':self.candidate_id}
-            result = {'name':name, 'parameters':parameters}
-        return ModelResponse(json.dumps(result))
+    """The contract/verdict model. Exploration is planned by the phase script instead."""
 
-
-class ScriptedActions:
-    """Proposes fixed actions; the last one repeats, so the script never runs dry."""
-    def __init__(self, actions): self.actions = list(actions); self.messages = []
-    async def complete(self, request, context):
-        self.messages.extend(request.messages)
-        data = json.loads(request.messages[-1]['content'])
-        if request.response_kind == 'contract':
-            result = {'trigger':'empty list','expected':'parse([]) returns []','reported_actual':'IndexError','source_indices':[0],
-                      'missing_information':[],'observable_checks':[],'assumptions':[]}
-        elif request.response_kind == 'verdict':
-            result = {'classification':'REPRODUCED','reason':'reported IndexError on empty input','evidence_refs':data['available_refs'],
-                      'expected_assertion':True,'target_triggered':True,'failure_matches_issue':True}
-        else:
-            result = self.actions[0] if len(self.actions) == 1 else self.actions.pop(0)
-        return ModelResponse(json.dumps(result))
-
-
-class ScriptedRevision:
-    """Reads one source, then revises the contract with a model that never returns a valid contract."""
-    def __init__(self): self.contracts = 0; self.messages = []
-    async def complete(self, request, context):
-        self.messages.extend(request.messages)
-        data = json.loads(request.messages[-1]['content'])
-        if request.response_kind == 'contract':
-            self.contracts += 1
-            if self.contracts > 1: return ModelResponse(json.dumps({'trigger':'empty list','expected':'parse([]) returns []'}))
-            return ModelResponse(json.dumps({'trigger':'empty list','expected':'parse([]) returns []','reported_actual':'IndexError',
-                'source_indices':[0],'missing_information':[],'observable_checks':[],'assumptions':[]}))
-        refs = json.loads(data['feedback'])['evidence_refs'] if data['feedback'] else []
-        action = ({'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}} if not refs
-                  else {'name':'revise_contract','parameters':{'source_refs':list(refs),'reason':'narrow the cited lines'}})
-        return ModelResponse(json.dumps(action))
-
-
-class ScriptedCandidateRun:
-    """Publishes a candidate, then keeps running it."""
-    def __init__(self): self.messages = []
-    async def complete(self, request, context):
-        self.messages.extend(request.messages)
-        data = json.loads(request.messages[-1]['content'])
-        if request.response_kind == 'contract':
-            result = {'trigger':'empty list','expected':'parse([]) returns []','reported_actual':'IndexError','source_indices':[0],
-                      'missing_information':[],'observable_checks':[],'assumptions':[]}
-        elif request.response_kind == 'verdict':
-            result = {'classification':'REPRODUCED','reason':'reported IndexError on empty input','evidence_refs':data['available_refs'],
-                      'expected_assertion':True,'target_triggered':True,'failure_matches_issue':True}
-        else:
-            candidate_id = (data['candidate_ids'] or [''])[0]
-            result = ({'name':'run_candidate','parameters':{'candidate_id':candidate_id}} if candidate_id else
-                {'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
-                    'content':'from example.parser import parse\ndef test_empty(): assert parse([]) == []\n'}],'hypothesis':'empty input'}})
-        return ModelResponse(json.dumps(result))
-
-
-def read_action(data=None):
-    return {'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':2}}
-
-
-def write_action(data=None):
-    return {'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
-        'content':'from example.parser import parse\ndef test_empty(): assert parse([]) == []\n'}],'hypothesis':'empty input'}}
-
-
-def write_passing_action(data=None):
-    return {'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
-        'content':'from example.parser import parse\ndef test_nonempty(): assert parse([1]) == [1]\n'}],'hypothesis':'nonempty input'}}
-
-
-def run_action(data):
-    return {'name':'run_candidate','parameters':{'candidate_id':data['candidate_ids'][0]}}
-
-
-def submit_action(data):
-    return {'name':'submit_candidate','parameters':{'candidate_id':data['candidate_ids'][0]}}
-
-
-def revise_action(data):
-    return {'name':'revise_contract','parameters':{'source_refs':json.loads(data['feedback'])['evidence_refs'],'reason':'cite the parser source'}}
-
-
-class ScriptedLifecycle:
-    """A grounded contract and a scripted verdict; subclasses script only the actions."""
-    classification = 'REPRODUCED'
-
-    def __init__(self): self.messages, self.kinds = [], []
-
-    def reply(self, request, data): raise NotImplementedError
+    def __init__(self, missing=False, classification='REPRODUCED'):
+        self.messages, self.kinds, self.missing, self.classification = [], [], missing, classification
 
     async def complete(self, request, context):
         self.messages.extend(request.messages)
         self.kinds.append(request.response_kind)
         data = json.loads(request.messages[-1]['content'])
         if request.response_kind == 'contract':
-            result = {'trigger':'empty list','expected':'parse([]) returns []','reported_actual':'IndexError','source_indices':[0],
-                      'missing_information':[],'observable_checks':[],'assumptions':[]}
+            result = {'trigger':'empty list','expected':'' if self.missing else 'parse([]) returns []','reported_actual':'IndexError',
+                'source_indices':[] if self.missing else [0], 'missing_information':['expected?'] if self.missing else [],
+                'observable_checks':[],'assumptions':[]}
         elif request.response_kind == 'verdict':
             result = {'classification':self.classification,'reason':'reported IndexError on empty input','evidence_refs':data['available_refs'],
-                      'expected_assertion':True,'target_triggered':self.classification == 'REPRODUCED','failure_matches_issue':True}
+                'expected_assertion':True,'target_triggered':self.classification == 'REPRODUCED','failure_matches_issue':True}
         else:
-            result = self.reply(request, data)
+            raise AssertionError(f'the Controller makes no {request.response_kind} request to the domain model')
         return ModelResponse(json.dumps(result))
 
 
-class ScriptedSequence(ScriptedLifecycle):
-    """Runs one scripted action per decision, repeating the last one when it runs dry."""
-    def __init__(self, sequence, classification='REPRODUCED'):
-        super().__init__()
-        self.sequence, self.step, self.classification = list(sequence), 0, classification
+class ClosableModel(ScriptedModel):
+    """A gateway that owns clients of its own, as the SDK one does."""
 
-    def reply(self, request, data):
-        action = self.sequence[min(self.step, len(self.sequence) - 1)]
-        self.step += 1
-        return action(data)
+    def __init__(self, missing=False, classification='REPRODUCED'):
+        super().__init__(missing, classification)
+        self.closed = 0
 
-
-class ScriptedReadLoop(ScriptedLifecycle):
-    """Publishes one candidate, then reads forever instead of running or submitting it."""
-    def reply(self, request, data):
-        return write_action() if not data['candidate_ids'] else read_action()
+    async def aclose(self):
+        self.closed += 1
 
 
-class ScriptedEscape(ScriptedLifecycle):
-    """Publishes one candidate, then tries to end the task with a question."""
-    def reply(self, request, data):
-        return write_action() if not data['candidate_ids'] else {'name':'request_information','parameters':{'question':'stop'}}
+class InvalidContract(ScriptedModel):
+    """A contract analysis that never returns a usable contract."""
+
+    def __init__(self, missing=False, classification='REPRODUCED'):
+        super().__init__(missing, classification)
+        self.analyses = 0
+
+    async def complete(self, request, context):
+        if request.response_kind == 'contract':
+            self.analyses += 1
+            self.messages.extend(request.messages)
+            self.kinds.append(request.response_kind)
+            if self.analyses > 1:
+                return ModelResponse(json.dumps({'trigger':'empty list','expected':'parse([]) returns []'}))
+        return await super().complete(request, context)
 
 
-def controller_for(tmp_path, projects, facts, model, limits=None):
+# ---------------------------------------------------------------------------
+# The scripted exploration phase
+# ---------------------------------------------------------------------------
+
+def publish(path='tests/test_repro.py', content=BUGGY, hypothesis='empty input', role='test', extra=()):
+    """One phase that publishes a candidate through the product's candidate service."""
+    def step(explorer, context):
+        files = ((path, content, role), *extra)
+        draft = CandidateDraft(tuple(DraftFile(item, text.encode('utf-8'), item_role) for item, text, item_role in files),
+                               explorer.service.snapshot.snapshot_id, context.contract.contract_id,
+                               context.contract.version, hypothesis, expectation_sources=context.contract.sources)
+        return PhaseResult('candidate', candidate_id=explorer.service.publish(draft).candidate_id)
+    return step
+
+
+def report(candidate_id):
+    """One phase that reports a candidate id without publishing anything."""
+    return lambda explorer, context: PhaseResult('candidate', candidate_id=_value(candidate_id))
+
+
+def revise(source_refs, reason='cite the parser source'):
+    """One phase that asks the Controller for a contract revision of those lines."""
+    return lambda explorer, context: PhaseResult('revise_contract', source_refs=tuple(_value(source_refs)), reason=reason)
+
+
+def _value(value):
+    """A plan entry's argument, resolved when the phase runs if it is deferred."""
+    return value() if callable(value) else value
+
+
+def ask(question='Provide expected behavior'):
+    """One phase that reports the information it is missing."""
+    return lambda explorer, context: PhaseResult('request_information', question=question)
+
+
+def nothing(reason='the phase ended without publishing a candidate'):
+    """One phase that produced nothing the Controller may act on."""
+    return lambda explorer, context: PhaseResult('no_candidate', reason=reason)
+
+
+def fail(error):
+    """One phase that fails instead of answering."""
+    def step(explorer, context):
+        raise error
+    return step
+
+
+def source_ref(explorer, path='example/parser.py', start=1, end=2):
+    """A citation of a registered original file, as a phase tool would issue it.
+
+    The citation names the file the way the rest of the task does -- relative to the task
+    store, carrying the frozen hash -- which is exactly what the evidence ledger issues.
+    """
+    snapshot = explorer.service.snapshot
+    entry = next(entry for entry in snapshot.files if entry.path == path)
+    return EvidenceRef(relative_name(snapshot.root / path, explorer.service.workspace.root), entry.content_hash, start, end)
+
+
+class ScriptedExplorer(ReproAgent):
+    """The product strategy with phases planned by the test.
+
+    It implements the same port as the SDK runtime: ``analyze`` is the product's contract
+    analysis, each phase is one logical exploration request (and so spends the one step the
+    runtime's guard would spend), publication goes through the phase's candidate service,
+    and ``aclose`` is awaited once when the task is over.
+    """
+
+    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, plan=(), close_error=None):
+        super().__init__(gateway, context, candidate_parent)
+        self.workspace, self.store = workspace, workspace.store
+        self.service = CandidateService(project, workspace, context)
+        self.plan, self.results, self.contexts = list(plan), [], []
+        self.close_error, self.closed = close_error, False
+
+    async def explore(self, context):
+        self.service.bind_contract(context.contract)
+        self.context.budget.take_step()
+        self.contexts.append(context)
+        step = self.plan.pop(0) if self.plan else nothing('the plan is exhausted')
+        result = step(self, context)
+        self.results.append(result)
+        return result
+
+    async def aclose(self):
+        await asyncio.sleep(0)
+        self.closed = True
+        if self.close_error is not None:
+            raise self.close_error
+
+
+class PhasePlan:
+    """Builds each task's scripted explorer and keeps it for the test's assertions."""
+
+    def __init__(self, plan=()):
+        self.plan, self.explorer, self.close_error = list(plan), None, None
+
+    def __call__(self, gateway, context, candidate_parent, *, project, workspace):
+        self.explorer = ScriptedExplorer(gateway, context, candidate_parent, project=project, workspace=workspace,
+                                         plan=self.plan, close_error=self.close_error)
+        return self.explorer
+
+
+def controller_for(tmp_path, projects, facts, model, limits=None, plan=()):
     repo = projects.plain(tmp_path / 'repo')
     request = TaskRequest(repo, tmp_path / '任务', repo / 'issue.md', language=PythonPytestConfig(python=sys.executable, target_modules=('example.parser',)), limits=limits or BudgetLimits())
     app = importlib.import_module('reproagent.app')
-    return request, app.create_controller(request, ModelConfig(), gateway=model), facts.context(limits=request.limits)
+    controller = app.create_controller(request, ModelConfig(), gateway=model, explorer_factory=PhasePlan(plan))
+    return request, controller, facts.context(limits=request.limits)
 
 
-def setup(tmp_path, projects, facts, limits=None, missing=False):
+def setup(tmp_path, projects, facts, limits=None, missing=False, plan=None):
+    """One scripted task: the standard plan publishes the regression candidate."""
+    plan = [publish()] if plan is None else list(plan)
     model = ScriptedModel(missing)
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model, limits)
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, limits, plan)
     return request, model, controller, ctx
 
 
-def test_controller_requires_replay_export_and_cleanup_before_done(tmp_path, projects, facts):
+def event_dump(events): return json.dumps([{'kind': event.kind, 'payload': event.payload} for event in events])
+
+
+def action_endings(events):
+    return [(event.kind, event.payload['action'], event.payload['result_code'])
+            for event in events if event.kind in ('action.completed', 'action.rejected')]
+
+
+def phase_results(events):
+    return [(event.payload['kind'], event.payload['result_code']) for event in events if event.kind == 'phase.result']
+
+
+def verdict_records(request):
+    return sorted((request.output_dir / 'verdicts').glob('*.json')) if (request.output_dir / 'verdicts').exists() else []
+
+
+def test_candidate_is_run_and_confirmed_without_run_submit_decisions(tmp_path, projects, facts):
+    """A phase result is acted on: execute, verify, repeat -- and no step for either."""
     request, model, controller, ctx = setup(tmp_path, projects, facts)
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.DONE and result.export_state == 'published'
     assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
     assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2
+    assert len(verdict_records(request)) == 2
     assert (request.output_dir / 'artifacts/reproduction/replay.py').exists()
+    # The phase is the only thing that spends exploration steps; executing, verifying and
+    # repeating the candidate it published spend none.
+    assert ctx.budget.steps_used == 1
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert action_endings(events) == [('action.completed', 'run_candidate', 'OK'),
+                                      ('action.completed', 'submit_candidate', 'OK')]
+    assert phase_results(events) == [('candidate', 'REPRODUCED')]
+    assert model.kinds == ['contract', 'verdict', 'verdict']
+    assert controller.explorer.closed
 
 
-def test_budget_after_first_observation_preserves_partial_evidence(tmp_path, projects, facts):
-    request, _, controller, ctx = setup(tmp_path, projects, facts, BudgetLimits(agent_steps=2))
+def test_confirmed_candidate_is_not_offered_back_to_the_phase(tmp_path, projects, facts):
+    # The phase would stop the task with a question on its second turn; the candidate it
+    # already published reproduced, so the Controller repeats it and delivers instead.
+    request, model, controller, ctx = setup(tmp_path, projects, facts, plan=[publish(), ask('stop')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE and result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+    assert len(controller.explorer.results) == 1
+    assert action_endings(controller.store.read_events()[0])[-1] == ('action.completed', 'submit_candidate', 'OK')
+
+
+def test_a_non_reproducing_candidate_returns_to_the_phase_with_its_verdict(tmp_path, projects, facts):
+    # The candidate is executed and verified, does not reproduce, and the next phase is
+    # told so; only then does the task stop, and it stops for the phase's own reason.
+    model = ScriptedModel(classification='NOT_REPRODUCED')
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, plan=[publish(), ask('revise it')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION and result.stop_reason == 'MISSING_INFORMATION'
+    assert result.evidence_level == EvidenceLevel.NONE and not result.accepted_candidate_id
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 1
+    assert not (request.output_dir / 'artifacts/reproduction').exists()
+    ending = controller.explorer.contexts[1]
+    assert 'NOT_REPRODUCED' in ending.feedback
+
+
+def test_deadline_after_first_observation_preserves_partial_evidence(tmp_path, projects, facts):
+    """Executing and confirming do not spend exploration steps, so the deadline bounds them.
+
+    The first execution and its semantic review are inside the deadline, the independent
+    repeat is not: the task keeps the single observation it really made.
+    """
+    clock = Clock()
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(), plan=[publish()])
+    ctx = RunContext(budget=Budget(BudgetLimits(task_timeout_seconds=10), clock=clock))
+    original = controller.verifier.evaluate
+    async def reviewed(*args, **kwargs):
+        verdict = await original(*args, **kwargs)
+        clock.now += 100
+        return verdict
+    controller.verifier.evaluate = reviewed
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.EXHAUSTED
     assert result.evidence_level == EvidenceLevel.SINGLE_OBSERVATION and result.accepted_candidate_id
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 1
+    assert len(verdict_records(request)) == 1
     assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
+    assert action_endings(controller.store.read_events()[0])[-1] == ('action.rejected', 'submit_candidate', 'INTERRUPTED')
 
 
-def test_cleanup_failure_overrides_cancel_with_original_reason_saved(tmp_path, projects, facts):
-    request, _, controller, ctx = setup(tmp_path, projects, facts)
-    original = controller.runner.execute
-    async def failed(*args, **kwargs):
-        execution = await original(*args, **kwargs)
-        return replace(execution, raw=replace(execution.raw, cleanup_ok=False, stop_reason='CANCELLED'))
-    controller.runner.execute = failed
+def test_a_phase_loop_stops_at_the_exploration_step_budget(tmp_path, projects, facts):
+    # A phase that keeps publishing candidates which do not reproduce cannot consume
+    # unbounded work: each phase costs one exploration step, and the fourth is refused.
+    model = ScriptedModel(classification='NOT_REPRODUCED')
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=3),
+                                              plan=[publish(), publish(), publish(), publish()])
     result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.FAILED and result.stop_reason == 'CANCELLED'
-    events, _ = controller.store.read_events()
-    assert action_endings(events)[-1] == ('action.rejected', 'run_candidate', 'CLEANUP_FAILED')
+    assert result.status == TaskState.EXHAUSTED and ctx.budget.steps_used == 3
+    assert len(controller.explorer.results) == 3
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 3
+    assert len(list((request.output_dir / 'candidates').glob('*/manifest.json'))) == 3
+    assert not (request.output_dir / 'artifacts/reproduction').exists()
+
+
+def test_a_candidate_published_with_the_last_step_is_still_confirmed(tmp_path, projects, facts):
+    # The step budget bounds exploration, never the confirmation of what was explored.
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(), BudgetLimits(agent_steps=1),
+                                              plan=[publish()])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE and ctx.budget.steps_used == 1
+    assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2
+
+
+def test_revision_invalidates_old_candidate_and_requires_read_sources(tmp_path, projects, facts):
+    """A revision re-derives the contract, and the version it left behind keeps nothing.
+
+    The version-1 candidate was executed once and did not reproduce; the revision clears
+    that evidence, and the phase that then reports the old candidate id is refused, so an
+    accepted candidate cannot survive the contract version that produced it.
+    """
+    model = ScriptedModel(classification='NOT_REPRODUCED')
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=5))
+    plan = PhasePlan()
+    stale = {}
+
+    def first(explorer, context):
+        result = publish()(explorer, context)
+        stale['candidate_id'] = result.candidate_id
+        stale['ref'] = source_ref(explorer)
+        return result
+
+    plan.plan = [first, revise(lambda: [stale['ref']]), report(lambda: stale['candidate_id']), ask('stop')]
+    controller.explorer_factory = plan
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert result.evidence_level == EvidenceLevel.NONE and not result.accepted_candidate_id
+    # Two contract versions, one contract, and only the version-1 candidate's single run.
+    contracts = [controller.store.load_record('contracts', path.stem) for path in (request.output_dir / 'contracts').glob('*.json')]
+    assert {contract.version for contract in contracts} == {1, 2}
+    assert len({contract.contract_id for contract in contracts}) == 1
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 1
+    assert not (request.output_dir / 'artifacts/reproduction').exists()
+    events = controller.store.read_events()[0]
+    assert phase_results(events) == [('candidate', 'NOT_REPRODUCED'), ('revise_contract', 'REVISION_REQUESTED'),
+                                     ('candidate', 'STALE_CANDIDATE'), ('request_information', 'MISSING_INFORMATION')]
+    assert action_endings(events) == [('action.completed', 'run_candidate', 'OK'),
+                                      ('action.completed', 'revise_contract', 'OK')]
+    # The phase that asked for the revision is told the new version and what is still missing.
+    assert json.loads(controller.explorer.contexts[2].feedback)['contract_version'] == 2
+
+
+def test_revision_may_cite_only_original_evidence(tmp_path, projects, facts):
+    # A revision that cites something the task never verified is refused with its own code,
+    # and the contract the task already has stays the one in force.
+    forged = EvidenceRef('example/parser.py', '0' * 64, 1, 2)
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(),
+                                              plan=[revise([forged]), ask('stop')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert phase_results(controller.store.read_events()[0]) == [('revise_contract', 'UNAUTHORIZED_EVIDENCE_REF'),
+                                                                ('request_information', 'MISSING_INFORMATION')]
+    assert len(list((request.output_dir / 'contracts').glob('*.json'))) == 1
+
+
+def test_revision_that_cannot_be_grounded_keeps_the_previous_contract(tmp_path, projects, facts):
+    # The revision analysis fails its protocol: the task fails with that code, and the
+    # failed step is recorded as a rejected revision rather than a completed one.
+    request, controller, ctx = controller_for(tmp_path, projects, facts, InvalidContract(), BudgetLimits(agent_steps=4))
+    plan = PhasePlan()
+    plan.plan = [revise(lambda: [source_ref(plan.explorer)])]
+    controller.explorer_factory = plan
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.FAILED and result.stop_reason == 'MODEL_PROTOCOL_ERROR'
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert action_endings(events) == [('action.rejected', 'revise_contract', 'MODEL_PROTOCOL_ERROR')]
+    assert all(code in importlib.import_module('reproagent.core.controller').ACTION_RESULT_CODES
+               for _, _, code in action_endings(events))
+
+
+def test_an_unconfirmed_replay_returns_to_the_phase_without_a_package(tmp_path, projects, facts):
+    # The candidate reproduced twice, but the two observations do not confirm each other:
+    # the task keeps the single observation it verified and asks the phase again.
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(),
+                                              plan=[publish(), ask('the replay did not confirm it')])
+    def unconfirmed(*args, **kwargs): return False
+    controller.verifier.confirm = unconfirmed
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION and result.evidence_level == EvidenceLevel.SINGLE_OBSERVATION
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2
+    assert not (request.output_dir / 'artifacts/reproduction').exists()
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert action_endings(events) == [('action.completed', 'run_candidate', 'OK'),
+                                      ('action.rejected', 'submit_candidate', 'REPLAY_UNCONFIRMED')]
+    assert phase_results(events) == [('candidate', 'REPLAY_UNCONFIRMED'), ('request_information', 'MISSING_INFORMATION')]
+    assert 'did not confirm' in controller.explorer.contexts[1].feedback
+
+
+def test_a_revision_that_exceeds_the_context_budget_is_refused(tmp_path, projects, facts):
+    # A revision whose cited sources do not fit the context budget is refused rather than
+    # sent: the phase is told to narrow the range, and the contract in force is unchanged.
+    plan = PhasePlan()
+    # The issue itself fits the budget; the revision, which must carry it and the cited
+    # lines, does not.
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(),
+                                              BudgetLimits(tool_response_bytes=100))
+    plan.plan = [revise(lambda: [source_ref(plan.explorer)]), ask('stop')]
+    controller.explorer_factory = plan
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert phase_results(controller.store.read_events()[0]) == [('revise_contract', 'REVISION_BUDGET_EXCEEDED'),
+                                                                ('request_information', 'MISSING_INFORMATION')]
+    assert len(list((request.output_dir / 'contracts').glob('*.json'))) == 1
+    assert 'narrow line ranges' in controller.explorer.contexts[1].feedback
+
+
+def test_a_session_that_cannot_be_closed_is_recorded_not_raised(tmp_path, projects, facts):
+    # Closing the task's phase session happens before delivery, and a session that fails to
+    # close is recorded as a cleanup failure: it never rewrites the conclusion the run
+    # already reached, and it never becomes an unrelated task outcome.
+    request, _, controller, ctx = setup(tmp_path, projects, facts)
+    controller.explorer_factory.close_error = RuntimeError('the SDK session would not close')
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE and result.export_state == 'published'
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert [event.payload['result_code'] for event in events if event.kind == 'explorer.cleanup_failed'] == \
+        ['CLEANUP_FAILED']
+    assert controller.explorer.closed
+
+
+def test_the_gateway_is_closed_with_the_task_that_used_it(tmp_path, projects, facts):
+    # Contract and verdict calls go through a gateway that holds its own clients, so the
+    # task's own close has to reach it -- not only the exploration session -- or a process
+    # running many tasks serially accumulates one set of sockets per task.
+    model = ClosableModel()
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, plan=[publish()])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE and model.closed == 1
+    # Closing is idempotent: a second close never reaches the gateway again.
+    asyncio.run(controller.close_explorer())
+    assert model.closed == 1
+
+
+def test_unknown_candidate_id_is_refused_and_answered_with_feedback(tmp_path, projects, facts):
+    model = ScriptedModel()
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=3),
+                                              plan=[report('candidate-never-published'), report('candidate-never-published'),
+                                                    publish()])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert phase_results(events)[:2] == [('candidate', 'UNKNOWN_CANDIDATE')] * 2
+    assert 'task store does not hold' in controller.explorer.contexts[1].feedback
+    # The rejected ids never enter an event: only the fixed code does.
+    assert 'candidate-never-published' not in event_dump(events)
 
 
 def test_missing_information_and_environment_block_have_diagnostic_packages(tmp_path, projects, facts):
-    request, _, controller, ctx = setup(tmp_path / 'missing', projects, facts, missing=True)
+    request, _, controller, ctx = setup(tmp_path / 'missing', projects, facts, missing=True, plan=[ask()])
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.NEEDS_INFORMATION
+    assert result.stop_reason == 'MISSING_INFORMATION' and 'Provide expected behavior' in result.uncertainties
     assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
     request, _, controller, ctx = setup(tmp_path / 'blocked', projects, facts)
     request = replace(request, language=replace(request.language, python=str(tmp_path / 'no-python.exe')))
@@ -209,15 +474,32 @@ def test_missing_information_and_environment_block_have_diagnostic_packages(tmp_
     assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
 
 
+def test_a_phase_that_reports_nothing_stops_with_its_own_diagnostic(tmp_path, projects, facts):
+    # An SDK phase that answers in prose published nothing: no candidate, no success, and
+    # the task is not asked to keep replying forever.
+    request, _, controller, ctx = setup(tmp_path / 'silent', projects, facts,
+                                        plan=[nothing('the phase answered without publishing')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION and result.stop_reason == 'NO_CANDIDATE'
+    assert 'the phase answered without publishing' in result.uncertainties
+    assert not list((request.output_dir / 'candidates').glob('*/manifest.json'))
+    assert not (request.output_dir / 'artifacts/reproduction').exists()
+    assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
+    assert len(controller.explorer.results) == 1
+
+
 def test_fixed_validation_is_separate_and_same_candidate(tmp_path, projects, facts):
     request, model, controller, ctx = setup(tmp_path, projects, facts)
     fixed = projects.fixed(tmp_path / 'fixed-secret-location')
     result = asyncio.run(controller.run(request, ctx, FixValidationRequest(fixed, sys.executable)))
     assert result.status == TaskState.DONE and result.evidence_level == EvidenceLevel.DIFFERENTIAL_VALIDATED
     runs = [controller.store.load_record('runs', p.parent.name) for p in (request.output_dir / 'runs').glob('*/execution.json')]
-    assert sorted(r.execution_role for r in runs) == ['fixed','original','original']
+    assert sorted(r.execution_role for r in runs) == ['fixed', 'original', 'original']
     assert len({r.candidate_id for r in runs}) == 1
+    # The hidden fixed version never reaches the model and never reaches a phase.
     assert str(fixed) not in json.dumps(model.messages)
+    assert all(str(fixed) not in json.dumps(context.contract, default=str) for context in controller.explorer.contexts)
+    assert all(str(fixed) not in json.dumps(context.feedback) for context in controller.explorer.contexts)
 
 
 def test_repeated_failure_with_failed_fix_is_not_differential_success(tmp_path, projects, facts):
@@ -249,6 +531,53 @@ def test_repeated_failure_with_failed_fix_is_not_differential_success(tmp_path, 
         fix_validation_status=result.fix_validation_status),))
     assert summary['effective_reproductions'] == 0 and summary['total_rate'] == 0.0
     assert summary['differential_successes'] == 0 and summary['fix_validation_failed'] == 1
+
+
+def test_failed_or_blocked_fix_is_not_differential_success(tmp_path, projects, facts):
+    # Repeating the original failure is delivered evidence on its own; a validated fixed
+    # version is a separate claim. A fixed version that ran and failed, and one whose
+    # environment could not be prepared at all, must leave the evidence level, the
+    # package's own differential flag, the evaluation's effective count and the report's
+    # main conclusion all saying the differential did not hold.
+    from evals.run import summarize
+    from evals.schema import EvalResult
+    def installed_sdk():
+        from importlib.metadata import PackageNotFoundError, version
+        try:
+            return version('agentscope')
+        except PackageNotFoundError:
+            return ''
+    cases = []
+    request, _, controller, ctx = setup(tmp_path / 'failed', projects, facts)
+    still_broken = projects.plain(tmp_path / 'fixed-still-broken')
+    cases.append((request, asyncio.run(controller.run(request, ctx, FixValidationRequest(still_broken, sys.executable))), 'failed'))
+    request, _, controller, ctx = setup(tmp_path / 'unreachable', projects, facts)
+    cases.append((request, asyncio.run(controller.run(request, ctx, FixValidationRequest(tmp_path / 'no-such-fixed-repo', sys.executable))), 'blocked'))
+    for request, result, expected in cases:
+        assert result.status == TaskState.DONE and result.export_state == 'published'
+        # The repeated original failure is still delivered as evidence of its own.
+        assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+        assert result.fix_validation_status == expected
+        package = request.output_dir / 'artifacts/reproduction'
+        report = json.loads((package / 'report.json').read_text(encoding='utf-8'))
+        assert report['verified'] is True and (package / 'candidate/tests/test_repro.py').is_file()
+        assert report['differential_validated'] is False
+        assert report['evidence_level'] != 'DIFFERENTIAL_VALIDATED'
+        assert report['fix_validation_status'] == expected
+        backends = report['backends']
+        assert backends['infrastructure'] == 'agentscope' and backends['agentscope_version'] == installed_sdk()
+        assert backends['strategy'] == 'reproagent' and backends['strategy_version'] == '1'
+        summary = summarize((EvalResult('pallets__flask-4992', status=result.status.value,
+            evidence_level=result.evidence_level.value, reproduced=True, human_judgement=True, export_replayed=True,
+            fix_validation_status=result.fix_validation_status),))
+        assert summary['effective_reproductions'] == 0 and summary['total_rate'] == 0.0
+        assert summary['differential_successes'] == 0
+        text = (package / 'report.md').read_text(encoding='utf-8')
+        assert '修复版对照通过' not in text
+        if expected == 'failed':
+            assert '仅确认原版重复失败，差分复现未成立' in text
+        else:
+            assert '差分验证未执行' in text and '差分复现未成立' not in text
 
 
 def test_no_fixed_version_preserves_buggy_only_workflow(tmp_path, projects, facts):
@@ -288,36 +617,24 @@ def test_legacy_record_without_fix_status_can_be_read(tmp_path):
     assert TaskResult('fresh', TaskState.PREPARING).fix_validation_status == 'not_provided'
 
 
-def event_dump(events): return json.dumps([{'kind': event.kind, 'payload': event.payload} for event in events])
-
-
-def action_endings(events):
-    return [(event.kind, event.payload['action'], event.payload['result_code'])
-            for event in events if event.kind in ('action.completed', 'action.rejected')]
-
-
-def test_pending_candidate_forces_run_without_model_decision(tmp_path, projects, facts):
-    # The model writes one candidate and then only ever offers to read. The freshly
-    # published candidate is still executed and submitted, each for one step.
-    model = ScriptedReadLoop()
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model)
+def test_cleanup_failure_overrides_cancel_with_original_reason_saved(tmp_path, projects, facts):
+    request, _, controller, ctx = setup(tmp_path, projects, facts)
+    original = controller.runner.execute
+    async def failed(*args, **kwargs):
+        execution = await original(*args, **kwargs)
+        return replace(execution, raw=replace(execution.raw, cleanup_ok=False, stop_reason='CANCELLED'))
+    controller.runner.execute = failed
     result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.DONE and result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
-    assert model.kinds == ['contract', 'action', 'verdict', 'verdict']
-    assert ctx.budget.steps_used == 3
-    events, errors = controller.store.read_events()
-    assert not errors
-    assert action_endings(events) == [('action.completed','write_candidate','OK'), ('action.completed','run_candidate','OK'),
-        ('action.completed','submit_candidate','OK')]
-    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2
+    assert result.status == TaskState.FAILED and result.stop_reason == 'CANCELLED'
+    events, _ = controller.store.read_events()
+    assert action_endings(events)[-1] == ('action.rejected', 'run_candidate', 'CLEANUP_FAILED')
 
 
-def test_forced_action_does_not_bypass_cancellation(tmp_path, projects, facts):
-    # The candidate the model wrote forces the next run_candidate without a model decision.
-    # The interpreter's own backend cancels an in-flight run exactly like this: it returns a
-    # CANCELLED stop reason and cancellation is now visible. The forced action must honour
-    # that instead of finishing, and must be the action that ends interrupted.
-    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedReadLoop())
+def test_cancel_waits_for_runner_cleanup_and_explorer_close(tmp_path, projects, facts):
+    """The cancellation path still reaps the run and still closes the task's phase session."""
+    # A cancelled execution keeps its own reason and is recorded as interrupted, never as
+    # a completed step; the cleanup failure above still outranks it.
+    request, _, controller, ctx = setup(tmp_path / 'cancelled', projects, facts)
     original = controller.runner.execute
     async def cancelled(*args, **kwargs):
         execution = await original(*args, **kwargs)
@@ -325,157 +642,27 @@ def test_forced_action_does_not_bypass_cancellation(tmp_path, projects, facts):
         return replace(execution, raw=replace(execution.raw, stop_reason='CANCELLED'))
     controller.runner.execute = cancelled
     result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.CANCELLED
+    assert result.status == TaskState.CANCELLED and (request.output_dir / 'artifacts/diagnostic/report.json').exists()
     events, _ = controller.store.read_events()
-    # The forced run_candidate is the action that ends interrupted, and the run it started
-    # never becomes evidence: no verdict is recorded from it.
     assert action_endings(events)[-1] == ('action.rejected', 'run_candidate', 'INTERRUPTED')
     assert not list((request.output_dir / 'verdicts').glob('*.json'))
+    # The phase session is awaited closed before anything is delivered, and twice over:
+    # once for the cancelled run above and once for this one.
+    assert controller.explorer.closed
 
-
-def test_reproduced_candidate_forces_submit_without_model_decision(tmp_path, projects, facts):
-    # After the REPRODUCED verdict the model would stop the task with a question;
-    # the Controller submits the reproduced candidate first, so the task is exported.
-    model = ScriptedEscape()
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model)
+    request, _, controller, ctx = setup(tmp_path / 'cleanup', projects, facts)
+    original = controller.runner.execute
+    async def failing(*args, **kwargs):
+        execution = await original(*args, **kwargs)
+        ctx.cancel_event.set()
+        return replace(execution, raw=replace(execution.raw, cleanup_ok=False, stop_reason='CANCELLED'))
+    controller.runner.execute = failing
     result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.DONE and result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
-    assert model.kinds == ['contract', 'action', 'verdict', 'verdict']
-    assert action_endings(controller.store.read_events()[0])[-1] == ('action.completed','submit_candidate','OK')
-
-
-def test_two_remaining_steps_do_not_allow_new_unrunnable_candidate(tmp_path, projects, facts):
-    # Two steps left is enough for a write and the forced run it triggers: the new
-    # candidate is executed inside the budget instead of being left unrunnable.
-    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(), BudgetLimits(agent_steps=2))
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.EXHAUSTED
-    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 1
-    assert result.accepted_candidate_id and result.evidence_level == EvidenceLevel.SINGLE_OBSERVATION
-    # Both steps went into writing and running: nothing was spent on a read instead.
-    assert ctx.budget.steps_used == 2
-
-
-def test_missing_facts_still_allow_information(tmp_path, projects, facts):
-    model = ScriptedModel(missing=True)
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model)
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.NEEDS_INFORMATION
-    payload = json.loads(model.messages[-1]['content'])
-    assert 'write_candidate' not in payload['allowed_actions']
-    assert {'request_information','revise_contract','read_file'} <= set(payload['allowed_actions'])
-    assert [event.payload['action'] for event in controller.store.read_events()[0]
-            if event.kind == 'action.selected'] == ['request_information']
-
-
-def test_revised_contract_cannot_submit_stale_candidate(tmp_path, projects, facts):
-    # The candidate passes on the original snapshot, so it carries no reproduced
-    # verdict and the contract is revised from the parser source instead.
-    model = ScriptedSequence([write_passing_action, read_action, revise_action, submit_action,
-        lambda data: {'name':'request_information','parameters':{'question':'stop'}}])
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model)
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.NEEDS_INFORMATION
-    # Nothing was replayed or exported from the version 1 candidate, and the version
-    # 2 contract left the choice to the explorer instead of forcing it.
-    assert result.evidence_level == EvidenceLevel.NONE and not result.accepted_candidate_id
-    assert len(list((request.output_dir / 'contracts').glob('*.json'))) == 2
-    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 1
-    assert not (request.output_dir / 'artifacts/reproduction').exists()
-    events = controller.store.read_events()[0]
-    assert [event.payload['action'] for event in events if event.kind == 'action.selected'] == ['write_candidate',
-        'run_candidate', 'read_file', 'revise_contract', 'submit_candidate', 'request_information']
-    assert action_endings(events) == [('action.completed','write_candidate','OK'), ('action.completed','run_candidate','OK'),
-        ('action.completed','read_file','OK'), ('action.completed','revise_contract','OK'),
-        ('action.rejected','submit_candidate','CANDIDATE_NOT_REPRODUCED'), ('action.completed','request_information','OK')]
-
-
-def test_same_action_and_result_twice_cannot_consume_all_twenty_steps(tmp_path, projects, facts):
-    model = ScriptedSequence([read_action, read_action, read_action, write_action])
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model)
-    result = asyncio.run(controller.run(request, ctx))
-    # The third identical read is refused, so the model moves on: two reads, one
-    # refused attempt, then write/run/submit instead of twenty identical reads.
-    assert result.status == TaskState.DONE and ctx.budget.steps_used == 6
-    selected = [event.payload['action'] for event in controller.store.read_events()[0] if event.kind == 'action.selected']
-    assert selected == ['read_file','read_file','write_candidate','run_candidate','submit_candidate']
-    # The refused third read was answered with feedback instead of another attempt.
-    assert 'same result twice' in json.dumps(model.messages)
-
-
-def test_state_change_allows_repeating_a_blocked_read(tmp_path, projects, facts):
-    model = ScriptedSequence([read_action, read_action, read_action, write_action, read_action,
-        lambda data: {'name':'request_information','parameters':{'question':'stop'}}], classification='NOT_REPRODUCED')
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model)
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.NEEDS_INFORMATION
-    events, errors = controller.store.read_events()
-    assert not errors
-    selected = [event.payload for event in events if event.kind == 'action.selected']
-    assert [payload['action'] for payload in selected] == ['read_file','read_file','write_candidate','run_candidate',
-        'read_file','request_information']
-    # The identical read arguments are legal again once the candidate set changed.
-    assert selected[0]['parameters_hash'] == selected[4]['parameters_hash']
-    assert action_endings(events)[-2:] == [('action.completed','read_file','OK'), ('action.completed','request_information','OK')]
-
-
-def test_action_error_events_use_codes_not_raw_response(tmp_path, projects, facts, monkeypatch):
-    from reproagent.core.controller import ACTION_RESULT_CODES
-    from reproagent.core.serialization import canonical_hash
-    secret = 'synthetic-provider-secret'
-    monkeypatch.setenv('REPROAGENT_API_KEY', secret)
-    bad_read = {'name':'read_file','parameters':{'path':f'../{secret}','start':1,'end':2}}
-    secret_candidate = {'name':'write_candidate','parameters':{'files':[{'path':'tests/test_repro.py','role':'test',
-        'content':f'from example.parser import parse\ndef test_nonempty(): assert parse([1]) == [1]  # {secret}\n'}],'hypothesis':'empty input'}}
-    unknown_run = {'name':'run_candidate','parameters':{'candidate_id':'candidate-never-published'}}
-    model = ScriptedSequence([lambda data: bad_read, lambda data: secret_candidate, lambda data: unknown_run],
-        classification='NOT_REPRODUCED')
-    request, controller, ctx = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=6))
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.EXHAUSTED
-    events, errors = controller.store.read_events()
-    assert not errors
-    selected = [event.payload for event in events if event.kind == 'action.selected']
-    completed = [event.payload for event in events if event.kind == 'action.completed']
-    rejected = [event.payload for event in events if event.kind == 'action.rejected']
-    # The published candidate is run by the Controller; the two identical attempts to
-    # run a candidate that was never published are still refused with their own code.
-    assert [payload['action'] for payload in selected] == ['read_file','write_candidate','run_candidate','run_candidate','run_candidate']
-    assert [payload['result_code'] for payload in rejected] == ['INVALID_ARGUMENT','UNKNOWN_CANDIDATE','UNKNOWN_CANDIDATE']
-    assert [payload['result_code'] for payload in completed] == ['OK','OK']
-    assert all(payload['result_code'] in ACTION_RESULT_CODES for payload in rejected + completed)
-    assert all(type(payload['steps_remaining']) is int and payload['steps_remaining'] >= 0 for payload in selected)
-    assert selected[0]['steps_remaining'] == 5 and selected[0]['parameters_hash'] == canonical_hash(bad_read['parameters'])
-    assert all(len(payload['parameters_hash']) == 64 and 'duration' in payload for payload in rejected + completed)
-    # Only bounded identifiers, hashes and codes enter events: the response body, the
-    # raw arguments and the provider key stay out.
-    recorded = event_dump(events)
-    assert secret not in recorded and '../' + secret not in recorded
-    assert '"parameters"' not in recorded and 'from example.parser import parse' not in recorded
-    assert 'candidate-never-published' not in recorded
-
-
-def test_protocol_error_events_use_codes_not_raw_response(tmp_path, projects, facts, monkeypatch):
-    from reproagent.core.agent import PROTOCOL_ERROR_CODES
-    secret = 'synthetic-provider-secret'
-    monkeypatch.setenv('REPROAGENT_API_KEY', secret)
-    body = {'name':'read_file','parameters':{'path':'example/parser.py','start':1,'end':1},
-            'reasoning_content':secret,'error':{'message':secret}}
-    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedActions([body]), BudgetLimits(agent_steps=3))
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.EXHAUSTED
-    events, errors = controller.store.read_events()
-    assert not errors
-    protocol = [event.payload for event in events if event.kind == 'protocol.error']
-    assert len(protocol) == 1 and protocol[0]['result_code'] in PROTOCOL_ERROR_CODES
-    assert protocol[0]['response_kind'] == 'action' and protocol[0]['steps_remaining'] == 0
-    assert not [event for event in events if event.kind in ('action.selected','action.completed','action.rejected')]
-    recorded = event_dump(events)
-    assert secret not in recorded and 'reasoning_content' not in recorded and '"message"' not in recorded
+    assert result.status == TaskState.FAILED and result.stop_reason == 'CANCELLED'
+    assert controller.explorer.closed
 
 
 def test_action_interrupted_by_budget_is_not_recorded_as_completed(tmp_path, projects, facts):
-    from reproagent.core.budget import BudgetStopped
     request, _, controller, ctx = setup(tmp_path, projects, facts)
     async def stopped(*args, **kwargs): raise BudgetStopped('EXHAUSTED', 'task time limit reached')
     controller.runner.execute = stopped
@@ -483,31 +670,82 @@ def test_action_interrupted_by_budget_is_not_recorded_as_completed(tmp_path, pro
     assert result.status == TaskState.EXHAUSTED
     events, errors = controller.store.read_events()
     assert not errors
-    assert action_endings(events) == [('action.completed', 'write_candidate', 'OK'), ('action.rejected', 'run_candidate', 'INTERRUPTED')]
+    assert action_endings(events) == [('action.rejected', 'run_candidate', 'INTERRUPTED')]
+    # The phase session is closed even when the interruption is an exhausted budget.
+    assert controller.explorer.closed
 
 
-def test_model_protocol_failure_in_an_action_keeps_its_own_code(tmp_path, projects, facts):
-    from reproagent.core.controller import ACTION_RESULT_CODES
-    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedRevision(), BudgetLimits(agent_steps=6))
-    result = asyncio.run(controller.run(request, ctx))
-    assert result.status == TaskState.FAILED and result.stop_reason == 'MODEL_PROTOCOL_ERROR'
-    events, errors = controller.store.read_events()
-    assert not errors
-    assert action_endings(events) == [('action.completed', 'read_file', 'OK'), ('action.rejected', 'revise_contract', 'MODEL_PROTOCOL_ERROR')]
-    assert all(code in ACTION_RESULT_CODES for _, _, code in action_endings(events))
-
-
-def test_model_output_failure_in_an_action_keeps_its_own_code(tmp_path, projects, facts):
-    # The provider failure is injected at the verifier boundary: ReproAgent and
-    # Verifier convert provider failures themselves, and this asserts how the
-    # Controller classifies one that reaches its action handler.
+def test_model_output_failure_in_a_business_step_keeps_its_own_code(tmp_path, projects, facts):
+    # The provider failure is injected at the verifier boundary, so each executed candidate
+    # is answered with feedback and its own code until the exploration budget runs out.
     from reproagent.core.protocol import ModelOutputError
-    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedCandidateRun(), BudgetLimits(agent_steps=3))
+    model = ScriptedModel()
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=3),
+                                              plan=[publish(), publish(), publish()])
     async def unavailable(*args, **kwargs): raise ModelOutputError('provider response is not a JSON object')
     controller.verifier.evaluate = unavailable
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.EXHAUSTED
     events, errors = controller.store.read_events()
     assert not errors
-    assert action_endings(events) == [('action.completed', 'write_candidate', 'OK'),
-        ('action.rejected', 'run_candidate', 'MODEL_OUTPUT_ERROR'), ('action.rejected', 'run_candidate', 'MODEL_OUTPUT_ERROR')]
+    assert action_endings(events) == [('action.rejected', 'run_candidate', 'MODEL_OUTPUT_ERROR')] * 3
+    assert phase_results(events) == [('candidate', 'MODEL_OUTPUT_ERROR')] * 3
+
+
+def test_phase_protocol_failure_keeps_its_own_code_and_no_raw_text(tmp_path, projects, facts):
+    from reproagent.core.controller import ACTION_RESULT_CODES
+    secret = 'synthetic-provider-secret'
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(), BudgetLimits(agent_steps=3))
+    controller.explorer_factory.plan = [fail(ModelProtocolError(f'UNKNOWN_TOOL: {secret}'))]
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.FAILED and result.stop_reason == 'MODEL_PROTOCOL_ERROR'
+    events, errors = controller.store.read_events()
+    assert not errors
+    errors = [event.payload for event in events if event.kind == 'phase.error']
+    assert [payload['result_code'] for payload in errors] == ['MODEL_PROTOCOL_ERROR']
+    assert all(payload['result_code'] in ACTION_RESULT_CODES for payload in errors)
+    assert not [event for event in events if event.kind in ('action.selected', 'action.completed', 'action.rejected')]
+    assert secret not in event_dump(events) and 'UNKNOWN_TOOL' not in event_dump(events)
+
+
+def test_phase_error_leaves_the_phase_step_to_the_controller(tmp_path, projects, facts):
+    # A phase that refuses itself before answering is answered with feedback instead of a
+    # new phase result: the Controller records its own code and asks again.
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(), BudgetLimits(agent_steps=2),
+                                             plan=[fail(ValueError('the issue cannot fit the configured budget')), ask('stop')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION and result.stop_reason == 'MISSING_INFORMATION'
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert [event.payload['result_code'] for event in events if event.kind == 'phase.error'] == ['INVALID_ARGUMENT']
+    assert phase_results(events) == [('request_information', 'MISSING_INFORMATION')]
+
+
+def test_phase_result_and_step_events_use_codes_not_raw_response(tmp_path, projects, facts, monkeypatch):
+    from reproagent.core.controller import PHASE_RESULT_CODES
+    secret = 'synthetic-provider-secret'
+    monkeypatch.setenv('REPROAGENT_API_KEY', secret)
+    carrying = 'from example.parser import parse\ndef test_empty(): assert parse([]) == []  # ' + secret + '\n'
+    model = ScriptedModel(classification='NOT_REPRODUCED')
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model, BudgetLimits(agent_steps=3),
+        plan=[publish(content=carrying), report('candidate-never-published'), publish(content=carrying)])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.EXHAUSTED and ctx.budget.steps_used == 3
+    events, errors = controller.store.read_events()
+    assert not errors
+    selected = [event.payload for event in events if event.kind == 'action.selected']
+    completed = [event.payload for event in events if event.kind == 'action.completed']
+    rejected = [event.payload for event in events if event.kind == 'action.rejected']
+    assert [payload['action'] for payload in selected] == ['run_candidate', 'run_candidate']
+    assert [payload['result_code'] for payload in completed] == ['OK', 'OK'] and not rejected
+    assert phase_results(events) == [('candidate', 'NOT_REPRODUCED'), ('candidate', 'UNKNOWN_CANDIDATE'),
+                                     ('candidate', 'NOT_REPRODUCED')]
+    assert all(type(payload['steps_remaining']) is int and payload['steps_remaining'] >= 0 for payload in selected)
+    assert all(len(payload['parameters_hash']) == 64 and 'duration' in payload for payload in completed + rejected)
+    # Only bounded identifiers, hashes and codes enter events: the candidate's content, the
+    # provider key and the id a phase invented stay out.
+    recorded = event_dump(events)
+    assert secret not in recorded and 'from example.parser import parse' not in recorded
+    assert 'candidate-never-published' not in recorded
+    assert all(payload['result_code'] in PHASE_RESULT_CODES
+               for payload in rejected + [event.payload for event in events if event.kind == 'phase.result'])

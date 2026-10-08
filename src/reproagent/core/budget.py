@@ -87,6 +87,16 @@ class BudgetedGateway:
         if getattr(gateway, 'handles_attempt_accounting', False):
             gateway.attempt_store = store
 
+    async def aclose(self):
+        """Close the wrapped provider when it owns clients; one that owns none is left alone.
+
+        The wrapper exists to account for and redact calls, not to own the provider's
+        resources, so an injected test model without a close path stays as it was.
+        """
+        close = getattr(self.gateway, 'aclose', None)
+        if close is not None:
+            await close()
+
     async def complete(self, request, context):
         from dataclasses import replace
         messages = []

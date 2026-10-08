@@ -96,11 +96,13 @@ ready 表示原版/修复版的 Python、pytest 和指定目标模块来源探�
   --manifest .local/swt-bench/data/dev20.json `
   --bindings .local/swt-bench/bindings.json `
   --model-config examples/model.deepseek.json `
-  --model-backend native --agent-backend native `
-  --output repro-results/swt-bench/dev20-native-next
+  --output repro-results/swt-bench/dev20-next
 ```
 
-`--limits <JSON>` 可显式配置统一预算；`--name <简单标签>` 指定预测 model_name_or_path。两个后端都支持 native/agentscope。策略比较时固定模型后端，只替换 Agent 策略；每组合使用新轮次，不挑各组最佳结果合并。
+`--limits <JSON>` 可显式配置统一预算；`--name <简单标签>` 指定预测 model_name_or_path。
+`--model-backend` / `--agent-backend` 是迁移前的旧参数，现已弃用且不再选择运行时：两个旧值都进入同一套
+AgentScope 基础设施并被记录为 `agentscope`，其他值被拒绝。既有调用继续可执行；轮次记录里的
+`model_backend`/`agent_backend` 写的是实际运行的组件，不是所选参数。每组合使用新轮次，不挑各组最佳结果合并。
 
 批量入口退出 0 表示记录流程完成，不代表所有 Bug 复现成功。NOT_PREPARED、EXHAUSTED、FAILED、CANCELLED 保留在分母。没有准备的绑定不会调用模型；取消后不再启动后续案例。原任务协议内纠正仍有限，任务失败后不会自动加预算重跑。
 
@@ -162,6 +164,23 @@ python -m evals.swt_bench official-run \
 旧项目 20 个历史案例仍用于开发回归。正式评测需另冻结未参与本项目调试的样本，并检查历史重叠；公开数据也可能被模型训练见过。
 
 冻结实现版本后的修复轮：原 dev20 复跑 20 例，8 例准备可用并执行，本地重复确认 4、本地差分确认 0，121 次 HTTP 尝试、953215 token，费用 unknown；计划命名的已知定点 Sphinx-8801 未达到，原因已定位（失败签名稳定器未覆盖 run 根之外的逐次状态、候选级环境不兼容），记录未修复。同一冻结配置下用 `select_holdout` 冻结 10 例未调试新样本，3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED，导出包在全新原版/修复版副本独立重跑 1/0；47 次 HTTP 尝试、385455 token。两轮来源状态均为 verified，可用于版本对比；新样本轮官方 harness 判分 RESOLVED 1/10（`sphinx-doc__sphinx-11445`），另 6 例未解决、3 例无报告，整轮仍为待判分；小样本不代表一般复现率。完整报告见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)。
+
+## 冻结保留集
+
+`select_holdout` 是 Task 10 的固定策略：只用公开 catalog 的身份列，按固定 seed
+`reproagent-swt-holdout-v1` 对每个候选 ID 排序，在给定仓库间轮询抽取，并排除调用方列出的已开发/已调试
+ID。它不读参考对照、gold patch 或任何生成结果，也不改写已有记录，因此可以离线重放。它当前没有 CLI
+子命令，以纯函数调用：
+
+```python
+from evals.datasets.swt_bench import select_holdout
+manifest = select_holdout(catalog, excluded_ids, repos=(...), count=10)
+```
+
+2026-10-07 已用公开 catalog 冻结 10 个未调试样本（五仓库 × 2，仓库全部取自开发轮未使用的项目），
+manifest 哈希 `d2f91341d5b718eaffa88ca1d1401acd798af3937c389c18d6fdd0798525b4dc`，记为
+`.local/swt-bench/holdout10.json`。**冻结本身是离线可达的；用同一预算执行这 10 个样本需要真实模型凭据，
+本次没有执行**，见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
 
 重新生成汇总不调用模型：
 

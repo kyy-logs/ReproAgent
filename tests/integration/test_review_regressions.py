@@ -9,10 +9,9 @@ import pytest
 from reproagent.app import create_controller
 from reproagent.core.agent import ReproAgent
 from reproagent.core.budget import BudgetedGateway
-from reproagent.core.models import (AgentContext, BudgetLimits, CandidateDraft, DraftFile, EvidenceContext, EvidenceLevel,
-    FileEntry, FixValidationRequest, IssueContract, IssueDescription, ModelConfig, ModelResponse, ProjectView, PythonPytestConfig, TaskRequest, TaskState)
+from reproagent.core.models import (BudgetLimits, CandidateDraft, DraftFile, EvidenceContext, EvidenceLevel,
+    FixValidationRequest, IssueDescription, ModelConfig, ModelResponse, PythonPytestConfig, SourceRef, TaskRequest, TaskState)
 from reproagent.adapters.languages.python_pytest.collector import read_probe
-from reproagent.adapters.models.provider import ChatCompletionGateway
 from reproagent.store import TaskStore
 from reproagent.workspace import Workspace
 from tests.integration.test_exporter import export_setup
@@ -29,15 +28,12 @@ def test_partial_node_phases_cannot_be_complete(tmp_path):
 
 
 def test_fixed_cannot_deselect_accepted_failure_node(tmp_path, projects, facts):
-    request, _, _, ctx = setup(tmp_path, projects, facts)
-    class TwoTestModel(ScriptedModel):
-        async def complete(self, request, context):
-            response = await super().complete(request, context)
-            data = json.loads(response.text)
-            if data.get('name') == 'write_candidate':
-                data['parameters']['files'][0]['content'] = 'from example.parser import parse\ndef test_smoke(): assert parse([1]) == [1]\ndef test_bug(): assert parse([]) == []\n'
-            return replace(response, text=json.dumps(data))
-    controller = create_controller(request, ModelConfig(), gateway=TwoTestModel())
+    from tests.unit.test_controller import PhasePlan, publish
+    two_tests = ('from example.parser import parse\ndef test_smoke(): assert parse([1]) == [1]\n'
+                 'def test_bug(): assert parse([]) == []\n')
+    request, model, _, ctx = setup(tmp_path, projects, facts)
+    controller = create_controller(request, ModelConfig(), gateway=model,
+                                   explorer_factory=PhasePlan([publish(content=two_tests)]))
     fixed = projects.plain(tmp_path / 'still-buggy')
     (fixed / 'pytest.ini').write_text('[pytest]\naddopts = -k test_smoke\n')
     result = asyncio.run(controller.run(request, ctx, FixValidationRequest(fixed, sys.executable)))
@@ -86,30 +82,59 @@ def test_probe_bytes_count_toward_execution_limit(tmp_path, facts):
     assert raw.log_truncated and raw.stop_reason == 'LOG_LIMIT'
 
 
-def test_common_model_boundary_redacts_analysis_and_actions(tmp_path, projects, facts):
+def test_common_model_boundary_redacts_analysis_and_phase_feedback(tmp_path, projects, facts, monkeypatch):
+    """A provider secret that reaches a model answer never reaches the next phase or an event."""
+    from tests.unit.test_controller import PhasePlan, ask, publish
+    secret = 'known-private-key'
+    monkeypatch.setenv('REPROAGENT_API_KEY', secret)
+    class EchoingModel(ScriptedModel):
+        def __init__(self):
+            super().__init__(classification='NOT_REPRODUCED')
+        async def complete(self, request, context):
+            response = await super().complete(request, context)
+            if request.response_kind == 'verdict':
+                return replace(response, text=json.dumps({**json.loads(response.text), 'reason':secret}))
+            return response
+    request, _model, _, ctx = setup(tmp_path, projects, facts)
+    controller = create_controller(request, ModelConfig(), gateway=EchoingModel(),
+                                   explorer_factory=PhasePlan([publish(), ask('stop')]))
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION and result.stop_reason == 'MISSING_INFORMATION'
+    # The Controller's own feedback boundary redacts the secret before a phase sees it.
+    assert len(controller.explorer.contexts) == 2
+    assert '[REDACTED]' in controller.explorer.contexts[1].feedback
+    assert secret not in json.dumps([context.feedback for context in controller.explorer.contexts])
+    assert secret not in json.dumps([{'kind':event.kind,'payload':event.payload} for event in controller.store.read_events()[0]])
+
+
+def test_analysis_redacts_provider_secrets_before_the_model(tmp_path, projects, facts):
     secret = 'known-private-key'
     class CapturingModel:
-        def __init__(self): self.messages=[]
+        def __init__(self): self.messages = []
         async def complete(self, request, context):
             self.messages.extend(request.messages)
-            data = {'expected':secret,'trigger':'empty','reported_actual':'IndexError','source_indices':[0],'observable_checks':[],'assumptions':[],'missing_information':[]} if request.response_kind == 'contract' else {'name':'request_information','parameters':{'question':'x'}}
+            data = {'expected':'return []','trigger':'empty','reported_actual':'IndexError','source_indices':[0],
+                    'observable_checks':[],'assumptions':[],'missing_information':[]}
             return ModelResponse(json.dumps(data))
     model = CapturingModel(); context = facts.context()
     agent = ReproAgent(BudgetedGateway(model, secrets=(secret,)), context)
-    from reproagent.core.models import SourceRef
     contract = asyncio.run(agent.analyze(IssueDescription(secret,'h'),EvidenceContext((SourceRef('issue','h'),),(secret,))))
-    _,_,_,snapshot,_,_ = setup_runner(tmp_path, projects, facts)
-    asyncio.run(agent.next_action(AgentContext(contract,ProjectView(snapshot))))
+    assert contract.expected == 'return []'
     assert secret not in json.dumps(model.messages)
 
 
 def test_ambiguous_retry_keeps_total_cost_unknown(facts):
+    """A first attempt that never answered has no tokens to bill, so the call stays unknown."""
+    from reproagent.adapters.agentscope.gateway import AgentScopeModelGateway
+    from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
     count = []
     def handler(request):
         count.append(request)
         if len(count) == 1: raise httpx.ReadTimeout('ambiguous',request=request)
         return httpx.Response(200,json={'choices':[{'finish_reason':'stop','message':{'content':'{}'}}],'usage':{'prompt_tokens':10,'completion_tokens':5}})
-    gateway = BudgetedGateway(ChatCompletionGateway(ModelConfig(base_url='https://offline.example/v1',model='test',input_cost_per_million=1,output_cost_per_million=1),transport=httpx.MockTransport(handler)))
+    factory = AgentScopeModelFactory(ModelConfig(base_url='https://offline.example/v1',model='test',input_cost_per_million=1,output_cost_per_million=1),
+                                     None, transport=httpx.MockTransport(handler))
+    gateway = BudgetedGateway(AgentScopeModelGateway(factory))
     from reproagent.core.models import ModelRequest
     ctx = facts.context(); result = asyncio.run(gateway.complete(ModelRequest(({'role':'user','content':'x'},)),ctx))
     assert len(count) == 2 and result.cost_kind == 'unknown' and result.cost_value is None
@@ -123,20 +148,6 @@ def test_inspect_completed_task_ignores_project_json_and_specs(tmp_path, project
     assert result.status == TaskState.DONE
     inspected = controller.store.inspect()
     assert not inspected['incomplete_records'], inspected['errors']
-
-
-def test_large_file_index_still_allows_model_action(tmp_path, projects, facts):
-    _,_,_,snapshot,_,_ = setup_runner(tmp_path, projects, facts)
-    snapshot = replace(snapshot, files=tuple(FileEntry('tests/' + str(i) + 'x'*100 + '.py','h',1) for i in range(1000)))
-    class Model:
-        def __init__(self): self.calls=[]
-        async def complete(self, request, context):
-            self.calls.append(request)
-            return ModelResponse('{"name":"search_code","parameters":{"query":"parse","scope":"snapshot"}}')
-    model=Model(); ctx=facts.context(); agent=ReproAgent(model,ctx)
-    action=asyncio.run(agent.next_action(AgentContext(IssueContract('c'),ProjectView(snapshot))))
-    assert action.name == 'search_code' and len(model.calls) == 1 and ctx.budget.steps_used == 1
-    assert len(model.calls[0].messages[-1]['content'].encode()) <= 32768
 
 
 def test_export_retains_sources_verdict_and_snapshot_provenance(tmp_path, projects, facts):
@@ -162,23 +173,33 @@ def test_target_collection_dependency_failure_is_blocked(tmp_path, projects, fac
 
 
 def test_contract_revision_from_read_documentation_is_persisted(tmp_path, projects, facts):
+    """A phase that read the repository document asks for the revision it justifies.
+
+    The ungrounded first contract is replaced by a version derived from the lines the phase
+    cited, and the whole task then runs on that version.
+    """
+    from tests.unit.test_controller import PhasePlan, publish, revise, source_ref
+    class RevisingModel(ScriptedModel):
+        def __init__(self): super().__init__(missing=True); self.analysis = 0
+        async def complete(self, request, context):
+            data = json.loads(request.messages[-1]['content'])
+            if request.response_kind == 'contract':
+                self.messages.extend(request.messages); self.kinds.append(request.response_kind)
+                self.analysis += 1
+                return ModelResponse(json.dumps({'expected':'' if self.analysis == 1 else 'parse([]) returns []',
+                    'trigger':'empty','reported_actual':'IndexError','source_indices':[] if self.analysis == 1 else [1],
+                    'missing_information':['expectation unclear'] if self.analysis == 1 else [],
+                    'observable_checks':[],'assumptions':[]}))
+            return await super().complete(request, context)
     request, _, _, ctx = setup(tmp_path, projects, facts)
     (request.repo / 'README.md').write_text('parse([]) must return an empty list.\n')
-    class RevisingModel(ScriptedModel):
-        def __init__(self): super().__init__(); self.analysis=0; self.discovery=0
-        async def complete(self, request, context):
-            data=json.loads(request.messages[-1]['content'])
-            if request.response_kind == 'contract':
-                self.analysis += 1
-                return ModelResponse(json.dumps({'expected':'' if self.analysis == 1 else 'parse([]) returns []','trigger':'empty','reported_actual':'IndexError','source_indices':[] if self.analysis == 1 else [1],'missing_information':['expectation unclear'] if self.analysis == 1 else [],'observable_checks':[],'assumptions':[]}))
-            if request.response_kind == 'action' and self.discovery < 2:
-                self.discovery += 1
-                action={'name':'read_file','parameters':{'path':'README.md','start':1,'end':1}} if self.discovery == 1 else {'name':'revise_contract','parameters':{'source_refs':json.loads(data['feedback'])['evidence_refs'],'reason':'new documented expectation'}}
-                return ModelResponse(json.dumps(action))
-            return await super().complete(request,context)
-    controller=create_controller(request,ModelConfig(),gateway=RevisingModel())
-    result=asyncio.run(controller.run(request,ctx))
+    model = RevisingModel()
+    controller = create_controller(request, ModelConfig(), gateway=model,
+        explorer_factory=PhasePlan([lambda explorer, context: revise([source_ref(explorer, 'README.md', 1, 1)],
+                                                                     'new documented expectation')(explorer, context),
+                                    publish()]))
+    result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.DONE
-    contracts=[controller.store.load_record('contracts',p.stem) for p in (request.output_dir/'contracts').glob('*.json')]
-    assert {c.version for c in contracts} == {1,2}
+    contracts = [controller.store.load_record('contracts', p.stem) for p in (request.output_dir/'contracts').glob('*.json')]
+    assert {c.version for c in contracts} == {1, 2}
     assert len({c.contract_id for c in contracts}) == 1

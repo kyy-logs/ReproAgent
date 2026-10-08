@@ -9,7 +9,7 @@ from pathlib import Path
 from ...core.budget import BudgetStopped
 from ...core.models import EvidenceRef, ProbeArtifacts, RawExecution
 from ...core.serialization import bytes_hash
-from ...paths import workspace_path
+from ...paths import directory_path, workspace_path
 from .process_tree import ManagedProcess
 
 SYSTEM_ENV = {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "HOME", "USERPROFILE", "LANG"}
@@ -23,9 +23,11 @@ class LocalBackend:
         started = time.monotonic()
         timeout = context.budget.command_timeout()
         cwd = workspace_path(spec.cwd)
-        cwd.mkdir(parents=True, exist_ok=True)
+        # The run copy is a directory, and a directory stops working before a file
+        # does, so it is created through the form that reaches it at any depth.
+        directory_path(cwd).mkdir(parents=True, exist_ok=True)
         log_root = workspace_path(spec.probe_path).parent if spec.probe_path is not None else cwd
-        log_root.mkdir(parents=True, exist_ok=True)
+        directory_path(log_root).mkdir(parents=True, exist_ok=True)
         out_path, err_path = workspace_path(log_root / "stdout.log"), workspace_path(log_root / "stderr.log")
         env = {key: value for key, value in os.environ.items() if key.upper() in SYSTEM_ENV or key in spec.env_names}
         env.update(context.private_env)

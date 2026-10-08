@@ -8,7 +8,7 @@ from importlib.resources import files
 from .core.models import ArtifactManifest, EvidenceLevel, FileEntry, TaskState
 from .core.budget import BudgetStopped
 from .core.serialization import bytes_hash, canonical_bytes, canonical_hash, encode_record
-from .paths import shared_path_form, workspace_path
+from .paths import directory_path, shared_path_form, workspace_path
 from .store import atomic_write, safe_child
 from .workspace import candidate_hash
 from .reporting import render_report
@@ -70,13 +70,16 @@ class Exporter:
                                            store.root / 'artifacts' / ('.building-' + uuid.uuid4().hex))
         if root.exists():
             raise ValueError('export package already exists')
-        temporary.mkdir(parents=True)
+        directory_path(temporary).mkdir(parents=True)
         events = store.read_events()[0]
         report = {'package_kind':kind, 'verified':bool(success), 'task_id':result.task_id, 'status':result.status.value,
             'stop_reason':result.stop_reason, 'evidence_level':result.evidence_level.value, 'uncertainties':list(result.uncertainties),
             # Carried through unchanged so the report states the fixed-version outcome next to
             # the evidence level instead of letting the repeated observation imply one.
             'fix_validation_status':result.fix_validation_status,
+            # The differential claim as its own flag, so no reader has to infer it from the
+            # evidence-level string: a failed or blocked fixed version never reaches it.
+            'differential_validated':result.evidence_level == EvidenceLevel.DIFFERENTIAL_VALIDATED,
             'event_cutoff':len(events) - 1, 'candidate_files':[], 'log_mapping':[], 'runs':[], 'source_mapping':[], 'verdict_mapping':[],
             'accepted_run_ids':[], 'environment_probes':[]}
         previews = {}

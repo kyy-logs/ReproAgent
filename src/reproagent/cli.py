@@ -6,7 +6,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from .app import create_controller
+from .app import LEGACY_BACKENDS, create_controller
 from .core.budget import Budget
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
@@ -14,6 +14,10 @@ from .paths import display_path
 from .store import TaskStore
 
 EXIT_CODES = {TaskState.DONE:0, TaskState.BLOCKED:1, TaskState.NEEDS_INFORMATION:1, TaskState.EXHAUSTED:1, TaskState.FAILED:3, TaskState.CANCELLED:130}
+# A run makes one infrastructure choice, so the old flag is answered once, in the user's
+# own words, instead of leaving a silent DeprecationWarning to stand for it.
+BACKEND_DEPRECATION = ('--model-backend/--agent-backend are deprecated and no longer select a runtime: '
+                       'ReproAgent runs on the AgentScope infrastructure only.')
 
 
 def load_request(path):
@@ -35,6 +39,8 @@ def run_command(args):
         raise ValueError('choose a fresh output_dir')
     if args.fixed_python and not args.fixed_repo:
         raise ValueError('--fixed-python requires --fixed-repo')
+    if args.model_backend is not None or args.agent_backend is not None:
+        print('reproagent: ' + BACKEND_DEPRECATION, file=sys.stderr)
     controller = create_controller(request, model, model_backend=args.model_backend, agent_backend=args.agent_backend)
     from .core.models import ProjectView, CodeSnapshot
     controller.runner.adapter.inspect(ProjectView(CodeSnapshot('preflight', request.repo, '', ())), request.language)
@@ -56,8 +62,10 @@ def main(argv=None):
     sub = parser.add_subparsers(dest='command', required=True)
     run = sub.add_parser('run'); run.add_argument('--config', required=True); run.add_argument('--model-config', required=True)
     run.add_argument('--fixed-repo'); run.add_argument('--fixed-python')
-    run.add_argument('--model-backend', choices=('native', 'agentscope'), default='native')
-    run.add_argument('--agent-backend', choices=('native', 'agentscope'), default='native')
+    run.add_argument('--model-backend', choices=LEGACY_BACKENDS,
+                     help='deprecated: both legacy values select the one AgentScope infrastructure')
+    run.add_argument('--agent-backend', choices=LEGACY_BACKENDS,
+                     help='deprecated: both legacy values select the one AgentScope infrastructure')
     inspect = sub.add_parser('inspect'); inspect.add_argument('task_dir')
     try:
         args = parser.parse_args(argv)

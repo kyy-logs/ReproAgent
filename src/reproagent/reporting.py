@@ -83,6 +83,13 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
         lines.append(f'- 停止原因：{_text(report["stop_reason"])}')
     backends = report.get('backends', {})
     if backends:
+        # The product's own component identity, when the package recorded one; a package
+        # written before it existed keeps its recorded backends and renders without it.
+        if backends.get('infrastructure'):
+            lines.append(f'- 基础设施：{_code(backends["infrastructure"])}')
+        if backends.get('strategy'):
+            version = backends.get('strategy_version')
+            lines.append(f'- 复现策略：{_code(backends["strategy"])}（版本 {_code(version) if version else "未记录"}）')
         lines += [f'- 模型后端：{_code(backends.get("model_backend", ""))}',
                   f'- Agent 策略：{_code(backends.get("agent_backend", ""))}',
                   f'- 模型：{_code(backends.get("model", ""))}']

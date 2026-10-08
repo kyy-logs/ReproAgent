@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .core.models import EvidenceRef, TaskEvent
 from .core.serialization import REGISTRY, bytes_hash, canonical_bytes, decode_record, encode_record, parse_json
-from .paths import is_within, relative_name, shared_path_form, workspace_path
+from .paths import directory_path, is_within, relative_name, shared_path_form, workspace_path
 
 
 def atomic_write(path: Path, content: bytes):
@@ -17,7 +17,7 @@ def atomic_write(path: Path, content: bytes):
     # The temporary is longer than the file it replaces, and both names must use
     # one representation for the rename to work.
     path, temporary = shared_path_form(path, path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp"))
-    path.parent.mkdir(parents=True, exist_ok=True)
+    directory_path(path.parent).mkdir(parents=True, exist_ok=True)
     try:
         with temporary.open("xb") as handle:
             handle.write(content)
@@ -119,7 +119,7 @@ class TaskStore:
             if errors:
                 raise ValueError("cannot append to corrupted event stream")
             event = TaskEvent(len(events), kind, refs, payload, time.time())
-            self.root.mkdir(parents=True, exist_ok=True)
+            directory_path(self.root).mkdir(parents=True, exist_ok=True)
             with workspace_path(self.root / "events.jsonl").open("ab") as handle:
                 handle.write(canonical_bytes(encode_record(event)) + b"\n")
                 handle.flush()

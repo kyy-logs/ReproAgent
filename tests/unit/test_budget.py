@@ -43,6 +43,29 @@ def test_unknown_cost_cannot_enable_hard_cost_limit():
         budget.reserve_cost(Decimal("0.2"))
 
 
+def test_a_step_is_refused_once_the_task_is_cancelled_or_out_of_time():
+    """The exploration guard keys on these two reasons, so they are pinned here.
+
+    A phase ends on ``CANCELLED`` only when the user cancelled it and on ``EXHAUSTED``
+    when the deadline or a limit did, so neither may be reported as the other.
+    """
+    module = api()
+    now = [0.0]
+    expired = module.Budget(BudgetLimits(), clock=lambda: now[0])
+    now[0] = 900
+    with pytest.raises(module.BudgetStopped) as error:
+        expired.take_step()
+    assert error.value.reason == "EXHAUSTED"
+    assert expired.steps_used == 0
+
+    cancelled = module.Budget(BudgetLimits(), clock=lambda: 0)
+    cancelled.cancel()
+    with pytest.raises(module.BudgetStopped) as error:
+        cancelled.take_step()
+    assert error.value.reason == "CANCELLED"
+    assert cancelled.steps_used == 0
+
+
 def test_cancel_blocks_new_work_but_allows_bounded_cleanup():
     module = api()
     budget = module.Budget(BudgetLimits(), clock=lambda: 0)

@@ -82,14 +82,30 @@ exit $LASTEXITCODE
     assert 'launcher-fixture-only' not in result.stdout + result.stderr
 
 
-def test_launcher_forwards_explicit_model_and_agent_backends(tmp_path,monkeypatch):
+def fake_cli(tmp_path,monkeypatch):
+    """A stand-in CLI that prints the arguments the launcher passed it."""
     fake=tmp_path/'fake-module'/'reproagent'
     fake.mkdir(parents=True)
     (fake/'__init__.py').write_text('',encoding='utf-8')
     (fake/'__main__.py').write_text('import json,sys;print(json.dumps(sys.argv))',encoding='utf-8')
     monkeypatch.setenv('PYTHONPATH',str(fake.parent))
+
+
+def test_launcher_starts_a_default_run_without_a_backend_choice(tmp_path,monkeypatch):
+    """One infrastructure means the launcher selects nothing on its own."""
+    fake_cli(tmp_path,monkeypatch)
+    result=invoke('-TaskConfig',str(tmp_path/'task.json'),api_key='launcher-test-placeholder')
+    assert result.returncode==0,result.stderr
+    args=json.loads(result.stdout)
+    assert '--model-backend' not in args and '--agent-backend' not in args
+    assert 'deprecated' not in result.stderr
+
+
+def test_launcher_forwards_explicit_legacy_backends_as_deprecated_aliases(tmp_path,monkeypatch):
+    fake_cli(tmp_path,monkeypatch)
     result=invoke('-TaskConfig',str(tmp_path/'task.json'),'-ModelBackend','agentscope','-AgentBackend','agentscope',api_key='launcher-test-placeholder')
     assert result.returncode==0,result.stderr
     args=json.loads(result.stdout)
     assert args[args.index('--model-backend')+1]=='agentscope'
     assert args[args.index('--agent-backend')+1]=='agentscope'
+    assert 'deprecated' in result.stderr

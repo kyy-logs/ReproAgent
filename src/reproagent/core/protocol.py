@@ -1,4 +1,10 @@
-"""Model-visible contracts; local validation remains authoritative."""
+"""The model boundary's contract vocabulary; local validation remains authoritative.
+
+Everything a provider reply is reduced to before the product looks at it lives here: the
+fixed failure classes and the closed set of outcomes an attempt may record.  Neither the
+SDK model factory nor any future model boundary may invent a vocabulary of its own, and
+no raw provider text ever enters a record built from these helpers.
+"""
 
 
 class ModelProtocolError(Exception):
@@ -26,6 +32,43 @@ class ModelOutputError(ValueError):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+
+
+FINISH_REASONS = frozenset({'stop', 'length', 'content_filter', 'tool_calls', 'function_call'})
+
+# Closed set for the outcome an attempt records; anything else is projected to 'unknown'.
+ATTEMPT_OUTCOMES = frozenset({'completed', 'unknown', 'network_error', 'http_error'}) | MODEL_OUTPUT_CODES
+
+
+def classify_finish_reason(value):
+    """Reduce a provider's finish_reason to a closed set; raw values never enter records."""
+    if not isinstance(value, str) or not value: return 'unknown'
+    return value if value in FINISH_REASONS else 'other'
+
+
+def classify_output(finish_reason, text, tool_calls=False):
+    """Map a provider choice onto the fixed failure classes; None means usable text."""
+    if finish_reason == 'length':
+        return ModelOutputError('provider stopped at the output limit; the response is incomplete',
+                                'OUTPUT_TRUNCATED', False)
+    if finish_reason != 'stop' or tool_calls:
+        return ModelOutputError('provider stopped for a reason other than a complete answer',
+                                'OUTPUT_FILTERED', False)
+    if not isinstance(text, str) or not text:
+        return ModelOutputError('provider returned no text; return exactly one complete JSON object',
+                                'EMPTY_OUTPUT')
+    return None
+
+
+def attempt_payload(attempt, usage, cost_kind, cost_value, *, response_kind, effective_output_limit,
+                    outcome='unknown', finish_reason='', content_bytes=0, backend=None):
+    """Bound what a model attempt records: no prompt, raw response, reasoning text or header."""
+    record = {'attempt':attempt, 'usage':usage, 'cost_kind':cost_kind, 'cost_value':cost_value,
+        'outcome':outcome if outcome in ATTEMPT_OUTCOMES else 'unknown',
+        'response_kind':response_kind, 'effective_output_limit':effective_output_limit,
+        'finish_reason':classify_finish_reason(finish_reason), 'content_bytes':content_bytes}
+    if backend is not None: record['backend'] = backend
+    return record
 
 
 def object_schema(properties):

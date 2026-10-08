@@ -1,20 +1,44 @@
+"""The one model boundary: the guarded SDK gateway and the record it leaves behind.
+
+Every logical model call of the product goes through ``AgentScopeModelFactory``, so these
+are the boundary's own unit-level contracts: the bounded attempt loop, the accounting, the
+closed outcome vocabulary and the redaction rules.  They run the real SDK over a mock HTTP
+transport, because the provider's protocol has to survive the SDK conversion.
+"""
 import asyncio
-import importlib
 import json
 
 import httpx
 import pytest
+
+from reproagent.adapters.agentscope.gateway import AgentScopeModelGateway
+from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
 from reproagent.core.budget import Budget
 from reproagent.core.models import BudgetLimits, CallContext, ModelConfig, ModelRequest
 
 
-def gateway(handler):
-    module = importlib.import_module('reproagent.adapters.models.provider')
-    return module.ChatCompletionGateway(ModelConfig(base_url='https://offline.example/v1', model='offline'), transport=httpx.MockTransport(handler))
+class Store:
+    """Only the append path matters: an attempt record is an event, not a written file."""
+    def __init__(self): self.events = []
+    def append_event(self, kind, refs, payload): self.events.append(payload)
 
 
-def context(): return CallContext(Budget(BudgetLimits()))
-def request(): return ModelRequest(({'role':'user','content':'hello'},))
+def config(**kwargs):
+    return ModelConfig(base_url='https://offline.example/v1', model='offline', **kwargs)
+
+
+def factory(handler, store=None, **kwargs):
+    """One store-backed factory over a mock transport; the caller closes it."""
+    return AgentScopeModelFactory(config(**kwargs), store, transport=httpx.MockTransport(handler))
+
+
+def gateway(handler, store=None, **kwargs):
+    """The product's model boundary over a mock transport."""
+    return AgentScopeModelGateway(factory(handler, store, **kwargs))
+
+
+def context(**limits): return CallContext(Budget(BudgetLimits(**limits)))
+def request(**kwargs): return ModelRequest(({'role':'user','content':'hello'},), **kwargs)
 def reply(**extra): return httpx.Response(200, json={'id':'a','choices':[{'finish_reason':'stop','message':{'content':'{}'}}], **extra})
 
 
@@ -55,18 +79,15 @@ def test_truncated_or_invalid_provider_response_is_protocol_error(body):
 
 @pytest.mark.parametrize('message', [{'content':'{'}, {}])
 def test_truncated_content_preserves_returned_usage_and_cost(message):
-    from dataclasses import replace
     from reproagent.core.protocol import ModelOutputError
-    model=gateway(lambda req: httpx.Response(200,json={'choices':[{'finish_reason':'length','message':message}],
-                                                     'usage':{'prompt_tokens':10,'completion_tokens':5}}))
-    model.config=replace(model.config,input_cost_per_million=1,output_cost_per_million=1)
-    events=[]
-    class Store:
-        def append_event(self,kind,refs,payload): events.append(payload)
-    model.attempt_store=Store(); ctx=context()
+    events = Store()
+    model = gateway(lambda req: httpx.Response(200, json={'choices':[{'finish_reason':'length','message':message}],
+                                                          'usage':{'prompt_tokens':10,'completion_tokens':5}}),
+                    events, input_cost_per_million=1, output_cost_per_million=1)
+    ctx = context()
     with pytest.raises(ModelOutputError):
-        asyncio.run(model.complete(request(),ctx))
-    assert events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5}
+        asyncio.run(model.complete(request(), ctx))
+    assert events.events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5}
     assert ctx.budget.cost_spent > 0 and ctx.budget.unknown_cost_calls == 0
 
 
@@ -83,14 +104,11 @@ def test_credentials_never_enter_records(monkeypatch):
 
 
 def attempt_events():
-    events = []
-    class Store:
-        def append_event(self, kind, refs, payload): events.append(payload)
-    return events, Store()
+    return Store()
 
 
 def test_finish_reason_classification_is_a_closed_set():
-    from reproagent.adapters.models.provider import classify_finish_reason
+    from reproagent.core.protocol import classify_finish_reason
     assert classify_finish_reason('stop') == 'stop' and classify_finish_reason('length') == 'length'
     assert classify_finish_reason('content_filter') == 'content_filter'
     assert classify_finish_reason('provider-private-reason') == 'other'
@@ -100,16 +118,17 @@ def test_finish_reason_classification_is_a_closed_set():
 def test_failed_attempt_event_records_size_and_reason_not_raw_content():
     from reproagent.core.protocol import ModelOutputError
     secret = 'synthetic-reasoning-text'
+    events = attempt_events()
     model = gateway(lambda req: httpx.Response(200, json={'choices':[{'finish_reason':'length','message':{'content':secret}}],
-                                                          'usage':{'prompt_tokens':10,'completion_tokens':5}}))
-    events, store = attempt_events(); model.attempt_store = store
+                                                          'usage':{'prompt_tokens':10,'completion_tokens':5}}), events)
     with pytest.raises(ModelOutputError):
         asyncio.run(model.complete(ModelRequest(({'role':'user','content':'hello'},), 'action', max_output_tokens=1234), context()))
-    assert len(events) == 1 and events[0]['attempt'] == 1
-    assert events[0]['response_kind'] == 'action' and events[0]['effective_output_limit'] == 1234
-    assert events[0]['finish_reason'] == 'length' and events[0]['content_bytes'] == len(secret.encode())
-    assert events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5} and events[0]['cost_kind'] == 'unknown'
-    assert secret not in json.dumps(events[0])
+    assert len(events.events) == 1 and events.events[0]['attempt'] == 1
+    # A legacy ``action`` request is a structured answer, so the boundary runs it as one.
+    assert events.events[0]['response_kind'] == 'contract' and events.events[0]['effective_output_limit'] == 1234
+    assert events.events[0]['finish_reason'] == 'length' and events.events[0]['content_bytes'] == len(secret.encode())
+    assert events.events[0]['usage'] == {'prompt_tokens':10,'completion_tokens':5} and events.events[0]['cost_kind'] == 'unknown'
+    assert secret not in json.dumps(events.events[0])
 
 
 @pytest.mark.parametrize('body,code,retryable', [
@@ -124,16 +143,16 @@ def test_provider_failure_classes_never_repeat_the_identical_request(body, code,
     from reproagent.core.protocol import ModelOutputError
     calls = []
     def handle(req): calls.append(req); return httpx.Response(200, json=body)
-    events, store = attempt_events()
-    model = gateway(handle); model.attempt_store = store
+    events = attempt_events()
+    model = gateway(handle, events)
     with pytest.raises(ModelOutputError) as error:
         asyncio.run(model.complete(request(), context()))
     assert error.value.code == code and error.value.retryable is retryable
-    assert len(calls) == 1 and len(events) == 1 and events[0]['outcome'] == code
+    assert len(calls) == 1 and len(events.events) == 1 and events.events[0]['outcome'] == code
 
 
 def test_attempt_outcome_is_projected_onto_a_closed_set():
-    from reproagent.adapters.models.provider import attempt_payload
+    from reproagent.core.protocol import attempt_payload
     payload = attempt_payload(1, {}, 'unknown', None, outcome='provider-private-outcome',
                               response_kind='action', effective_output_limit=1)
     assert payload['outcome'] == 'unknown'
@@ -150,10 +169,10 @@ def test_unparsable_provider_body_is_correctable_but_never_repeated():
 
 
 def test_completed_attempt_event_stays_within_the_configured_limit():
-    model = gateway(lambda req: reply())
-    events, store = attempt_events(); model.attempt_store = store
+    events = attempt_events()
+    model = gateway(lambda req: reply(), events)
     result = asyncio.run(model.complete(request(), context()))
-    assert result.text == '{}' and len(events) == 1
-    assert events[0]['finish_reason'] == 'stop' and events[0]['content_bytes'] == 2
-    assert events[0]['response_kind'] == 'action' and events[0]['effective_output_limit'] == 4096
-    assert events[0]['outcome'] == 'completed'
+    assert result.text == '{}' and len(events.events) == 1
+    assert events.events[0]['finish_reason'] == 'stop' and events.events[0]['content_bytes'] == 2
+    assert events.events[0]['response_kind'] == 'contract' and events.events[0]['effective_output_limit'] == 4096
+    assert events.events[0]['outcome'] == 'completed'

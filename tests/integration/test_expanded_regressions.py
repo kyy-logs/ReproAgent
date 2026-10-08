@@ -1,15 +1,13 @@
 """Real pytest regressions exposed by the expanded historical evaluation."""
 import asyncio
-import json
 from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
 
-from reproagent.core.models import BudgetLimits, TaskState, ModelResponse
-from reproagent.core.budget import BudgetedGateway
+from reproagent.core.models import BudgetLimits, TaskState
 from tests.unit.test_verifier import prepare
-from tests.unit.test_controller import setup, ScriptedModel
+from tests.unit.test_controller import ScriptedModel
 
 
 def source_project(projects, source):
@@ -79,18 +77,25 @@ def test_runtime_syntax_error_is_attributed_to_its_innermost_frame(tmp_path, pro
 
 
 def test_exploration_cannot_spend_the_actions_reserved_for_first_execution(tmp_path, projects, facts):
-    request, _, controller, context = setup(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=12))
-    class ExploringModel(ScriptedModel):
-        async def complete(self, request, context):
-            if request.response_kind != 'action':
-                return await super().complete(request, context)
-            payload = json.loads(request.messages[-1]['content'])
-            names = payload.get('allowed_actions', ['read_file'])
-            if 'read_file' in names and not payload['candidate_ids']:
-                return ModelResponse(json.dumps({'name': 'read_file', 'parameters': {'path': 'example/parser.py', 'start': 1, 'end': 2}}))
-            return await super().complete(request, context)
-    controller.gateway = BudgetedGateway(ExploringModel(), controller.store)
+    """A phase may spend every exploration step, and the confirmation still happens.
+
+    The action loop used to reserve four steps for write/run/submit and dropped read and
+    search from the schema once they ran out, so the first execution could not be crowded
+    out by exploration.  The phases are not the confirmation any more, which makes that
+    reservation structural instead of a budget heuristic: executing, verifying and repeating
+    a published candidate spend no exploration step, so phases that spent theirs on nothing
+    actionable cannot starve the candidate the last one published.
+    """
+    from tests.unit.test_controller import controller_for, fail, publish, report
+    plan = [fail(ValueError('the phase could not answer')),
+            report('candidate-never-published'),
+            publish()]
+    request, controller, context = controller_for(tmp_path, projects, facts, ScriptedModel(),
+                                                  BudgetLimits(agent_steps=3), plan)
     result = asyncio.run(controller.run(request, context))
     assert result.status == TaskState.DONE
-    assert context.budget.steps_used <= 12
+    # Every exploration step was spent, two of them on a phase that produced nothing the
+    # Controller could act on, and the candidate of the last phase was still executed and
+    # repeated.
+    assert context.budget.steps_used == 3
     assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2

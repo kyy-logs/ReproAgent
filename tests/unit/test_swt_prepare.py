@@ -122,10 +122,10 @@ def test_source_changes_at_controller_creation_never_reach_model(monkeypatch,tmp
     from reproagent.app import create_controller
     from reproagent.core.models import ModelConfig
     from evals.swt_bench.prepare import validate_binding
-    from tests.unit.test_controller import ScriptedModel
+    from tests.unit.test_controller import PhasePlan, ScriptedModel, publish
     row,binding=binding_fixture(tmp_path,projects); case=validate_binding(row,binding); model=ScriptedModel()
     def factory(request,configuration,**kwargs):
-        controller=create_controller(request,configuration,gateway=model,**kwargs)
+        controller=create_controller(request,configuration,gateway=model,explorer_factory=PhasePlan([publish()]),**kwargs)
         (case.buggy_repo/'gold.txt').write_text('hidden material added after preflight')
         return controller
     monkeypatch.setattr(module,'create_controller',factory)

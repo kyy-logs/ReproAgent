@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .core.models import Candidate, CandidateDraft, CodeSnapshot, FileEntry, ProtectionCheck, RunWorkspace
 from .core.serialization import bytes_hash, canonical_hash, encode_record
-from .paths import identity_key, is_within, workspace_path
+from .paths import directory_path, identity_key, is_within, workspace_path
 from .store import TaskStore, atomic_write, safe_child
 
 EXCLUDED_NAMES = {".git", ".venv", "venv", "__pycache__", ".pytest_cache"}
@@ -152,8 +152,10 @@ class Workspace:
         if candidate:
             self.validate_candidate(candidate)
         run_id = "run-" + uuid.uuid4().hex
+        # A directory path stops working twelve characters before a file path does,
+        # so the run copy is created through the form that reaches it at any depth.
         root = workspace_path(self.root / "runs" / run_id / "code")
-        root.mkdir(parents=True)
+        directory_path(root).mkdir(parents=True)
         for entry in snapshot.files:
             if context: context.budget.check()
             data = safe_child(snapshot.root, entry.path).read_bytes()
@@ -167,7 +169,7 @@ class Workspace:
                 raise ValueError("candidate would overwrite fixed/snapshot file")
             atomic_write(destination, safe_child(candidate.storage_root, entry.path).read_bytes())
         temp_root = workspace_path(root.parent / "tmp")
-        temp_root.mkdir()
+        directory_path(temp_root).mkdir()
         return RunWorkspace(run_id, root, temp_root, snapshot.snapshot_id, candidate.candidate_id if candidate else '')
 
     def check(self, run: RunWorkspace, snapshot: CodeSnapshot, candidate: Candidate, context=None) -> ProtectionCheck:

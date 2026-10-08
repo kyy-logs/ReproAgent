@@ -5,7 +5,8 @@ import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
-from reproagent.core.models import BudgetLimits
+from reproagent.app import LEGACY_BACKENDS
+from reproagent.core.models import INFRASTRUCTURE, BudgetLimits, installed_agentscope_version
 from reproagent.core.serialization import canonical_hash
 from ..run import run_case
 from .io import fresh_dir,seal,verify_seal,write_json
@@ -18,12 +19,15 @@ from .results import save_summary
 TOOL_ROOT=Path(__file__).resolve().parents[2]
 
 
-async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_backend='native',agent_backend='native',
+async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_backend=None,agent_backend=None,
                     run_one=None,cancel_event=None,protected_roots=(),model_name=None,tool_root=None):
     verify_seal(catalog,'catalog_hash'); verify_seal(manifest,'manifest_hash')
     if manifest['catalog_hash']!=catalog['catalog_hash'] or manifest['source']!=catalog['source']:
         raise ValueError('manifest/catalog mismatch')
-    if model_backend not in ('native','agentscope') or agent_backend not in ('native','agentscope'): raise ValueError('invalid backend')
+    # The two old flags are deprecated aliases of the one infrastructure; both are accepted
+    # so a recorded command keeps running, and neither selects a runtime.
+    for flag in (model_backend,agent_backend):
+        if flag is not None and flag not in LEGACY_BACKENDS: raise ValueError('invalid backend')
     rows={row['instance_id']:row for row in catalog['entries']}
     identities=[case['instance_id'] for case in manifest['cases']]
     if len(set(identities))!=len(identities) or not identities or set(identities)-set(rows) or set(bindings)-set(identities):
@@ -32,7 +36,7 @@ async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_b
         if any(rows[selected['instance_id']][key]!=selected[key] for key in ('repo','base_commit','description_hash')):
             raise ValueError('selected source identity mismatch')
     limits=limits or BudgetLimits(); cancel_event=cancel_event or asyncio.Event(); run_one=run_one or run_case
-    destination=Path(output).resolve(); model_name=model_name or f'reproagent-{model_backend}-{agent_backend}'
+    destination=Path(output).resolve(); model_name=model_name or f'reproagent-{INFRASTRUCTURE}'
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}',destination.name) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}',model_name):
         raise ValueError('run and model labels must be simple names')
     for binding in bindings.values():
@@ -41,7 +45,12 @@ async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_b
     output=fresh_dir(destination)
     tool_root=Path(tool_root).resolve() if tool_root is not None else TOOL_ROOT
     tool_source=capture_tool_source(tool_root)
-    configuration={'model':asdict(model),'limits':asdict(limits),'model_backend':model_backend,'agent_backend':agent_backend}
+    # The round records what it ran on, not which deprecated flag selected it.  The SDK
+    # version is recorded here too, so a summary written later states the version *this*
+    # round ran on instead of whatever happens to be installed when it is summarised.
+    configuration={'model':asdict(model),'limits':asdict(limits),'model_backend':INFRASTRUCTURE,'agent_backend':INFRASTRUCTURE}
+    version=installed_agentscope_version()
+    if version: configuration['agentscope_version']=version
     round_data={'schema_version':1,'run_id':output.name,'model_name':model_name,'manifest':manifest,
         'catalog_hash':catalog['catalog_hash'],'harness_commit':catalog['source']['harness_commit'],
         'configuration':configuration,'configuration_hash':canonical_hash(configuration),'bindings_hash':canonical_hash(bindings),

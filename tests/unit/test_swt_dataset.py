@@ -69,6 +69,70 @@ def test_selection_is_deterministic_and_does_not_use_oracles(tmp_path):
     assert not any(word in json.dumps(first) for word in ('private fix','hidden oracle','private hint'))
 
 
+def test_holdout_is_frozen_and_not_selected_by_hidden_results(tmp_path):
+    from evals.datasets.swt_bench import load_snapshot,select_dev,select_holdout
+    from evals.swt_bench.io import seal,verify_seal
+    repos=('sympy/sympy','psf/requests','pallets/flask')
+    rows=[row(repo,number) for repo in repos for number in range(1,12)]
+    snapshot,filters,source=fixture_snapshot(tmp_path,rows)
+    catalog=load_snapshot(snapshot,filters,source,expected_count=len(rows))
+    developed={case['instance_id'] for case in select_dev(catalog,count=20)['cases']}
+    excluded=developed|{'sympy__sympy-7','psf__requests-11'}
+    before=sorted(path.name for path in tmp_path.iterdir())
+    first=select_holdout(catalog,excluded,repos=repos,count=10); second=select_holdout(catalog,excluded,repos=repos,count=10)
+    # A fixed seed is reproducible, and the seed is what orders the selection.
+    verify_seal(first,'manifest_hash')
+    assert first==second and first['purpose']=='holdout' and first['catalog_hash']==catalog['catalog_hash']
+    assert first['source']==catalog['source'] and first['excluded_ids']==sorted(excluded)
+    cases=[case['instance_id'] for case in first['cases']]
+    assert len(cases)==10 and len(set(cases))==10
+    # Development and already-debugged samples are frozen out, and the round robin keeps the
+    # spread over every requested repository.
+    assert not set(cases)&excluded and set(cases)<={entry['instance_id'] for entry in catalog['entries']}
+    assert {case['repo'] for case in first['cases']}==set(repos)
+    # Every case is the catalog row verbatim, which is what a round re-validates before it runs.
+    by_id={entry['instance_id']:entry for entry in catalog['entries']}
+    assert all(case=={key:by_id[case['instance_id']][key] for key in case} for case in first['cases'])
+    assert select_holdout(catalog,excluded,repos=repos,count=10,seed='reproagent-swt-holdout-v2')['cases']!=first['cases']
+    # Selection reads only the public catalog: a catalog whose gold columns changed, or lost
+    # them entirely, and one whose entries are reordered, select the very same cases.
+    def reseal(entries):
+        return seal({**{key:value for key,value in catalog.items() if key!='catalog_hash'},'entries':entries},'catalog_hash')
+    altered=reseal([{**entry,'fix_patch_hash':'x'*64,'oracle_test_hash':'y'*64} for entry in catalog['entries']])
+    stripped=reseal([{key:value for key,value in entry.items() if key not in ('fix_patch_hash','oracle_test_hash')}
+        for entry in reversed(catalog['entries'])])
+    assert select_holdout(altered,excluded,repos=repos,count=10)['cases']==first['cases']
+    assert select_holdout(stripped,excluded,repos=repos,count=10)['cases']==first['cases']
+    assert not any(word in json.dumps(first) for word in ('private fix','hidden oracle','private hint'))
+    assert all(set(case)=={'instance_id','repo','base_commit','description_hash'} for case in first['cases'])
+    # Freezing a holdout rewrites nothing: a prior dev manifest and a round whose official
+    # grading is still pending stay readable and unchanged.
+    dev=select_dev(catalog,count=20)
+    round_data=seal({'run_id':'dev20','model_name':'model','manifest':dev,
+        'outcomes':{'sympy__sympy-2':{'status':'DONE','official_status':'not_run','official_resolved':None}}},'round_hash')
+    recorded=json.dumps([dev,round_data],sort_keys=True)
+    select_holdout(catalog,excluded,repos=repos,count=10)
+    verify_seal(dev,'manifest_hash'); verify_seal(round_data,'round_hash')
+    assert json.dumps([dev,round_data],sort_keys=True)==recorded
+    assert round_data['outcomes']['sympy__sympy-2']['official_status']=='not_run'
+    assert sorted(path.name for path in tmp_path.iterdir())==before
+
+
+def test_holdout_refuses_an_exclusion_list_or_pool_it_cannot_honour(tmp_path):
+    from evals.datasets.swt_bench import load_snapshot,select_holdout
+    rows=[row('sympy/sympy',number) for number in range(1,5)]
+    snapshot,filters,source=fixture_snapshot(tmp_path,rows)
+    catalog=load_snapshot(snapshot,filters,source,expected_count=len(rows))
+    with pytest.raises(ValueError,match='unknown'): select_holdout(catalog,{'sympy__sympy-99'},repos=('sympy/sympy',),count=1)
+    with pytest.raises(ValueError,match='not enough'): select_holdout(catalog,set(),repos=('sympy/sympy',),count=10)
+    with pytest.raises(ValueError): select_holdout(catalog,set(),repos=('other/repo',),count=1)
+    with pytest.raises(ValueError): select_holdout(catalog,set(),repos=(),count=1)
+    with pytest.raises(ValueError): select_holdout(catalog,set(),repos=('sympy/sympy',),count=0)
+    with pytest.raises(ValueError): select_holdout(catalog,set(),repos=('sympy/sympy',),count=1,seed='')
+    tampered={**catalog,'catalog_hash':'tampered'}
+    with pytest.raises(ValueError,match='catalog_hash'): select_holdout(tampered,set(),repos=('sympy/sympy',),count=1)
+
+
 def test_holdout_is_deterministic_and_excludes_development_ids(tmp_path):
     import collections
     from evals.datasets.swt_bench import load_snapshot,select_dev,select_holdout

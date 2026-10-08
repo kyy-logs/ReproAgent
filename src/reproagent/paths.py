@@ -19,6 +19,12 @@ from pathlib import Path
 #: The legacy Windows limit.  A *directory* path stops working twelve characters
 #: earlier, because the name that will live inside it has to fit as well.
 MAX_PATH = 260
+RESERVED_NAME = 12
+#: The longest directory Windows will start a process in.  Most paths past the limit
+#: are reached through the longer form, but a process's working directory is not: both
+#: ``CreateProcess``'s ``lpCurrentDirectory`` and ``SetCurrentDirectoryW`` refuse one at
+#: the limit in either form.  Measured on Windows 11 -- 258 works, 259 answers 267.
+PROCESS_CWD_LIMIT = MAX_PATH - 2
 LONG_PREFIX = "\\\\?\\"
 UNC_LONG_PREFIX = "\\\\?\\UNC\\"
 
@@ -52,6 +58,26 @@ def workspace_path(path) -> Path:
         return path
     text = os.path.abspath(path)
     if text.startswith(LONG_PREFIX) or len(text) < MAX_PATH:
+        return Path(text)
+    return Path(_add_prefix(text))
+
+
+def directory_path(path) -> Path:
+    """The form to *create or enter* a directory through.
+
+    :func:`workspace_path` promotes a name once the name itself reaches
+    :data:`MAX_PATH`, which is right for a file: an ordinary file name still opens
+    there.  A directory stops working :data:`RESERVED_NAME` characters earlier,
+    because the name that will live inside it has to fit as well, so a directory
+    path that :func:`workspace_path` leaves ordinary can already be too long for
+    ``mkdir`` and for a process's working directory.  A directory made through here
+    is the same directory either way; only the form it is reached through differs.
+    """
+    path = Path(path)
+    if os.name != "nt":
+        return path
+    text = os.path.abspath(path)
+    if text.startswith(LONG_PREFIX) or len(text) < MAX_PATH - RESERVED_NAME:
         return Path(text)
     return Path(_add_prefix(text))
 

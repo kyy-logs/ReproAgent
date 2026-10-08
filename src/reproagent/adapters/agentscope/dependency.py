@@ -7,7 +7,10 @@ def require_agentscope():
     try:
         installed = version('agentscope')
     except PackageNotFoundError:
-        raise ValueError('agentscope backend requires installation: pip install "reproagent-local[agentscope]"') from None
+        # AgentScope is a main dependency now, so a missing one means the environment was
+        # built without dependencies -- never that another runtime should run instead.
+        raise ValueError('the AgentScope infrastructure requires agentscope to be installed; '
+                         f'install reproagent-local so its dependencies include agentscope=={SDK_VERSION}') from None
     if installed != SDK_VERSION:
-        raise ValueError(f'agentscope backend requires agentscope=={SDK_VERSION}; installed {installed}')
+        raise ValueError(f'the AgentScope infrastructure requires agentscope=={SDK_VERSION}; installed {installed}')
     return installed
