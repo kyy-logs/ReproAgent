@@ -195,3 +195,5 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 ## Execution verification (2026-10-08)
 
 All five tasks implemented. Full offline suite: 549 passed, 5 skipped in 664.81s; skips concern Windows links/interpreter path. pip check: no broken requirements. Real-model A/B has not run. Whole-branch independent review follows before local integration.
+
+Final independent review found two Important error-isolation/accounting issues, both verified RED->GREEN. Final offline suite: 554 passed, 5 skipped in 658.36s; pip check clean. See docs/reviews/2026-10-08-experience-mvp-verification.md for rulings and evidence.

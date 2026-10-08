@@ -163,3 +163,5 @@ Glob → Grep → Read → `write_candidate`，再由 Controller 自动执行原
 Implemented bounded three-category storage, first-exploration summaries and one SDK detail read, independent post-sealing extraction, immutable learning evidence, atomic append/deduplication, report read IDs, and readonly frozen-library evaluation. No exploration-stage constraints were added. See [usage and lifecycle](experience.md).
 
 SDK + MockTransport + actual pytest covered A learning/B reading, cancellation, misleading advice rejected by current verification, original/fixed differential checks and independent package replay. Legacy evaluation-controller injection failures found during full regression were reproduced and corrected with optional-field defaults; real-model A/B has not run. Final suite and independent review are recorded in the feature verification receipt when complete.
+
+Experience MVP final validation: 554 passed, 5 skipped; pip check clean. Two independent-review findings fixed with RED->GREEN regressions. See [verification receipt](reviews/2026-10-08-experience-mvp-verification.md). Real-model experience A/B has not run.
