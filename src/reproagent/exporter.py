@@ -8,7 +8,7 @@ from importlib.resources import files
 from .core.models import ArtifactManifest, EvidenceLevel, FileEntry, TaskState
 from .core.budget import BudgetStopped
 from .core.serialization import bytes_hash, canonical_bytes, canonical_hash, encode_record
-from .paths import directory_path, shared_path_form, workspace_path
+from .paths import directory_path, extended_path, relative_name, shared_path_form, workspace_path
 from .store import atomic_write, safe_child
 from .workspace import candidate_hash
 from .reporting import render_report
@@ -35,6 +35,7 @@ class Exporter:
         root_spellings = tuple(sorted({str(store.root), str(store.root).replace('\\', '/'),
             json.dumps(str(store.root))[1:-1]}, key=len, reverse=True))
         def read(path):
+            path = workspace_path(path)
             chunks = []
             with path.open('rb') as stream:
                 while True:
@@ -129,7 +130,7 @@ class Exporter:
                 if len(report['source_mapping']) < 4:
                     previews[export_path] = '\n'.join(exported.decode('utf-8', errors='replace').splitlines()[source.start_line - 1:source.end_line])[:2000]
                 report['source_mapping'].append({'source_path':source.path, 'source_hash':source.content_hash, 'export_path':export_path, 'export_hash':bytes_hash(exported), 'start_line':source.start_line, 'end_line':source.end_line})
-            verdicts = workspace_path(store.root / 'verdicts')
+            verdicts = extended_path(store.root / 'verdicts')
             for path in sorted(verdicts.glob('*.json')):
                 check()
                 verdict = store.load_record('verdicts', path.stem)
@@ -144,7 +145,7 @@ class Exporter:
                 report['verdict_mapping'].append({'source_path':f'verdicts/{path.relative_to(verdicts).as_posix()}', 'source_hash':bytes_hash(original), 'export_path':export_path, 'export_hash':bytes_hash(exported)})
             atomic_write(temporary / 'probe/reproagent_pytest_probe.py', files('reproagent').joinpath('adapters/languages/python_pytest/probe/reproagent_pytest_probe.py').read_bytes())
             atomic_write(temporary / 'replay.py', files('reproagent').joinpath('resources/replay.py').read_bytes())
-        runs = workspace_path(store.root / 'runs')
+        runs = extended_path(store.root / 'runs')
         for path in sorted(runs.glob('*/execution.json')):
             check()
             run = store.load_record('runs', path.parent.name)
@@ -169,10 +170,10 @@ class Exporter:
                 report.update(python=env.python, pytest_version=env.tool_version, source_roots=list(env.source_roots), target_modules=list(env.target_modules),
                     pytest_args=list(env.pytest_args), limitations=list(env.limitations),
                     argv=['<python>', '-m', 'pytest', *env.pytest_args, '-p', 'reproagent_pytest_probe', *candidate.selectors], env_names=['PYTHONPATH', 'REPROAGENT_RUN_ID', 'REPROAGENT_PROBE_PATH', 'REPROAGENT_TARGET_MODULES'])
-        probes = workspace_path(store.root / 'probes')
+        probes = extended_path(store.root / 'probes')
         for path in sorted(probes.glob('*/*.log')):
             original = read(path); exported = redact(original)
-            relative = f'probes/{path.relative_to(probes).as_posix()}'
+            relative = f'probes/{relative_name(path, probes)}'
             export_path = f"evidence/log-{len(report['log_mapping']):04d}.txt"
             atomic_write(safe_child(temporary, export_path), exported)
             report['environment_probes'].append(export_path)
@@ -187,7 +188,8 @@ class Exporter:
         markdown = render_report(report_safe, previews, check=check)
         atomic_write(temporary / 'report.md', redact(markdown.encode('utf-8')))
         check()
-        entries = tuple(FileEntry(p.relative_to(temporary).as_posix(), bytes_hash(read(p)), p.stat().st_size, 'artifact') for p in sorted(temporary.rglob('*')) if p.is_file())
+        entries = tuple(FileEntry(relative_name(p, temporary), bytes_hash(read(p)), p.stat().st_size, 'artifact')
+                        for p in sorted(extended_path(temporary).rglob('*')) if p.is_file())
         digest = canonical_hash({'package_kind':kind, 'files':entries, 'candidate_id':result.accepted_candidate_id, 'event_cutoff':report['event_cutoff']})
         manifest = ArtifactManifest(kind, root, digest, entries, result.accepted_candidate_id, report['event_cutoff'])
         payload = encode_record(manifest)

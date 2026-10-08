@@ -87,6 +87,27 @@ def readable(path: Path) -> Path:
     return path
 
 
+@WINDOWS_ONLY
+@pytest.mark.parametrize('length', [208, 209, 210, 211])
+def test_diagnostic_export_reads_existing_long_glob_children(tmp_path, length):
+    from reproagent.core.serialization import bytes_hash
+    output = deep_directory(tmp_path / 'export', length)
+    assert len(str(output)) == length
+    store = TaskStore(output)
+    log_path = output / 'probes' / ('probe-' + 'a' * 32) / 'stdout.log'
+    content = b'preflight evidence at a long path\n'
+    atomic_write(log_path, content)
+    assert readable(log_path).is_file()
+    artifact = Exporter().export(TaskResult('review', TaskState.BLOCKED), store)
+    report = json.loads(readable(artifact.root / 'report.json').read_text(encoding='utf-8'))
+    mapping = next(item for item in report['log_mapping'] if item['source_path'].endswith('/stdout.log'))
+    assert mapping['source_hash'] == bytes_hash(content)
+    assert readable(artifact.root / mapping['export_path']).read_bytes() == content
+    for entry in artifact.files:
+        assert bytes_hash(readable(artifact.root / entry.path).read_bytes()) == entry.content_hash
+    assert '\\\\?\\' not in json.dumps(report)
+
+
 def atomic_temporary(path: Path) -> Path:
     """Where ``store.atomic_write`` stages the bytes it renames over ``path``."""
     return path.with_name(f'.{path.name}.{"0" * 32}.tmp')

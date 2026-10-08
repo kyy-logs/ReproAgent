@@ -82,6 +82,17 @@ def directory_path(path) -> Path:
     return Path(_add_prefix(text))
 
 
+def extended_path(path) -> Path:
+    """Windows traversal root that also keeps unknown-depth children accessible.
+
+    A short glob root may yield long children, and pathlib can silently omit a
+    directory it cannot enumerate. Promote the root before traversal, not only
+    the paths that traversal managed to return. Interpreters never use this.
+    """
+    path = Path(path)
+    return Path(_add_prefix(os.path.abspath(path))) if os.name == 'nt' else path
+
+
 def shared_path_form(*paths: Path) -> tuple[Path, ...]:
     """Workspace paths that are used together, in one shared representation.
 
