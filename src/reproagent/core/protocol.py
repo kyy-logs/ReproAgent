@@ -138,3 +138,11 @@ def validate_verdict(result):
         if any(type(ref[name]) is not str for name in ('path','content_hash')) or any(type(ref[name]) is not int for name in ('start_line','end_line')):
             raise ValueError('invalid evidence reference types')
     return result
+
+def learning_schema():
+    properties = {"category": {"type": "string", "enum": ["framework", "model", "workflow"]},
+        "tags": {"type": "array", "maxItems": 5, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
+        "summary": {"type": "string", "minLength": 1}, "detail": {"type": "string", "minLength": 1},
+        "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True,
+            "items": {"type": "string"}}}
+    return object_schema({"experience": {"anyOf": [object_schema(properties), {"type": "null"}]}})

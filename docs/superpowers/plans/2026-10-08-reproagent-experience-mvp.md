@@ -110,13 +110,13 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes现有parse_json/canonical_bytes/EvidenceRef/atomic_write/路径检查；Produces Shared Interfaces中的ExperienceCard、ExperienceSnapshot、LearningResult、load_experience_snapshot、append_experience、validate_experience_path，以及配置字段和ExperienceSummary。
 
-- [ ] **Step 1: 写失败测试。** `test_old_request_defaults_disable_experience`断言旧request解码得到experience_file=None、learn_experience=True；`test_relative_experience_path_uses_config_directory`断言换cwd不改变解析结果。`test_category_and_json_are_strict`覆盖三个合法分类、未知分类、未知/重复字段、NaN、bool schema_version、超过5个tags、空文本和非法引用；`test_card_utf8_limit_includes_metadata`以中文文本覆盖最终2048字节边界。短标签限制固定为最多64个Unicode字符并写入使用说明。
-- [ ] **Step 2: 跑RED。** `.venv\Scripts\python.exe -m pytest tests/unit/test_experience_store.py -q`；确认因缺少新行为失败，不是临时目录或解释器错误。
-- [ ] **Step 3: 实现数据和读库。** 追加配置字段，路径按config目录解析；有界读取最多1MiB+1字节，严格校验每条七字段卡片与ID规范。缺文件不创建文件，损坏/未知版本返回store_error而非空ready。读库时对已知凭据脱敏；发现需要改变存储卡片文本的记录不作为可用卡，不能在加载时改写库。
-- [ ] **Step 4: 写更新/边界失败测试。** `test_duplicate_preserves_old_detail`断言规范化空白、tag去重排序后同ID跳过且旧detail不变；`test_busy_writer_preserves_library`由独立子进程占旁路锁，断言busy且字节不变；`test_atomic_replace_failure_preserves_library`注入replace失败，旧库仍可读。`test_library_limit_checked_after_append`验证新增后超过1MiB不写。`test_library_cannot_live_in_repo_output_or_fixed`与可创建链接时的绕根场景断言拒绝，读取之前无副作用。
-- [ ] **Step 5: 实现追加。** Windows在稳定.lock上锁定一个初始化字节，POSIX使用非阻塞系统锁；保留锁文件，只释放句柄。锁内重新读取完整schema、去重、测量新文件容量，调用既有atomic_write；操作前检查独立学习deadline和取消。失败映射为busy/store_error/timeout，不自动重建库。
-- [ ] **Step 6: 验证GREEN。** 跑该新单测、序列化和CLI集成；断言旧配置行为不变、上述边界通过，链接权限不支持时明确skip。
-- [ ] **Step 7: 仅提交本任务文件。** 建议提交 `feat: add bounded experience records and atomic storage`，不stage其他代理的改动。
+- [x] **Step 1: 写失败测试。** `test_old_request_defaults_disable_experience`断言旧request解码得到experience_file=None、learn_experience=True；`test_relative_experience_path_uses_config_directory`断言换cwd不改变解析结果。`test_category_and_json_are_strict`覆盖三个合法分类、未知分类、未知/重复字段、NaN、bool schema_version、超过5个tags、空文本和非法引用；`test_card_utf8_limit_includes_metadata`以中文文本覆盖最终2048字节边界。短标签限制固定为最多64个Unicode字符并写入使用说明。
+- [x] **Step 2: 跑RED。** `.venv\Scripts\python.exe -m pytest tests/unit/test_experience_store.py -q`；确认因缺少新行为失败，不是临时目录或解释器错误。
+- [x] **Step 3: 实现数据和读库。** 追加配置字段，路径按config目录解析；有界读取最多1MiB+1字节，严格校验每条七字段卡片与ID规范。缺文件不创建文件，损坏/未知版本返回store_error而非空ready。读库时对已知凭据脱敏；发现需要改变存储卡片文本的记录不作为可用卡，不能在加载时改写库。
+- [x] **Step 4: 写更新/边界失败测试。** `test_duplicate_preserves_old_detail`断言规范化空白、tag去重排序后同ID跳过且旧detail不变；`test_busy_writer_preserves_library`由独立子进程占旁路锁，断言busy且字节不变；`test_atomic_replace_failure_preserves_library`注入replace失败，旧库仍可读。`test_library_limit_checked_after_append`验证新增后超过1MiB不写。`test_library_cannot_live_in_repo_output_or_fixed`与可创建链接时的绕根场景断言拒绝，读取之前无副作用。
+- [x] **Step 5: 实现追加。** Windows在稳定.lock上锁定一个初始化字节，POSIX使用非阻塞系统锁；保留锁文件，只释放句柄。锁内重新读取完整schema、去重、测量新文件容量，调用既有atomic_write；操作前检查独立学习deadline和取消。失败映射为busy/store_error/timeout，不自动重建库。
+- [x] **Step 6: 验证GREEN。** 跑该新单测、序列化和CLI集成；断言旧配置行为不变、上述边界通过，链接权限不支持时明确skip。
+- [x] **Step 7: 仅提交本任务文件。** 建议提交 `feat: add bounded experience records and atomic storage`，不stage其他代理的改动。
 
 ## Task 2: 固定视图、摘要匹配与SDK渐进读取
 
@@ -124,14 +124,14 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes Task 1快照/卡片/摘要；Produces ExperienceView及可选read_experience工具。`AgentScopeExplorer`和工厂增加可选experience_view关键字；`build_toolkit(..., *, experience_view=None)`保持默认六工具；Runtime接受相同固定视图、从实际Toolkit确定本阶段允许名集合。
 
-- [ ] **Step 1: 写检索失败测试。** `test_matching_is_bounded_and_stable`用4张卡，断言最多3摘要、0分卡不返回、同分按ID排序；`test_snapshot_does_not_follow_library_updates`加载后改库，断言检索/详情仍来自旧卡。匹配算法固定为规范化tag命中与summary关键词命中的去重计数；英文数字词按正则分词，中文连续片段用相邻双字，目标模块加入查询，大小写/空白归一化。不使用向量或模型检索。
-- [ ] **Step 2: 写详情失败测试。** `test_only_displayed_id_can_be_read`、`test_one_successful_detail_per_task`、`test_utf8_visible_budget_is_shared`断言未知ID拒绝、成功一次后再次拒绝、摘要列表JSON与完整详情JSON合计<=2048字节；不足则拒绝，不截文本、不占成功次数。
-- [ ] **Step 3: 跑RED。** 运行两个新增测试文件，先验证规则缺失导致失败；复用existing SDK runtime测试中的environment/tool_reply和projects/facts构建真实SDK+MockTransport，不能手写下一步绕过SDK。
-- [ ] **Step 4: 实现视图。** 实现select/restrict_summaries/read和任务级read_ids；模型只看到摘要id/summary、详情id/summary/detail，不发送全库、来源任务目录或证据全文。选择少于3条以适应容量。
-- [ ] **Step 5: 实现SDK只读工具和白名单。** 新工具按现有ToolBase/Pydantic接口实现，输入只含id，输出ToolChunk；读工具自己检查预算/取消但不take_step。同步有效工具集、权限检查、整份响应校验、纠错提示和发布预留的reader集合；ReadExperience不继承结束型_DomainTool，不调用PhaseGate.finish。disabled/store_error仍恰好六工具，ready/missing为七工具。
-- [ ] **Step 6: 实现首轮输入。** AgentContext末尾追加experience_summaries；Runtime仅在首个explore消息中加入历史建议。若原Issue/契约可容纳而加经验后超32KiB，先减少/去掉可选摘要，调用restrict_summaries同步实际展示ID；不得删Issue/契约或因经验额外停止主任务。后续阶段不重新注入，SDK历史保留已读详情。
-- [ ] **Step 7: SDK验收。** `test_native_sdk_reads_one_experience_then_publishes`断言真实请求包含第七工具、工具结果进入下一请求、没有phase_end、每逻辑请求只计1步；`test_revised_phase_does_not_reload_experience`断言库只读一次、摘要仅首轮新增、跨阶段一次详情额度。`test_optional_summary_cannot_displace_issue`覆盖接近32KiB输入。`test_experience_is_not_source_evidence`断言经验ID/旧任务引用不能通过当前EvidenceLedger或revise_contract。原始六工具和第20步预算回归继续通过。
-- [ ] **Step 8: GREEN并提交。** 运行新增测试及test_agentscope_runtime/domain_tools/explorer/backends；建议提交 `feat: add progressive experience reads to SDK exploration`。
+- [x] **Step 1: 写检索失败测试。** `test_matching_is_bounded_and_stable`用4张卡，断言最多3摘要、0分卡不返回、同分按ID排序；`test_snapshot_does_not_follow_library_updates`加载后改库，断言检索/详情仍来自旧卡。匹配算法固定为规范化tag命中与summary关键词命中的去重计数；英文数字词按正则分词，中文连续片段用相邻双字，目标模块加入查询，大小写/空白归一化。不使用向量或模型检索。
+- [x] **Step 2: 写详情失败测试。** `test_only_displayed_id_can_be_read`、`test_one_successful_detail_per_task`、`test_utf8_visible_budget_is_shared`断言未知ID拒绝、成功一次后再次拒绝、摘要列表JSON与完整详情JSON合计<=2048字节；不足则拒绝，不截文本、不占成功次数。
+- [x] **Step 3: 跑RED。** 运行两个新增测试文件，先验证规则缺失导致失败；复用existing SDK runtime测试中的environment/tool_reply和projects/facts构建真实SDK+MockTransport，不能手写下一步绕过SDK。
+- [x] **Step 4: 实现视图。** 实现select/restrict_summaries/read和任务级read_ids；模型只看到摘要id/summary、详情id/summary/detail，不发送全库、来源任务目录或证据全文。选择少于3条以适应容量。
+- [x] **Step 5: 实现SDK只读工具和白名单。** 新工具按现有ToolBase/Pydantic接口实现，输入只含id，输出ToolChunk；读工具自己检查预算/取消但不take_step。同步有效工具集、权限检查、整份响应校验、纠错提示和发布预留的reader集合；ReadExperience不继承结束型_DomainTool，不调用PhaseGate.finish。disabled/store_error仍恰好六工具，ready/missing为七工具。
+- [x] **Step 6: 实现首轮输入。** AgentContext末尾追加experience_summaries；Runtime仅在首个explore消息中加入历史建议。若原Issue/契约可容纳而加经验后超32KiB，先减少/去掉可选摘要，调用restrict_summaries同步实际展示ID；不得删Issue/契约或因经验额外停止主任务。后续阶段不重新注入，SDK历史保留已读详情。
+- [x] **Step 7: SDK验收。** `test_native_sdk_reads_one_experience_then_publishes`断言真实请求包含第七工具、工具结果进入下一请求、没有phase_end、每逻辑请求只计1步；`test_revised_phase_does_not_reload_experience`断言库只读一次、摘要仅首轮新增、跨阶段一次详情额度。`test_optional_summary_cannot_displace_issue`覆盖接近32KiB输入。`test_experience_is_not_source_evidence`断言经验ID/旧任务引用不能通过当前EvidenceLedger或revise_contract。原始六工具和第20步预算回归继续通过。
+- [x] **Step 8: GREEN并提交。** 运行新增测试及test_agentscope_runtime/domain_tools/explorer/backends；建议提交 `feat: add progressive experience reads to SDK exploration`。
 
 ## Task 3: 冻结原版材料与独立SDK学习请求
 

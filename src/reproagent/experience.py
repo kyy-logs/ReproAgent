@@ -256,3 +256,189 @@ class ExperienceView:
             raise ValueError("experience detail exceeds shared visible budget")
         self._read_ids = (identifier,)
         return data
+
+@dataclass(frozen=True, slots=True)
+class LearningInput:
+    payload: dict
+    evidence_map: dict[str, EvidenceRef]
+    source_task_id: str
+    event_cutoff: int
+
+
+def _redact(text, secrets):
+    import json
+    for secret in secrets:
+        if secret:
+            forms = {secret, json.dumps(secret, ensure_ascii=False)[1:-1], json.dumps(secret, ensure_ascii=True)[1:-1]}
+            for form in sorted(forms, key=len, reverse=True):
+                text = text.replace(form, "[REDACTED]")
+    return text
+
+
+def build_learning_input(store, result, context, *, secrets=()):
+    """Freeze explicitly selected original evidence, never a recursive task/report summary."""
+    from .core.models import TaskState
+    from .core.review_context import build_review_context, ReviewContextTooLarge
+    from .store import safe_child
+    from .workspace import candidate_hash
+    try:
+        _check(context)
+        if result.status == TaskState.CANCELLED:
+            return None
+        events, errors = store.read_events()
+        if errors:
+            return None
+        entries = []
+        def add(kind, text, origins=()):
+            entries.append({"id": "E" + str(len(entries) + 1), "kind": kind,
+                "text": _redact(text, secrets), "origin_refs": [asdict(ref) for ref in origins]})
+        issue = safe_child(store.root, "input/issue.md")
+        if issue.is_file():
+            content = issue.read_bytes()
+            if len(content) > INPUT_BYTES:
+                return None
+            add("issue", content.decode("utf-8"), (EvidenceRef("input/issue.md", bytes_hash(content),
+                1, max(1, len(content.splitlines()))),))
+        # Order executions by the immutable run records referenced by original run events.
+        run_ids = []
+        for event in events:
+            if event.kind == "run.completed":
+                for ref in event.refs:
+                    parts = ref.split("/")
+                    if len(parts) == 3 and parts[0] == "runs" and parts[-1] == "execution.json":
+                        run_ids.append(parts[1])
+        original = []
+        for identity in run_ids:
+            run = store.load_record("runs", identity)
+            if run.execution_role == "original":
+                original.append(run)
+        if original:
+            run = original[-1]
+            candidate = store.load_record("candidates", run.candidate_id)
+            contract = store.load_contract(candidate.contract_id, candidate.contract_version)
+            snapshot = store.load_record("snapshots", run.snapshot_id)
+            if (candidate.snapshot_id != run.snapshot_id or candidate.manifest_hash != run.manifest_hash
+                or candidate_hash(candidate) != candidate.manifest_hash
+                or run.contract_id != contract.contract_id or run.contract_version != contract.version
+                or not is_within(snapshot.root, store.root)):
+                return None
+            registered = {str(workspace_path(snapshot.root / f.path).resolve()): f.content_hash for f in snapshot.files}
+            failure_prefix = "runs/" + run.run_id + "/"
+            for source in contract.sources:
+                source_path = safe_child(store.root, source.path)
+                if source.path != "input/issue.md" and registered.get(str(source_path.resolve())) != source.content_hash:
+                    return None
+                if any(secret and secret in source.path for secret in secrets):
+                    return None
+            def read_ref(ref):
+                path = safe_child(store.root, ref.path)
+                allowed = (ref.path == "input/issue.md" or ref.path.startswith(failure_prefix)
+                           or registered.get(str(path.resolve())) == ref.content_hash)
+                data = path.read_bytes()
+                if not allowed or bytes_hash(data) != ref.content_hash:
+                    raise ValueError("learning source is unavailable or not original")
+                return data.decode("utf-8")
+            def read_file(entry):
+                path = safe_child(candidate.storage_root, entry.path)
+                if not is_within(path, store.root):
+                    raise ValueError("candidate source escapes task")
+                data = path.read_bytes()
+                if bytes_hash(data) != entry.content_hash:
+                    raise ValueError("candidate source changed")
+                return data
+            review = build_review_context(contract, candidate, run, read_ref=read_ref,
+                read_file=read_file, max_bytes=INPUT_BYTES)
+            execution_path = store.record_path("runs", run.run_id)
+            execution_ref = EvidenceRef("runs/" + run.run_id + "/execution.json",
+                bytes_hash(execution_path.read_bytes()))
+            add("execution", canonical_bytes(review.payload["observation"]).decode("utf-8"), (execution_ref,))
+            add("candidate", canonical_bytes(review.payload["candidate"]).decode("utf-8"))
+            add("expectation", canonical_bytes({"contract": review.payload["contract"],
+                "sources": review.payload["expectation_sources"]}).decode("utf-8"), contract.sources)
+            add("failure", canonical_bytes(review.payload["failure_evidence"]).decode("utf-8"), run.observation.failure_refs)
+        controlled = {"UNKNOWN_TOOL", "MULTIPLE_TOOL_CALLS", "INVALID_TOOL_INPUT", "OUTPUT_TRUNCATED",
+            "OUTPUT_FILTERED", "EMPTY_OUTPUT", "RESPONSE_TOO_LARGE", "INVALID_PROTOCOL",
+            "MODEL_OUTPUT_ERROR", "MODEL_PROTOCOL_ERROR", "EXHAUSTED", "DENIED", "RESERVED_FOR_PUBLISHING"}
+        notes = [{"seq": event.seq, "kind": event.kind, "code": event.payload.get("result_code")}
+            for event in events if event.kind in ("exploration.protocol_error", "exploration.action", "exploration.phase_error")
+            and event.payload.get("result_code") in controlled]
+        if notes:
+            add("tool_error", canonical_bytes(notes).decode("utf-8"))
+        steps = sum(e.kind == "exploration.step" for e in events)
+        reads = sum(e.kind == "exploration.action" and e.payload.get("action") in ("Read", "Grep", "Glob")
+                    and e.payload.get("result_code") == "ALLOWED" for e in events)
+        if steps:
+            add("workflow", canonical_bytes({"steps": steps, "read_calls": reads,
+                "original_executions": len(original), "task_status": result.status.value}).decode("utf-8"))
+        if not original and not notes and not steps:
+            return None
+        from .core.protocol import learning_schema
+        payload = {"task_status": result.status.value, "evidence": [
+            {k: e[k] for k in ("id", "kind", "text")} for e in entries], "response_schema": learning_schema()}
+        if len(canonical_bytes(payload)) > INPUT_BYTES:
+            return None
+        path = safe_child(store.root, "learning/evidence.jsonl")
+        if path.exists():
+            return None
+        _check(context)
+        content = b"\n".join(canonical_bytes(entry) for entry in entries) + b"\n"
+        atomic_write(path, content)
+        digest = bytes_hash(content)
+        refs = {e["id"]: EvidenceRef("learning/evidence.jsonl", digest, i + 1, i + 1)
+                for i, e in enumerate(entries)}
+        source_id = result.task_id + "@" + bytes_hash(str(store.root.resolve()).encode("utf-8"))
+        return LearningInput(payload, refs, source_id, events[-1].seq if events else -1)
+    except (OSError, ValueError, TypeError, UnicodeError, ReviewContextTooLarge):
+        return None
+
+
+def validate_experience(response, material, store, *, secrets=()):
+    from .store import safe_child
+    if not isinstance(response, dict) or set(response) != {"experience"}:
+        raise ValueError("invalid learning response fields")
+    proposed = response["experience"]
+    if proposed is None:
+        return None
+    fields = {"category", "tags", "summary", "detail", "evidence_ids"}
+    if not isinstance(proposed, dict) or set(proposed) != fields:
+        raise ValueError("invalid experience proposal fields")
+    ids = proposed["evidence_ids"]
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 3 or any(
+        type(i) is not str or i not in material.evidence_map for i in ids) or len(set(ids)) != len(ids):
+        raise ValueError("invalid learning evidence ids")
+    refs = []
+    for identity in ids:
+        ref = material.evidence_map[identity]
+        content = safe_child(store.root, ref.path).read_bytes()
+        lines = content.splitlines()
+        if bytes_hash(content) != ref.content_hash or not 1 <= ref.start_line == ref.end_line <= len(lines):
+            raise ValueError("learning evidence hash or lines changed")
+        if parse_json(lines[ref.start_line - 1].decode("utf-8")).get("id") != identity:
+            raise ValueError("learning evidence identity changed")
+        refs.append(ref)
+    summary = proposed["summary"]
+    detail = proposed["detail"]
+    tags = proposed["tags"]
+    if type(summary) is not str or type(detail) is not str or not isinstance(tags, list) or any(type(t) is not str for t in tags):
+        raise ValueError("invalid learning text")
+    summary, detail = _redact(summary, secrets), _redact(detail, secrets)
+    tags = [_redact(tag, secrets) for tag in tags]
+    category = proposed["category"]
+    data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
+        "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
+        "evidence_refs": [asdict(ref) for ref in refs]}
+    return _card(data)
+
+
+async def extract_experience(material, gateway, context, store, *, secrets=()):
+    from importlib.resources import files
+    from .core.models import ModelRequest
+    _check(context)
+    text = canonical_bytes(material.payload).decode("utf-8")
+    if len(text.encode("utf-8")) > INPUT_BYTES:
+        raise ValueError("learning input exceeds byte limit")
+    prompt = files("reproagent").joinpath("prompts/extract_experience.md").read_text(encoding="utf-8")
+    response = await gateway.complete(ModelRequest(({"role": "system", "content": prompt},
+        {"role": "user", "content": _redact(text, secrets)}), response_kind="learning"), context)
+    _check(context)
+    return validate_experience(parse_json(response.text), material, store, secrets=secrets)
