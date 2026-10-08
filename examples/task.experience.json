@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "repo": "../demo-project",
+  "output_dir": "../repro-results/task-experience-001",
+  "issue_file": "../demo-project/issue.md",
+  "experience_file": "../.local/experiences.json",
+  "learn_experience": true,
+  "language": {
+    "python": "C:/path/to/project/.venv/Scripts/python.exe",
+    "target_modules": [
+      "example.parser"
+    ],
+    "source_roots": [
+      "."
+    ],
+    "candidate_parent": "tests",
+    "pytest_args": [
+      "-q"
+    ]
+  }
+}

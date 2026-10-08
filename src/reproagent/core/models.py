@@ -147,6 +147,8 @@ class TaskRequest:
     runtime_id: str = "local"
     limits: BudgetLimits = field(default_factory=BudgetLimits)
     language: PythonPytestConfig = field(default_factory=PythonPytestConfig)
+    experience_file: Path | None = None
+    learn_experience: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -424,12 +426,19 @@ class EvidenceContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ExperienceSummary:
+    id: str
+    summary: str
+
+
+@dataclass(frozen=True, slots=True)
 class AgentContext:
     contract: IssueContract
     project: ProjectView
     history: tuple[dict[str, Any], ...] = ()
     feedback: str = ""
     issue: IssueDescription | None = None
+    experience_summaries: tuple[ExperienceSummary, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

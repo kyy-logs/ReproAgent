@@ -71,7 +71,7 @@ experience.LearningInput(payload: dict, evidence_map: dict[str,EvidenceRef],
     source_task_id: str, event_cutoff: int)                            # frozen envelope
 experience.LearningResult(code: str, experience_id: str = '', duration: float = 0,
     http_attempts: int = 0, usage: dict = {}, known_cost_subtotal: float = 0,
-    unknown_cost_attempts: int = 0)                                   # mutable defaults用factory
+    unknown_cost_attempts: int = 0, event_recorded: bool = True)                                   # mutable defaults用factory
 
 load_experience_snapshot(path: Path, *, secrets: tuple[str,...] = ()) -> ExperienceSnapshot
 append_experience(path: Path, card: ExperienceCard, context: CallContext) -> str
@@ -110,13 +110,13 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes现有parse_json/canonical_bytes/EvidenceRef/atomic_write/路径检查；Produces Shared Interfaces中的ExperienceCard、ExperienceSnapshot、LearningResult、load_experience_snapshot、append_experience、validate_experience_path，以及配置字段和ExperienceSummary。
 
-- [ ] **Step 1: 写失败测试。** `test_old_request_defaults_disable_experience`断言旧request解码得到experience_file=None、learn_experience=True；`test_relative_experience_path_uses_config_directory`断言换cwd不改变解析结果。`test_category_and_json_are_strict`覆盖三个合法分类、未知分类、未知/重复字段、NaN、bool schema_version、超过5个tags、空文本和非法引用；`test_card_utf8_limit_includes_metadata`以中文文本覆盖最终2048字节边界。短标签限制固定为最多64个Unicode字符并写入使用说明。
-- [ ] **Step 2: 跑RED。** `.venv\Scripts\python.exe -m pytest tests/unit/test_experience_store.py -q`；确认因缺少新行为失败，不是临时目录或解释器错误。
-- [ ] **Step 3: 实现数据和读库。** 追加配置字段，路径按config目录解析；有界读取最多1MiB+1字节，严格校验每条七字段卡片与ID规范。缺文件不创建文件，损坏/未知版本返回store_error而非空ready。读库时对已知凭据脱敏；发现需要改变存储卡片文本的记录不作为可用卡，不能在加载时改写库。
-- [ ] **Step 4: 写更新/边界失败测试。** `test_duplicate_preserves_old_detail`断言规范化空白、tag去重排序后同ID跳过且旧detail不变；`test_busy_writer_preserves_library`由独立子进程占旁路锁，断言busy且字节不变；`test_atomic_replace_failure_preserves_library`注入replace失败，旧库仍可读。`test_library_limit_checked_after_append`验证新增后超过1MiB不写。`test_library_cannot_live_in_repo_output_or_fixed`与可创建链接时的绕根场景断言拒绝，读取之前无副作用。
-- [ ] **Step 5: 实现追加。** Windows在稳定.lock上锁定一个初始化字节，POSIX使用非阻塞系统锁；保留锁文件，只释放句柄。锁内重新读取完整schema、去重、测量新文件容量，调用既有atomic_write；操作前检查独立学习deadline和取消。失败映射为busy/store_error/timeout，不自动重建库。
-- [ ] **Step 6: 验证GREEN。** 跑该新单测、序列化和CLI集成；断言旧配置行为不变、上述边界通过，链接权限不支持时明确skip。
-- [ ] **Step 7: 仅提交本任务文件。** 建议提交 `feat: add bounded experience records and atomic storage`，不stage其他代理的改动。
+- [x] **Step 1: 写失败测试。** `test_old_request_defaults_disable_experience`断言旧request解码得到experience_file=None、learn_experience=True；`test_relative_experience_path_uses_config_directory`断言换cwd不改变解析结果。`test_category_and_json_are_strict`覆盖三个合法分类、未知分类、未知/重复字段、NaN、bool schema_version、超过5个tags、空文本和非法引用；`test_card_utf8_limit_includes_metadata`以中文文本覆盖最终2048字节边界。短标签限制固定为最多64个Unicode字符并写入使用说明。
+- [x] **Step 2: 跑RED。** `.venv\Scripts\python.exe -m pytest tests/unit/test_experience_store.py -q`；确认因缺少新行为失败，不是临时目录或解释器错误。
+- [x] **Step 3: 实现数据和读库。** 追加配置字段，路径按config目录解析；有界读取最多1MiB+1字节，严格校验每条七字段卡片与ID规范。缺文件不创建文件，损坏/未知版本返回store_error而非空ready。读库时对已知凭据脱敏；发现需要改变存储卡片文本的记录不作为可用卡，不能在加载时改写库。
+- [x] **Step 4: 写更新/边界失败测试。** `test_duplicate_preserves_old_detail`断言规范化空白、tag去重排序后同ID跳过且旧detail不变；`test_busy_writer_preserves_library`由独立子进程占旁路锁，断言busy且字节不变；`test_atomic_replace_failure_preserves_library`注入replace失败，旧库仍可读。`test_library_limit_checked_after_append`验证新增后超过1MiB不写。`test_library_cannot_live_in_repo_output_or_fixed`与可创建链接时的绕根场景断言拒绝，读取之前无副作用。
+- [x] **Step 5: 实现追加。** Windows在稳定.lock上锁定一个初始化字节，POSIX使用非阻塞系统锁；保留锁文件，只释放句柄。锁内重新读取完整schema、去重、测量新文件容量，调用既有atomic_write；操作前检查独立学习deadline和取消。失败映射为busy/store_error/timeout，不自动重建库。
+- [x] **Step 6: 验证GREEN。** 跑该新单测、序列化和CLI集成；断言旧配置行为不变、上述边界通过，链接权限不支持时明确skip。
+- [x] **Step 7: 仅提交本任务文件。** 建议提交 `feat: add bounded experience records and atomic storage`，不stage其他代理的改动。
 
 ## Task 2: 固定视图、摘要匹配与SDK渐进读取
 
@@ -124,14 +124,14 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes Task 1快照/卡片/摘要；Produces ExperienceView及可选read_experience工具。`AgentScopeExplorer`和工厂增加可选experience_view关键字；`build_toolkit(..., *, experience_view=None)`保持默认六工具；Runtime接受相同固定视图、从实际Toolkit确定本阶段允许名集合。
 
-- [ ] **Step 1: 写检索失败测试。** `test_matching_is_bounded_and_stable`用4张卡，断言最多3摘要、0分卡不返回、同分按ID排序；`test_snapshot_does_not_follow_library_updates`加载后改库，断言检索/详情仍来自旧卡。匹配算法固定为规范化tag命中与summary关键词命中的去重计数；英文数字词按正则分词，中文连续片段用相邻双字，目标模块加入查询，大小写/空白归一化。不使用向量或模型检索。
-- [ ] **Step 2: 写详情失败测试。** `test_only_displayed_id_can_be_read`、`test_one_successful_detail_per_task`、`test_utf8_visible_budget_is_shared`断言未知ID拒绝、成功一次后再次拒绝、摘要列表JSON与完整详情JSON合计<=2048字节；不足则拒绝，不截文本、不占成功次数。
-- [ ] **Step 3: 跑RED。** 运行两个新增测试文件，先验证规则缺失导致失败；复用existing SDK runtime测试中的environment/tool_reply和projects/facts构建真实SDK+MockTransport，不能手写下一步绕过SDK。
-- [ ] **Step 4: 实现视图。** 实现select/restrict_summaries/read和任务级read_ids；模型只看到摘要id/summary、详情id/summary/detail，不发送全库、来源任务目录或证据全文。选择少于3条以适应容量。
-- [ ] **Step 5: 实现SDK只读工具和白名单。** 新工具按现有ToolBase/Pydantic接口实现，输入只含id，输出ToolChunk；读工具自己检查预算/取消但不take_step。同步有效工具集、权限检查、整份响应校验、纠错提示和发布预留的reader集合；ReadExperience不继承结束型_DomainTool，不调用PhaseGate.finish。disabled/store_error仍恰好六工具，ready/missing为七工具。
-- [ ] **Step 6: 实现首轮输入。** AgentContext末尾追加experience_summaries；Runtime仅在首个explore消息中加入历史建议。若原Issue/契约可容纳而加经验后超32KiB，先减少/去掉可选摘要，调用restrict_summaries同步实际展示ID；不得删Issue/契约或因经验额外停止主任务。后续阶段不重新注入，SDK历史保留已读详情。
-- [ ] **Step 7: SDK验收。** `test_native_sdk_reads_one_experience_then_publishes`断言真实请求包含第七工具、工具结果进入下一请求、没有phase_end、每逻辑请求只计1步；`test_revised_phase_does_not_reload_experience`断言库只读一次、摘要仅首轮新增、跨阶段一次详情额度。`test_optional_summary_cannot_displace_issue`覆盖接近32KiB输入。`test_experience_is_not_source_evidence`断言经验ID/旧任务引用不能通过当前EvidenceLedger或revise_contract。原始六工具和第20步预算回归继续通过。
-- [ ] **Step 8: GREEN并提交。** 运行新增测试及test_agentscope_runtime/domain_tools/explorer/backends；建议提交 `feat: add progressive experience reads to SDK exploration`。
+- [x] **Step 1: 写检索失败测试。** `test_matching_is_bounded_and_stable`用4张卡，断言最多3摘要、0分卡不返回、同分按ID排序；`test_snapshot_does_not_follow_library_updates`加载后改库，断言检索/详情仍来自旧卡。匹配算法固定为规范化tag命中与summary关键词命中的去重计数；英文数字词按正则分词，中文连续片段用相邻双字，目标模块加入查询，大小写/空白归一化。不使用向量或模型检索。
+- [x] **Step 2: 写详情失败测试。** `test_only_displayed_id_can_be_read`、`test_one_successful_detail_per_task`、`test_utf8_visible_budget_is_shared`断言未知ID拒绝、成功一次后再次拒绝、摘要列表JSON与完整详情JSON合计<=2048字节；不足则拒绝，不截文本、不占成功次数。
+- [x] **Step 3: 跑RED。** 运行两个新增测试文件，先验证规则缺失导致失败；复用existing SDK runtime测试中的environment/tool_reply和projects/facts构建真实SDK+MockTransport，不能手写下一步绕过SDK。
+- [x] **Step 4: 实现视图。** 实现select/restrict_summaries/read和任务级read_ids；模型只看到摘要id/summary、详情id/summary/detail，不发送全库、来源任务目录或证据全文。选择少于3条以适应容量。
+- [x] **Step 5: 实现SDK只读工具和白名单。** 新工具按现有ToolBase/Pydantic接口实现，输入只含id，输出ToolChunk；读工具自己检查预算/取消但不take_step。同步有效工具集、权限检查、整份响应校验、纠错提示和发布预留的reader集合；ReadExperience不继承结束型_DomainTool，不调用PhaseGate.finish。disabled/store_error仍恰好六工具，ready/missing为七工具。
+- [x] **Step 6: 实现首轮输入。** AgentContext末尾追加experience_summaries；Runtime仅在首个explore消息中加入历史建议。若原Issue/契约可容纳而加经验后超32KiB，先减少/去掉可选摘要，调用restrict_summaries同步实际展示ID；不得删Issue/契约或因经验额外停止主任务。后续阶段不重新注入，SDK历史保留已读详情。
+- [x] **Step 7: SDK验收。** `test_native_sdk_reads_one_experience_then_publishes`断言真实请求包含第七工具、工具结果进入下一请求、没有phase_end、每逻辑请求只计1步；`test_revised_phase_does_not_reload_experience`断言库只读一次、摘要仅首轮新增、跨阶段一次详情额度。`test_optional_summary_cannot_displace_issue`覆盖接近32KiB输入。`test_experience_is_not_source_evidence`断言经验ID/旧任务引用不能通过当前EvidenceLedger或revise_contract。原始六工具和第20步预算回归继续通过。
+- [x] **Step 8: GREEN并提交。** 运行新增测试及test_agentscope_runtime/domain_tools/explorer/backends；建议提交 `feat: add progressive experience reads to SDK exploration`。
 
 ## Task 3: 冻结原版材料与独立SDK学习请求
 
@@ -139,14 +139,14 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes Task 1卡片/追加、现有TaskStore不可变记录与ModelGateway；Produces LearningInput、build_learning_input、validate_experience、extract_experience以及SDK purpose=learning。
 
-- [ ] **Step 1: 写来源失败测试。** `test_learning_input_excludes_fixed_and_answers`在同一任务保存original/fixed运行、含唯一marker的修复版、报告和历史经验，断言提炼payload及冻结JSONL无禁止marker。只从允许Issue/契约引用、候选、original执行和事件白名单取材，不读取reference文件。`test_learning_evidence_survives_event_append`在封存后追加事件，断言E1对应的整文件哈希及行号仍有效。
-- [ ] **Step 2: 写提炼校验失败测试。** `test_learning_ids_are_mapped_by_program`断言模型只选1–3个唯一EID，最终来源任务/exp哈希由程序提供；未知ID、篡改文件、非当前原版来源、重复/额外JSON字段、非法分类和最终卡>2048字节返回invalid；`test_null_experience_is_empty`断言无写入。`test_learning_input_overflow_skips_instead_of_truncating`断言实际请求材料和指令/schema的用户JSON<=8192字节，完整有用片段无法保留时不请求。
-- [ ] **Step 3: 跑RED。** 运行新单测；错误必须定位到新行为缺失，避免把伪造fixture当产品失败。
-- [ ] **Step 4: 实现材料冻结。** 固定来源task_id+任务目录摘要；读取时校验来源绑定/哈希/行号，受控事件摘seq/code/payload测量，忽略未知字段和自由文本指令。将脱敏JSONL一次写入learning/evidence.jsonl并禁止覆盖，EID映射只引用该文件；写学习事件发生在它之后。先保留失败观察和必要预期/候选，非必要材料可整体不选入，不截断保留片段。若来源损坏、候选不可读、无可信完整观察则返回None。
-- [ ] **Step 5: 实现一次提炼和验证。** extract只调用gateway.complete一次；messages为提炼system和material.payload，response_kind=learning，无工具/探索历史。提示词使用三个分类及重叠选择示例，要求条件/观察/建议/不确定性，允许experience=null。parse_json与专用schema严格检查，不请求模型修正格式；已知凭据脱敏后测量最终卡并生成规范化ID。
-- [ ] **Step 6: 扩展SDK用途与保护。** PURPOSES和purpose_for显式接受learning，不把它映射为contract；保留contract/action兼容，不将未知用途静默伪装。结构化finish_reason/正文完整性、1MiB响应限制、max_output_tokens、HTTP最多3次和每HTTP记账继续生效；learning带tools立即拒绝。
-- [ ] **Step 7: 真实SDK离线验收。** `test_learning_request_has_no_tools_and_own_deadline`用真实gateway+MockTransport返回经验，断言用途记录learning、无tools、主步数不变；`test_learning_retry_is_not_protocol_correction`模拟两次503再成功，断言3HTTP/1logical，坏JSON只1logical且不额外纠正。`test_learning_cancellation_and_timeout_close_clients`模拟停滞请求，断言独立30秒deadline/取消生效且aclose执行。
-- [ ] **Step 8: GREEN并提交。** 新单测/SDK学习及既有model_factory/gateway/protocol回归通过；建议提交 `feat: extract bounded experiences from sealed original evidence`。
+- [x] **Step 1: 写来源失败测试。** `test_learning_input_excludes_fixed_and_answers`在同一任务保存original/fixed运行、含唯一marker的修复版、报告和历史经验，断言提炼payload及冻结JSONL无禁止marker。只从允许Issue/契约引用、候选、original执行和事件白名单取材，不读取reference文件。`test_learning_evidence_survives_event_append`在封存后追加事件，断言E1对应的整文件哈希及行号仍有效。
+- [x] **Step 2: 写提炼校验失败测试。** `test_learning_ids_are_mapped_by_program`断言模型只选1–3个唯一EID，最终来源任务/exp哈希由程序提供；未知ID、篡改文件、非当前原版来源、重复/额外JSON字段、非法分类和最终卡>2048字节返回invalid；`test_null_experience_is_empty`断言无写入。`test_learning_input_overflow_skips_instead_of_truncating`断言实际请求材料和指令/schema的用户JSON<=8192字节，完整有用片段无法保留时不请求。
+- [x] **Step 3: 跑RED。** 运行新单测；错误必须定位到新行为缺失，避免把伪造fixture当产品失败。
+- [x] **Step 4: 实现材料冻结。** 固定来源task_id+任务目录摘要；读取时校验来源绑定/哈希/行号，受控事件摘seq/code/payload测量，忽略未知字段和自由文本指令。将脱敏JSONL一次写入learning/evidence.jsonl并禁止覆盖，EID映射只引用该文件；写学习事件发生在它之后。先保留失败观察和必要预期/候选，非必要材料可整体不选入，不截断保留片段。若来源损坏、候选不可读、无可信完整观察则返回None。
+- [x] **Step 5: 实现一次提炼和验证。** extract只调用gateway.complete一次；messages为提炼system和material.payload，response_kind=learning，无工具/探索历史。提示词使用三个分类及重叠选择示例，要求条件/观察/建议/不确定性，允许experience=null。parse_json与专用schema严格检查，不请求模型修正格式；已知凭据脱敏后测量最终卡并生成规范化ID。
+- [x] **Step 6: 扩展SDK用途与保护。** PURPOSES和purpose_for显式接受learning，不把它映射为contract；保留contract/action兼容，不将未知用途静默伪装。结构化finish_reason/正文完整性、1MiB响应限制、max_output_tokens、HTTP最多3次和每HTTP记账继续生效；learning带tools立即拒绝。
+- [x] **Step 7: 真实SDK离线验收。** `test_learning_request_has_no_tools_and_own_deadline`用真实gateway+MockTransport返回经验，断言用途记录learning、无tools、主步数不变；`test_learning_retry_is_not_protocol_correction`模拟两次503再成功，断言3HTTP/1logical，坏JSON只1logical且不额外纠正。`test_learning_cancellation_and_timeout_close_clients`模拟停滞请求，断言独立30秒deadline/取消生效且aclose执行。
+- [x] **Step 8: GREEN并提交。** 新单测/SDK学习及既有model_factory/gateway/protocol回归通过；建议提交 `feat: extract bounded experiences from sealed original evidence`。
 
 ## Task 4: Controller统一生命周期与自动写入
 
@@ -154,14 +154,14 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes Task 1–3全部公共契约；Produces ExperienceService、Controller.learning_result和可选经验注入。`create_controller(..., learning_gateway_factory=None)`在原有关键字末尾扩展；Controller末尾增加可选experience_service=None，旧直接构造仍可运行。
 
-- [ ] **Step 1: 写时序失败测试。** `test_learning_starts_only_after_main_result_is_sealed`在MockTransport收到learning请求时检查：explorer及主gateway均已close、task.json为最终状态、导出manifest存在且哈希稳定。`test_summary_load_occurs_after_analysis_before_first_explore`断言准备只读库一次、contract/verdict请求无经验marker、首次探索有匹配摘要。测试非命中/disabled默认路径不增加模型调用。
-- [ ] **Step 2: 写结束场景失败测试。** 参数化DONE/BLOCKED/NEEDS_INFORMATION/EXHAUSTED/FAILED的有效原版材料、CANCELLED、store_error、只读和无材料。断言取消/只读/损坏/无材料零learning HTTP，其他状态至多一次。`test_exhausted_main_budget_does_not_cancel_learning_budget`主预算超时但取消信号未置位，断言学习有独立30秒。`test_learning_failure_preserves_task_and_package`覆盖invalid/timeout/busy/store_error，原TaskResult、task.json、包字节不变。
-- [ ] **Step 3: 跑RED。** 运行新生命周期文件，确认缺少加载/封存后调用导致断言失败；不能仅检查方法被mock调用过。
-- [ ] **Step 4: 实现App注入。** 配置路径时创建ExperienceService，产品学习工厂从同一model配置与transport创建新的AgentScopeModelFactory/Gateway；可用BudgetedGateway脱敏/记逻辑调用。若自定义gateway被注入且启用学习，必须提供learning_gateway_factory，缺少时配置阶段拒绝，不意外调用真实API。未配置不改变现有factory调用参数。
-- [ ] **Step 5: 实现准备/首次探索时序。** Controller准备时调用service.prepare(fixed,context)校验三个保护根并固定视图；原Issue分析之后调用summaries一次，把视图交给SDK Explorer。SDK默认厂支持可选experience_view；自定义厂在启用时需支持该关键字，disabled不新增关键字。读取ID事件写在导出之前，摘要和详细内容不存入报告。
-- [ ] **Step 6: 实现封存后学习。** 保留现有close_explorer→export→最终state落盘顺序，在return前await service.learn。新CallContext使用BudgetLimits(task_timeout_seconds=30)和同一个cancel_event；不能复制主Budget的过期deadline。预算从收集材料前开始，贯穿模型/校验/加锁/写入，各步检查；超时/取消后不启动写入，关闭新资源。系统文件操作按有限本地收尾处理，不声称能强制中断阻塞的内核I/O。
-- [ ] **Step 7: 实现结果隔离和记账。** service.learn捕获预期存储/模型/校验错误并返回LearningResult，Controller额外保护学习收尾异常不覆盖主结果；任务目录不可写时以CLI诊断说明学习未记录。HTTP/token统计从purpose=learning的model.attempt计算，不再叠加model.completed；写experience.learning事件，Controller.learning_result保存本次返回汇总。不得调用state重写主duration/终态或重新export。用户在学习中取消只停止学习，保留封存记录。
-- [ ] **Step 8: GREEN并提交。** 生命周期、新SDK经验、原Controller/backends/取消/导出回归通过；建议提交 `feat: learn experiences after sealing reproduction results`。
+- [x] **Step 1: 写时序失败测试。** `test_learning_starts_only_after_main_result_is_sealed`在MockTransport收到learning请求时检查：explorer及主gateway均已close、task.json为最终状态、导出manifest存在且哈希稳定。`test_summary_load_occurs_after_analysis_before_first_explore`断言准备只读库一次、contract/verdict请求无经验marker、首次探索有匹配摘要。测试非命中/disabled默认路径不增加模型调用。
+- [x] **Step 2: 写结束场景失败测试。** 参数化DONE/BLOCKED/NEEDS_INFORMATION/EXHAUSTED/FAILED的有效原版材料、CANCELLED、store_error、只读和无材料。断言取消/只读/损坏/无材料零learning HTTP，其他状态至多一次。`test_exhausted_main_budget_does_not_cancel_learning_budget`主预算超时但取消信号未置位，断言学习有独立30秒。`test_learning_failure_preserves_task_and_package`覆盖invalid/timeout/busy/store_error，原TaskResult、task.json、包字节不变。
+- [x] **Step 3: 跑RED。** 运行新生命周期文件，确认缺少加载/封存后调用导致断言失败；不能仅检查方法被mock调用过。
+- [x] **Step 4: 实现App注入。** 配置路径时创建ExperienceService，产品学习工厂从同一model配置与transport创建新的AgentScopeModelFactory/Gateway；可用BudgetedGateway脱敏/记逻辑调用。若自定义gateway被注入且启用学习，必须提供learning_gateway_factory，缺少时配置阶段拒绝，不意外调用真实API。未配置不改变现有factory调用参数。
+- [x] **Step 5: 实现准备/首次探索时序。** Controller准备时调用service.prepare(fixed,context)校验三个保护根并固定视图；原Issue分析之后调用summaries一次，把视图交给SDK Explorer。SDK默认厂支持可选experience_view；自定义厂在启用时需支持该关键字，disabled不新增关键字。读取ID事件写在导出之前，摘要和详细内容不存入报告。
+- [x] **Step 6: 实现封存后学习。** 保留现有close_explorer→export→最终state落盘顺序，在return前await service.learn。新CallContext使用BudgetLimits(task_timeout_seconds=30)和同一个cancel_event；不能复制主Budget的过期deadline。预算从收集材料前开始，贯穿模型/校验/加锁/写入，各步检查；超时/取消后不启动写入，关闭新资源。系统文件操作按有限本地收尾处理，不声称能强制中断阻塞的内核I/O。
+- [x] **Step 7: 实现结果隔离和记账。** service.learn捕获预期存储/模型/校验错误并返回LearningResult，Controller额外保护学习收尾异常不覆盖主结果；任务目录不可写时以CLI诊断说明学习未记录。HTTP/token统计从purpose=learning的model.attempt计算，不再叠加model.completed；写experience.learning事件，Controller.learning_result保存本次返回汇总。不得调用state重写主duration/终态或重新export。用户在学习中取消只停止学习，保留封存记录。
+- [x] **Step 8: GREEN并提交。** 生命周期、新SDK经验、原Controller/backends/取消/导出回归通过；建议提交 `feat: learn experiences after sealing reproduction results`。
 
 ## Task 5: 报告、只读评测、端到端与使用文档
 
@@ -169,14 +169,14 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes Controller.learning_result、read事件和经验文件内容哈希；Produces CLI附加learning汇总、report.experience_read_ids以及可冻结的评测配置。TaskResult、已有report模板和旧评测结果可读性保持兼容。
 
-- [ ] **Step 1: 写报告/CLI失败测试。** `test_report_contains_only_actually_read_ids`断言有摘要但没读详情不显示ID，仅统计event_cutoff之前成功读的ID；Markdown展示可放现有“限制与不确定项”节，不增加新模板变量。`test_cli_reports_learning_separately`断言原status/退出码与TaskResult不变，附加learning.code/duration/usage/费用汇总，disabled可省略该字段。学习新增卡和learning/evidence.jsonl不进入已发布manifest。
-- [ ] **Step 2: 实现展示。** Exporter从已有事件截止提取实际读ID到report.json，reporting按模板输出ID；不复制库、旧经验来源或提炼材料。CLI只在Controller.run之后读取Controller.learning_result显示，无第二次学习调用。
-- [ ] **Step 3: 写只读评测失败测试。** `test_frozen_experience_round_never_writes`在run_case/run_batch配置经验文件，断言learn_experience=False、库哈希运行前后不变、无learning请求。`test_changed_library_invalidates_frozen_round`变更库后下一case不能悄悄使用新库；保留分母，报告source_comparison_status/原因。`test_total_cost_includes_learning_once`断言主/学习usage分别可取，整体cost含所有真实HTTP一次，未知费用保留unknown，不合并最佳结果。
-- [ ] **Step 4: 实现评测入口。** run_case末尾扩展可选experience_file=None、learn_experience=False；EvalResult末尾追加experience_library_hash、experience_read_ids、learning字典默认值，不改旧字段含义。run_batch/CLI可选传只读经验路径（CLI参数为--experience-file），拒绝库位于轮次输出/原版/修复目录，固定起始库哈希，写入configuration及其哈希并在每case前核对；使用已有分母保留机制，库变化时保存EXPERIENCE_SOURCE_CHANGED并标记该轮不可比较。默认评测无经验，学习集由普通任务开启写入产生库，评测集不自动学回。原usage/http_attempts/cost继续表示全部真实请求，新增learning汇总只用于分解，不再重复加到总数；results.py单列learning_duration/learning_http_attempts/learning_token_total，未知费用不冒充精确值。检查run_one测试注入签名的兼容性，disabled不增加kwargs。
-- [ ] **Step 5: 端到端失败测试。** `test_task_a_learns_and_task_b_reads_without_changing_verdict`使用真实SDK+MockTransport和真实pytest：任务A得到原版观察并写卡，A报告无新卡；新任务B命中摘要、调用一次详情、发布候选、完成原版/重复/可选修复检查，verdict请求不直接加载经验，导出包在新副本replay。`test_cancelled_task_never_teaches`与`test_advice_cannot_override_current_evidence`覆盖取消、历史误导建议/伪造引用/当前断言依据不足；不能因为经验说有效而绕过验收。
-- [ ] **Step 6: 验证绿色并更新使用文档。** 新端到端、评测、reporting/CLI/既有SDK链路通过；说明三分类选择规则、开启配置、读取/写入时机、总容量、额外30秒、只读评测、建议可能错误及第一版不自动维护旧卡。示例使用目标仓库之外的工具侧路径，不提交实际经验数据、API密钥或机器专属配置。
-- [ ] **Step 7: 最终验证。** 设置REPROAGENT_RG_PATH后运行 `.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q -rs` 和 `.venv\Scripts\python.exe -m pip check`；wheel/replay测试包含在现有套件。Windows/Linux矩阵沿用现有工作流，不降低断言或因为经验未启用跳过核心链路。记录实际结果，不复用历史460/468通过数。
-- [ ] **Step 8: 提交并记录实现状态。** 建议提交 `feat: report experience usage and freeze experience evaluations`；实现计划逐项勾选，注明真实模型A/B尚未执行。发布/push按用户授权另行处理，保留当前工作区其他改动。
+- [x] **Step 1: 写报告/CLI失败测试。** `test_report_contains_only_actually_read_ids`断言有摘要但没读详情不显示ID，仅统计event_cutoff之前成功读的ID；Markdown展示可放现有“限制与不确定项”节，不增加新模板变量。`test_cli_reports_learning_separately`断言原status/退出码与TaskResult不变，附加learning.code/duration/usage/费用汇总，disabled可省略该字段。学习新增卡和learning/evidence.jsonl不进入已发布manifest。
+- [x] **Step 2: 实现展示。** Exporter从已有事件截止提取实际读ID到report.json，reporting按模板输出ID；不复制库、旧经验来源或提炼材料。CLI只在Controller.run之后读取Controller.learning_result显示，无第二次学习调用。
+- [x] **Step 3: 写只读评测失败测试。** `test_frozen_experience_round_never_writes`在run_case/run_batch配置经验文件，断言learn_experience=False、库哈希运行前后不变、无learning请求。`test_changed_library_invalidates_frozen_round`变更库后下一case不能悄悄使用新库；保留分母，报告source_comparison_status/原因。`test_total_cost_includes_learning_once`断言主/学习usage分别可取，整体cost含所有真实HTTP一次，未知费用保留unknown，不合并最佳结果。
+- [x] **Step 4: 实现评测入口。** run_case末尾扩展可选experience_file=None、learn_experience=False；EvalResult末尾追加experience_library_hash、experience_read_ids、learning字典默认值，不改旧字段含义。run_batch/CLI可选传只读经验路径（CLI参数为--experience-file），拒绝库位于轮次输出/原版/修复目录，固定起始库哈希，写入configuration及其哈希并在每case前核对；使用已有分母保留机制，库变化时保存EXPERIENCE_SOURCE_CHANGED并标记该轮不可比较。默认评测无经验，学习集由普通任务开启写入产生库，评测集不自动学回。原usage/http_attempts/cost继续表示全部真实请求，新增learning汇总只用于分解，不再重复加到总数；results.py单列learning_duration/learning_http_attempts/learning_token_total，未知费用不冒充精确值。检查run_one测试注入签名的兼容性，disabled不增加kwargs。
+- [x] **Step 5: 端到端失败测试。** `test_task_a_learns_and_task_b_reads_without_changing_verdict`使用真实SDK+MockTransport和真实pytest：任务A得到原版观察并写卡，A报告无新卡；新任务B命中摘要、调用一次详情、发布候选、完成原版/重复/可选修复检查，verdict请求不直接加载经验，导出包在新副本replay。`test_cancelled_task_never_teaches`与`test_advice_cannot_override_current_evidence`覆盖取消、历史误导建议/伪造引用/当前断言依据不足；不能因为经验说有效而绕过验收。
+- [x] **Step 6: 验证绿色并更新使用文档。** 新端到端、评测、reporting/CLI/既有SDK链路通过；说明三分类选择规则、开启配置、读取/写入时机、总容量、额外30秒、只读评测、建议可能错误及第一版不自动维护旧卡。示例使用目标仓库之外的工具侧路径，不提交实际经验数据、API密钥或机器专属配置。
+- [x] **Step 7: 最终验证。** 设置REPROAGENT_RG_PATH后运行 `.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q -rs` 和 `.venv\Scripts\python.exe -m pip check`；wheel/replay测试包含在现有套件。Windows/Linux矩阵沿用现有工作流，不降低断言或因为经验未启用跳过核心链路。记录实际结果，不复用历史460/468通过数。
+- [x] **Step 8: 提交并记录实现状态。** 建议提交 `feat: report experience usage and freeze experience evaluations`；实现计划逐项勾选，注明真实模型A/B尚未执行。发布/push按用户授权另行处理，保留当前工作区其他改动。
 
 ## Acceptance and Handoff
 
@@ -191,3 +191,9 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 - 五项Review Focus分别有命名行为测试；覆盖Unicode字节限制、真实跨进程锁、库漂移、可选输入挤占、隐藏材料、引用稳定、取消和成本重复统计。
 - 计划按五个可独立验收的交付块拆分，保留RED→GREEN和提交步骤，不复制实现函数体。最后的真实A/B评测与代码功能验收分开。
 - 执行方式沿用当前会话逐项实现；本次仅写计划，未启动产品代码实现。
+
+## Execution verification (2026-10-08)
+
+All five tasks implemented. Full offline suite: 549 passed, 5 skipped in 664.81s; skips concern Windows links/interpreter path. pip check: no broken requirements. Real-model A/B has not run. Whole-branch independent review follows before local integration.
+
+Final independent review found two Important error-isolation/accounting issues, both verified RED->GREEN. Final offline suite: 554 passed, 5 skipped in 658.36s; pip check clean. See docs/reviews/2026-10-08-experience-mvp-verification.md for rulings and evidence.

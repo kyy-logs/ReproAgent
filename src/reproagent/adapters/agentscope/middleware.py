@@ -49,7 +49,7 @@ PROTOCOL_ATTEMPTS = 3
 #: The tools that only read.  They are the ones a phase can spend its whole budget on: the
 #: SDK's ReAct loop has no reason to stop reading a large repository, and the fixed-point
 #: run spent 20 of 20 decisions on Read/Grep/Glob without ever publishing a candidate.
-READER_TOOLS = ("Read", "Grep", "Glob")
+READER_TOOLS = ("Read", "Grep", "Glob", "read_experience")
 
 #: Steps kept for publishing and its bounded protocol corrections.  The controller runs,
 #: repeats and submits the candidate itself, so those steps cost no budget of their own.
@@ -102,9 +102,10 @@ class ExplorationMiddleware(MiddlewareBase):
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, context, gate, store=None) -> None:
+    def __init__(self, context, gate, store=None, *, allowed_tools=TOOL_NAMES) -> None:
         require_agentscope()
         self.context, self.gate, self.store = context, gate, store
+        self.allowed_tools = tuple(allowed_tools)
         self.components = component_versions()
         #: The phase's contract, handed over by the runtime when the phase starts.  Until
         #: then there is nothing to reserve the last steps for.
@@ -161,7 +162,7 @@ class ExplorationMiddleware(MiddlewareBase):
         response = await model(
             messages=input_kwargs["messages"], tools=input_kwargs["tools"],
             tool_choice=input_kwargs["tool_choice"], **self.output_limit(model))
-        self.check_response(response)
+        self.check_response(response, allowed_tools=self.allowed_tools)
         return response
 
     async def on_check_permission(self, agent, input_kwargs, next_handler):
@@ -176,7 +177,7 @@ class ExplorationMiddleware(MiddlewareBase):
         tool = input_kwargs.get("tool")
         name = getattr(tool, "name", "")
         code = "DENIED"
-        if name in TOOL_NAMES:
+        if name in self.allowed_tools:
             decision = await next_handler(**input_kwargs)
             if decision.behavior is not PermissionBehavior.ALLOW:
                 decision = PermissionDecision(
@@ -195,7 +196,7 @@ class ExplorationMiddleware(MiddlewareBase):
             decision = PermissionDecision(
                 behavior=PermissionBehavior.DENY, decision_reason="outside the phase tool set",
                 message=f"{name or 'this tool'} is not part of the exploration phase")
-        self.record("exploration.action", action=name if name in TOOL_NAMES else "", result_code=code,
+        self.record("exploration.action", action=name if name in self.allowed_tools else "", result_code=code,
                     arguments_hash=self._arguments_hash(input_kwargs.get("tool_input")))
         return decision
 
@@ -270,7 +271,7 @@ class ExplorationMiddleware(MiddlewareBase):
         return {field: limit}
 
     @staticmethod
-    def check_response(response) -> None:
+    def check_response(response, *, allowed_tools=TOOL_NAMES) -> None:
         """Refuse a response whole, before the SDK acts on any part of it.
 
         Raises:
@@ -285,7 +286,7 @@ class ExplorationMiddleware(MiddlewareBase):
             raise PhaseProtocolError("MULTIPLE_TOOL_CALLS")
         if not calls:
             return
-        if calls[0].name not in TOOL_NAMES:
+        if calls[0].name not in allowed_tools:
             raise PhaseProtocolError("UNKNOWN_TOOL")
         try:
             parse_json(calls[0].input)

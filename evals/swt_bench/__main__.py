@@ -19,7 +19,7 @@ def main(argv=None):
     run.add_argument('--bindings',required=True); run.add_argument('--model-config',required=True); run.add_argument('--output',required=True)
     run.add_argument('--model-backend',choices=LEGACY_BACKENDS,help='deprecated: both legacy values select the one AgentScope infrastructure')
     run.add_argument('--agent-backend',choices=LEGACY_BACKENDS,help='deprecated: both legacy values select the one AgentScope infrastructure')
-    run.add_argument('--limits'); run.add_argument('--name')
+    run.add_argument('--limits'); run.add_argument('--name'); run.add_argument('--experience-file')
     preflight=commands.add_parser('preflight'); preflight.add_argument('--catalog',required=True); preflight.add_argument('--manifest',required=True)
     preflight.add_argument('--bindings',required=True); preflight.add_argument('--output',required=True)
     reports=commands.add_parser('import-reports'); reports.add_argument('--round',required=True); reports.add_argument('--reports',required=True); reports.add_argument('--receipt')
@@ -54,7 +54,8 @@ def main(argv=None):
             model=ModelConfig(**read_json(args.model_config)); limits=BudgetLimits(**read_json(args.limits)) if args.limits else BudgetLimits()
             data=asyncio.run(run_batch(read_json(args.catalog),read_json(args.manifest),bindings,model,args.output,
                 limits=limits,model_backend=args.model_backend,agent_backend=args.agent_backend,model_name=args.name,
-                protected_roots=(Path(args.catalog).resolve().parent,bindings_path)))
+                protected_roots=(Path(args.catalog).resolve().parent,bindings_path),
+                experience_file=Path(args.experience_file).resolve() if args.experience_file else None))
             from .results import summarize_round
             print(json.dumps(summarize_round(data),ensure_ascii=False))
         elif args.command=='import-reports':

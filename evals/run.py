@@ -15,7 +15,7 @@ def generation_input(case):
         'python':case.buggy_python, 'target_modules':list(case.target_modules), 'source_roots':list(case.source_roots)}
 
 
-async def run_case(case, model, output_dir, *, limits=None, model_backend=None, agent_backend=None,cancel_event=None):
+async def run_case(case, model, output_dir, *, limits=None, model_backend=None, agent_backend=None,cancel_event=None, experience_file=None, learn_experience=False):
     if case.review_status != 'approved':
         raise ValueError('historical case must be manually reviewed before evaluation')
     output_dir = Path(output_dir)
@@ -24,7 +24,7 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend=None, 
     limits = limits or BudgetLimits()
     request = TaskRequest(case.buggy_repo, output_dir / 'task', issue, language=PythonPytestConfig(python=case.buggy_python,
         target_modules=case.target_modules, source_roots=case.source_roots, candidate_parent=case.candidate_parent,
-        pytest_args=case.pytest_args,baseline_tests=case.baseline_tests), limits=limits,task_id=case.case_id)
+        pytest_args=case.pytest_args,baseline_tests=case.baseline_tests), limits=limits,task_id=case.case_id, experience_file=Path(experience_file).resolve() if experience_file is not None else None, learn_experience=learn_experience)
     controller = create_controller(request, model, model_backend=model_backend, agent_backend=agent_backend)
     if case.buggy_source_hash or case.fixed_source_hash:
         from reproagent.core.serialization import canonical_hash
@@ -49,6 +49,8 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend=None, 
     known = bool(costs) and all(value is not None for value in costs)
     environments = list((request.output_dir / 'environments').glob('*.json'))
     env = asdict(controller.store.load_record('environments', environments[0].stem)) if environments else {}
+    experience_service = getattr(controller, 'experience_service', None)
+    learning_result = getattr(controller, 'learning_result', None)
     return EvalResult(case.case_id, result.status.value, result.evidence_level.value, 'runnable' if environments and result.status.value!='BLOCKED' else 'blocked',
         reproduced=result.status.value == 'DONE', differential_validated=result.evidence_level.value == 'DIFFERENTIAL_VALIDATED',
         duration=result.duration, cost_kind='estimated' if known else 'unknown', cost_value=sum(costs) if known else None,
@@ -59,7 +61,10 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend=None, 
         model_backend=INFRASTRUCTURE,agent_backend=INFRASTRUCTURE,stop_reason=result.stop_reason,http_attempts=len(attempts),
         usage={key:sum(call.get('usage',{}).get(key,0) for call in calls) for key in ('prompt_tokens','completion_tokens','total_tokens')},
         known_cost_subtotal=sum(value for value in costs if value is not None),unknown_cost_attempts=sum(value is None for value in costs),
-        fix_validation_status=result.fix_validation_status)
+        fix_validation_status=result.fix_validation_status,
+        experience_library_hash=experience_service.snapshot.content_hash if experience_service is not None and experience_service.snapshot is not None else "",
+        experience_read_ids=experience_service.view.read_ids if experience_service is not None and experience_service.view is not None else (),
+        learning=asdict(learning_result) if learning_result is not None else {})
 
 
 def summarize(results):

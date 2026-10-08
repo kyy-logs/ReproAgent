@@ -56,7 +56,7 @@ inspect 和 replay 不调用模型。
 
 ## 阶段工具面
 
-一个探索阶段只注册六个工具，顺序固定：
+默认探索阶段注册六个工具，顺序固定：
 
 | 工具 | 作用 |
 | --- | --- |
@@ -111,3 +111,7 @@ Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时�
 [架构验收记录](evaluations/2026-10-08-agentscope-acceptance.md)；更早那一轮只跑了离线门槛、
 真实模型一步未执行的记录，保留在 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
 历史验证记录见 [实现记录](implementation-status.md)。
+
+## Optional experience infrastructure
+
+When an experience snapshot is enabled, the toolkit adds one readonly `read_experience` tool to the existing six. The task keeps one snapshot, first-round summaries and at most one successful detail read. Post-sealing learning uses a separate SDK client with purpose=learning, no tools or exploration history, and an independent deadline. Controller, Verifier and evidence rules remain the domain authority. See [experience lifecycle and configuration](experience.md).

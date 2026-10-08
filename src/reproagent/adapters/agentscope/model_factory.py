@@ -19,7 +19,7 @@ from ...core.models import ModelRequest
 from ...core.protocol import ModelOutputError, attempt_payload, classify_output
 from ...core.serialization import parse_json
 
-PURPOSES = frozenset({'exploration', 'contract', 'verdict'})
+PURPOSES = frozenset({'exploration', 'contract', 'verdict', 'learning'})
 # A logical request may cost at most this many real HTTP attempts; transient failures
 # inside the loop are retried, everything else is decided by the caller.
 HTTP_ATTEMPTS = 3
@@ -362,4 +362,8 @@ def purpose_for(request):
     A legacy ``action`` request is a single structured answer too, so it runs and is
     recorded as a contract request.
     """
-    return 'verdict' if request.response_kind == 'verdict' else 'contract'
+    if request.response_kind in ('verdict', 'learning'):
+        return request.response_kind
+    if request.response_kind in ('contract', 'action'):
+        return 'contract'
+    raise ValueError('unsupported structured request purpose')

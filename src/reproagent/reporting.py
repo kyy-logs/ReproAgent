@@ -196,6 +196,8 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
         for item in limited(items):
             lines.append(f'- {label}：{_text(item)}')
     lines += ['- 语义核验可能误判；文件副本不构成安全沙箱。']
+    if report.get('experience_read_ids'):
+        lines += ['', '探索时实际读取的历史建议ID：' + '、'.join(_code(identity) for identity in report['experience_read_ids']) + '。历史建议不作为验收证据。']
     section('limitations', lines, 10000)
     lines = [
               _link('结构化报告', 'report.json') + ' · ' + _link('文件哈希清单', 'manifest.json'), '',

@@ -3,7 +3,7 @@
 把 Bug 描述转成 Python/pytest 回归测试，实际运行、核验并独立重放，最后导出测试与证据。
 当前安装位置为 `E:\ReproAgent`，迁移说明见 [迁移记录](docs/migration-to-e.md)。
 
-当前为本地 CLI MVP，只有一套基础设施：AgentScope。最新完整离线测试为 460 passed、4 skipped，包含真实 AgentScope SDK 整链路和 SWT 数据/评测链路；原始 Issue 与 Windows 导出/replay 边界的独立审查修复见 [修复记录](docs/reviews/2026-10-08-reviewed-boundary-repairs.md)。SDK 接入阶段曾验证无 SDK 环境为 176 passed、4 skipped。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；本次基础设施迁移没有重跑该批历史案例，也没有真实模型轮次，见 [迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
+当前为本地 CLI MVP，只有一套基础设施：AgentScope。最新完整离线测试为 554 passed、5 skipped，包含真实 AgentScope SDK 整链路和 SWT 数据/评测链路；原始 Issue 与 Windows 导出/replay 边界的独立审查修复见 [修复记录](docs/reviews/2026-10-08-reviewed-boundary-repairs.md)。SDK 接入阶段曾验证无 SDK 环境为 176 passed、4 skipped。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；本次基础设施迁移没有重跑该批历史案例，也没有真实模型轮次，见 [迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
 
 ## 安装与输入
 
@@ -74,6 +74,10 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 `limits` 可配置，默认最多 20 个 Agent 动作，单命令 60 秒，主任务 900 秒，清理 10 秒，本地收尾 5 秒；
 单次工具响应 32 KiB，单次运行 stdout/stderr/Probe 合计 32 MiB，Probe 读取另有 32 MiB 安全上限。错误动作仍计步，分析和验证共用期限与模型用量记录；收尾分块操作检查期限，发布前再次检查。文件系统调用采用协作式期限检查。
 缺 usage 或计价时费用为 unknown；配置费率可报告估算。每次 HTTP 尝试单独记账；超时重试无法确认此前计费时，总费用仍是 unknown，同时保留已知小计。此适配器没有可靠费用上界，拒绝 `model_cost_limit` 硬限制。
+
+## Automatic experience library
+
+Optional progressive advice and automatic post-task learning are available. See [experience setup and frozen evaluation](docs/experience.md) and [task example](examples/task.experience.json). Disabled by default; real-model A/B benefit has not been measured.
 
 ## Known limitations
 

@@ -3,7 +3,7 @@ import asyncio
 import json
 import signal
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from .app import LEGACY_BACKENDS, create_controller
@@ -24,7 +24,8 @@ def load_request(path):
     path = Path(path).resolve()
     request = decode_record('request', parse_json(path.read_text(encoding='utf-8')))
     def resolved(value): return (path.parent / value).resolve() if not value.is_absolute() else value.resolve()
-    return replace(request, repo=resolved(request.repo), output_dir=resolved(request.output_dir), issue_file=resolved(request.issue_file))
+    return replace(request, repo=resolved(request.repo), output_dir=resolved(request.output_dir), issue_file=resolved(request.issue_file),
+        experience_file=resolved(request.experience_file) if request.experience_file is not None else None)
 
 
 def run_command(args):
@@ -52,8 +53,13 @@ def run_command(args):
     async def run():
         return await controller.run(request, context, fixed)
     result = asyncio.run(run())
-    print(json.dumps({'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
-        'export_state':result.export_state, 'output_dir':display_path(output)}, ensure_ascii=False))
+    summary = {'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
+        'export_state':result.export_state, 'output_dir':display_path(output)}
+    if getattr(controller, 'learning_result', None) is not None:
+        summary['learning'] = asdict(controller.learning_result)
+        if not controller.learning_result.event_recorded:
+            print('Learning summary could not be saved; the sealed task result is unchanged.', file=sys.stderr)
+    print(json.dumps(summary, ensure_ascii=False))
     return EXIT_CODES[result.status]
 
 
