@@ -63,6 +63,33 @@ def test_round_output_inside_target_is_rejected_before_writing(tmp_path,projects
     assert not destination.exists()
 
 
+def test_holdout_manifest_flows_through_the_existing_batch(tmp_path,projects):
+    from evals.datasets.swt_bench import select_holdout
+    from evals.schema import EvalResult
+    from evals.swt_bench.io import read_json,seal
+    from evals.swt_bench.run import run_batch
+    from reproagent.core.models import ModelConfig
+    from reproagent.core.serialization import bytes_hash
+    row,binding=binding_fixture(tmp_path,projects)
+    entries=[{**row,'instance_id':f'fixture__repo-{index}','description_hash':bytes_hash(f'issue {index}'.encode())}
+        for index in range(1,4)]
+    catalog=seal({'source':{'harness_commit':'a'*40},'entries':entries},'catalog_hash')
+    # The selector's own test covers determinism; this proves the manifest it freezes is
+    # consumed unchanged by the existing run path, with the unbound case kept in the denominator.
+    manifest=select_holdout(catalog,{'fixture__repo-3'},repos=('fixture/repo',),count=2)
+    assert sorted(case['instance_id'] for case in manifest['cases'])==['fixture__repo-1','fixture__repo-2']
+    calls=[]
+    async def run_one(case,model,output,**kwargs):
+        calls.append(case.case_id)
+        return EvalResult(case.case_id,status='DONE',duration=1.5)
+    result=asyncio.run(run_batch(catalog,manifest,{entries[0]['instance_id']:binding},ModelConfig(),
+        tmp_path/'holdout-batch',run_one=run_one))
+    assert calls==[manifest['cases'][0]['instance_id']]
+    assert result['outcomes']['fixture__repo-2']['status']=='NOT_PREPARED'
+    assert read_json(tmp_path/'holdout-batch'/'summary.json')['all_tasks']==2
+    assert read_json(tmp_path/'holdout-batch'/'manifest.json')['manifest_hash']==manifest['manifest_hash']
+
+
 def test_unchanged_tool_source_records_a_comparable_round(tmp_path,projects):
     from evals.schema import EvalResult
     from evals.swt_bench.io import read_json

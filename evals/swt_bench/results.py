@@ -6,6 +6,10 @@ from pathlib import Path
 from .io import read_json,write_json,verify_seal,seal,file_hash
 from reproagent.core.models import IDENTITY_FIELDS,NOT_RECORDED,component_identity
 
+#: Run statuses that mean the runner started the case. A cancellation recorded before the
+#: case started carries no duration and is not an execution.
+EXECUTED_STATUSES=('DONE','EXHAUSTED','FAILED')
+
 
 def percentile(values,fraction):
     if not values: return None
@@ -52,7 +56,15 @@ def summarize_round(round_data):
     # differential success, and an outcome recorded before the field existed defaults to
     # "not_provided" rather than inheriting either claim.
     fix_status=lambda value:value.get('fix_validation_status','not_provided')
+    # A case the runner actually started either reached a terminal run status or recorded a
+    # duration; one cancelled before it started, never prepared or never run is not counted
+    # as an execution. Independent delivery is the fresh-copy replay of a delivered package:
+    # its own confirmed/failed/not-yet-run split stays separate from the local measurement.
+    def executed(value): return value.get('status') in EXECUTED_STATUSES or (
+        type(value.get('duration')) in (int,float) and math.isfinite(value['duration']))
+    fully_graded=bool(total) and len(verified)==total
     summary={'all_tasks':total,'ready_tasks':len(ready),'preparation_rate':ratio(len(ready),total),
+        'executed_tasks':sum(executed(value) for value in outcomes),
         # Rounds recorded before the source was pinned cannot claim a comparable version.
         'source_comparison_status':round_data.get('source_comparison_status','not_recorded'),
         'local_repeated':sum(value.get('evidence_level') in ('REPEATED_OBSERVATION','DIFFERENTIAL_VALIDATED') for value in outcomes),
@@ -61,8 +73,18 @@ def summarize_round(round_data):
         'fix_validation_failed':sum(fix_status(value)=='failed' for value in outcomes),
         'fix_validation_blocked':sum(fix_status(value)=='blocked' for value in outcomes),
         'fix_validation_not_provided':sum(fix_status(value)=='not_provided' for value in outcomes),
+        'independent_delivered':sum(value.get('export_replayed') is True for value in outcomes),
+        'independent_delivery_failed':sum(value.get('export_replayed') is False for value in outcomes),
+        'independent_delivery_pending':sum(value.get('status')=='DONE' and value.get('export_replayed') is None for value in outcomes),
         'official_graded':len(verified),'official_successes':official,'official_not_verified':total-len(verified),
-        'official_total_rate':ratio(official,total),'official_rate_final':bool(total) and len(verified)==total,
+        # A verified official report is the only source of an official figure. While any
+        # case is still unverified the state is "pending" and the official rate stays None:
+        # it is never reported as a zero score, and the measured local numbers above remain
+        # the visible measurement. `official_total_rate` keeps the documented provisional
+        # lower bound over every case for readers who want it.
+        'official_grade_status':'final' if fully_graded else 'pending',
+        'official_rate':ratio(official,total) if fully_graded else None,
+        'official_total_rate':ratio(official,total),'official_rate_final':fully_graded,
         'runnable_official_rate':ratio(sum(value.get('official_status')=='verified' and value.get('official_resolved') is True for value in ready),len(ready)),
         'human_reviewed':len(reviewed),'pending_human_review':total-len(reviewed),
         'human_confirmation_rate':ratio(sum(value['human_judgement'] is True for value in reviewed),len(reviewed)),
@@ -82,14 +104,17 @@ def summarize_round(round_data):
 
 def save_summary(root,round_data):
     root=Path(root); summary=summarize_round(round_data); write_json(root/'summary.json',summary)
-    lines=['# SWT-Bench 开发子集评测','',f"选定样本：{summary['all_tasks']}；准备可用：{summary['ready_tasks']}。",
+    official_grade='待判分' if summary['official_grade_status']=='pending' else '已判分（最终）'
+    lines=['# SWT-Bench 开发子集评测','',f"选定样本：{summary['all_tasks']}；准备可用：{summary['ready_tasks']}；实际执行：{summary['executed_tasks']}。",
+        f"来源状态：{summary['source_comparison_status']}。",
         f"基础设施：{summary['infrastructure']}；复现策略：{summary['strategy']}（版本 {summary['strategy_version']}）。",
         f"本轮记录的后端：模型 {recorded_label(summary['model_backend'])}；Agent {recorded_label(summary['agent_backend'])}；AgentScope 版本：{recorded_label(summary['agentscope_version'])}。",
         f"本地重复确认：{summary['local_repeated']}；本地差分确认：{summary['local_differential']}。",
+        f"独立交付确认：{summary['independent_delivered']}；交付重跑未通过：{summary['independent_delivery_failed']}；待独立重跑：{summary['independent_delivery_pending']}。",
         f"修复版对照：通过 {summary['fix_validation_passed']}；未通过 {summary['fix_validation_failed']}；受阻 {summary['fix_validation_blocked']}；未提供 {summary['fix_validation_not_provided']}。",
         '原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功。',
-        f"有来源的官方判分：{summary['official_graded']}；成功：{summary['official_successes']}；尚未核验：{summary['official_not_verified']}。",
-        '官方结果未齐全时，成功比例仅是暂定下界；本地 DONE 不能代替 SWT 判分。',
+        f"官方判分：{official_grade}；有来源的官方判分：{summary['official_graded']}；官方成功：{summary['official_successes']}；尚未核验：{summary['official_not_verified']}。",
+        '官方报告缺失时保留待判分，本地测量数字仍照原样显示；本地 DONE 不能代替 SWT 判分。',
         f"人工已审查：{summary['human_reviewed']}；待审查：{summary['pending_human_review']}。",
         f"HTTP 尝试：{summary['http_attempts']}；记录 token：{summary['total_tokens']}；费用未知样本：{summary['costs_unknown_count']}。",
         '', '| 样本 | 准备 | 本地状态 | 证据 | 修复版 | 官方状态 |','| --- | --- | --- | --- | --- | --- |']

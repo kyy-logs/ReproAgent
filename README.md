@@ -3,7 +3,7 @@
 把 Bug 描述转成 Python/pytest 回归测试，实际运行、核验并独立重放，最后导出测试与证据。
 当前安装位置为 `E:\ReproAgent`，迁移说明见 [迁移记录](docs/migration-to-e.md)。
 
-当前为本地 CLI MVP，只有一套基础设施：AgentScope。最新完整离线测试为 440 passed、4 skipped，包含真实 AgentScope SDK 整链路和 SWT 数据/评测链路。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；本次基础设施迁移没有重跑该批历史案例，也没有真实模型轮次，见 [迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
+当前为本地 CLI MVP，只有一套基础设施：AgentScope。最新完整离线测试为 446 passed、4 skipped，包含真实 AgentScope SDK 整链路和 SWT 数据/评测链路；SDK 接入阶段曾验证无 SDK 环境为 176 passed、4 skipped。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；本次基础设施迁移没有重跑该批历史案例，也没有真实模型轮次，见 [迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
 
 ## 安装与输入
 
@@ -101,7 +101,7 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 测试覆盖真实 pytest、进程清理、源码来源、独立导出与 wheel 安装；独立目标环境只装 pytest。
 首次打包测试会创建开发测试环境并安装 pytest，不修改用户的目标环境。
 `evals/README.md` 说明历史样本审查、修复信息隔离及分母统计。20 个历史案例的原始累计记录见 `evals/cases/cumulative-historical-results.json`，最终修复整轮见 `evals/cases/expanded-final-results.json` 与 `docs/expanded-case-repairs.md`；原始扩展失败保留于 `docs/expanded-case-validation.md`。原始三例 0/3 基线保留于 `docs/historical-case-validation.md`；代表性大样本、独立人类审查与能力比较尚未完成。合成案例首次冒烟结果见 `docs/deepseek-smoke.md`。
-SWT-Bench Lite 的固定数据导入、20 个开发样本、独立环境预检、批量运行、标准预测和官方报告导入已接通，见 [评测使用说明](docs/swt-bench.md)。官方 Docker 判分尚未执行；开发首轮结果和准备阻塞均保留，不作为全量基准成绩。
-最新 [真实 Bug 评测报告](docs/evaluations/2026-10-06-swt-development.md)：固定20例中8例调用模型、12例环境阻塞，当前配置有效差分交付0；参考测试可区分版本的5例中为0/5。Sphinx-8801 已生成有差分效果的候选，但被核验证据体积限制挡住，未计成功。完整自动交付流程仍需修正。
+SWT-Bench Lite 的固定数据导入、20 个开发样本、独立环境预检、批量运行、标准预测和官方报告导入已接通，见 [评测使用说明](docs/swt-bench.md)。未参与本项目调试的新清单由 `select_holdout` 按固定 seed、只读生成侧公开元数据冻结，再用同一批命令运行；汇总把来源状态与实际执行、原版重复、差分、独立交付、官方判分分开计数，官方报告缺失时显示待判分而不是 0。官方 Docker 判分已在本机 WSL2 + Docker 对新样本轮执行：官方判定 RESOLVED 1/10（`sphinx-doc__sphinx-11445`），整轮因仍有 3 例无 verified 报告而保持待判分；开发首轮结果和准备阻塞均保留，不作为全量基准成绩。
+最新 [真实 Bug 评测报告](docs/evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到（原因已定位）；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方 harness 已在该轮判分，官方判定 RESOLVED 1/10（正是该例），另有 6 例未解决、3 例无报告，整轮仍记待判分。这是小样本，不代表一般复现率。上一轮见 [2026-10-06 评测报告](docs/evaluations/2026-10-06-swt-development.md)：固定20例中8例调用模型、12例环境阻塞，有效差分交付0。
 最新 [基础设施迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)：迁移代码通过离线整链路验证（MockTransport），真实模型的定点、dev20 重跑、冻结保留集与官方 Docker 判分均**未执行**——本次环境没有模型凭据，也没有可用的 Linux/Docker。结论为"迁移代码验证通过，能力验收未通过"，这些轮次没有产生任何真实模型结果。
 设计、架构与实现计划位于 `docs/superpowers`。

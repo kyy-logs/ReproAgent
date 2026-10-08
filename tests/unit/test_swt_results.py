@@ -62,6 +62,30 @@ def test_round_summary_states_the_component_identity_without_relabelling_a_round
     assert 'agentscope' in text and '本轮记录的后端：模型 agentscope' not in text
 
 
+def test_pending_official_report_keeps_measured_local_zero_visible(tmp_path):
+    from evals.swt_bench.results import summarize_round,save_summary
+    # The round ran locally and every local count is zero; no official report exists yet.
+    # The measured zeros must stay visible, while the missing official figure reads as
+    # pending rather than as a zero score.
+    round_data={'source_comparison_status':'verified','outcomes':{
+        'exhausted':{'status':'EXHAUSTED','preparation':{'status':'ready'},'duration':30,'evidence_level':'NONE',
+            'human_judgement':None,'export_replayed':None,'official_status':'not_run','official_resolved':None},
+        'blocked':{'status':'NOT_PREPARED','preparation':{'status':'blocked'},'duration':None,'evidence_level':'NONE',
+            'human_judgement':None,'export_replayed':None,'official_status':'not_run','official_resolved':None}}}
+    summary=summarize_round(round_data)
+    assert summary['source_comparison_status']=='verified' and summary['all_tasks']==2
+    assert summary['executed_tasks']==1 and summary['ready_tasks']==1
+    assert summary['local_repeated']==0 and summary['local_differential']==0
+    assert summary['independent_delivered']==0 and summary['independent_delivery_failed']==0
+    assert summary['official_grade_status']=='pending' and summary['official_rate'] is None
+    assert summary['official_graded']==0 and summary['official_successes']==0 and summary['official_not_verified']==2
+    save_summary(tmp_path,round_data)
+    report=(tmp_path/'report.md').read_text(encoding='utf-8')
+    official=[line for line in report.splitlines() if line.startswith('官方判分')][0]
+    assert '待判分' in official and 'success' not in official.lower()
+    assert '实际执行：1' in report and '本地差分确认：0' in report
+
+
 def test_unverified_external_report_is_not_counted_as_independent_success():
     from evals.swt_bench.results import summarize_round
     summary=summarize_round({'outcomes':{'a':{'status':'DONE','official_status':'imported_unverified','official_resolved':True}}})
@@ -139,6 +163,28 @@ def test_official_harness_rejects_dirty_or_ignored_shadowing(tmp_path,projects):
     (repo/'json.py').write_text('shadowing official imports')
     with pytest.raises(ValueError): check_harness(repo,commit)
     (repo/'json.py').unlink(); (repo/'example/parser.py').write_text('modified grader')
+    with pytest.raises(ValueError): check_harness(repo,commit)
+
+
+def test_official_harness_ignores_its_own_run_output_directories(tmp_path,projects):
+    """The harness writes these while it runs; they are not source changes.
+
+    A run leaves locks/ behind (the pinned harness's Locker files are not
+    released on every path), and counting them as input aborts every officially
+    graded case with HARNESS_SOURCE_CHANGED after a run that actually worked.
+    Anything outside these directories must still be rejected.
+    """
+    from evals.swt_bench.official import check_harness
+    from tests.unit.test_swt_prepare import git
+    repo=projects.plain(tmp_path/'harness'); git(repo,'init'); git(repo,'add','.')
+    git(repo,'-c','user.name=Fixture','-c','user.email=fixture@example.org','commit','-m','base')
+    commit=git(repo,'rev-parse','HEAD')
+    before=check_harness(repo,commit)
+    for name in ('image_build_logs','run_instance_swt_logs','evaluation_results','locks'):
+        (repo/name).mkdir()
+        (repo/name/'artifact').write_text('run output')
+    assert check_harness(repo,commit)==before
+    (repo/'extra.txt').write_text('not run output')
     with pytest.raises(ValueError): check_harness(repo,commit)
 
 
