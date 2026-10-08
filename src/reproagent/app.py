@@ -44,7 +44,7 @@ def _accept_legacy_backend(value, name):
 
 
 def create_controller(request, model, gateway=None, *, model_backend=None, agent_backend=None,
-                      explorer_factory=None, transport=None):
+                      explorer_factory=None, transport=None, learning_gateway_factory=None):
     _accept_legacy_backend(model_backend, 'model_backend')
     _accept_legacy_backend(agent_backend, 'agent_backend')
     if request.language_id != 'python_pytest' or request.runtime_id != 'local':
@@ -79,5 +79,15 @@ def create_controller(request, model, gateway=None, *, model_backend=None, agent
     secrets = (os.environ.get(model.api_key_env, ''),)
     model_gateway = BudgetedGateway(gateway, store, secrets)
     verifier = Verifier(store, runner.adapter, model_gateway, secrets)
+    experience_service = None
+    if request.experience_file is not None:
+        from .experience import ExperienceService
+        if request.learn_experience and learning_gateway_factory is None:
+            if injected_gateway:
+                raise ValueError("an injected gateway with learning requires learning_gateway_factory")
+            def learning_gateway_factory(task_store):
+                return BudgetedGateway(AgentScopeModelGateway(AgentScopeModelFactory(model, task_store,
+                    transport=transport)), task_store, secrets)
+        experience_service = ExperienceService(request, store, learning_gateway_factory, secrets=secrets)
     return Controller(store, workspace, runner, model_gateway, verifier, Exporter(secrets), secrets,
-                      explorer_factory, component_identity(**recorded))
+                      explorer_factory, component_identity(**recorded), experience_service=experience_service)

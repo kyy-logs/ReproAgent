@@ -139,14 +139,14 @@ snapshot.state为ready/missing/store_error；missing是可学习的空视图，s
 
 **Interfaces:** Consumes Task 1卡片/追加、现有TaskStore不可变记录与ModelGateway；Produces LearningInput、build_learning_input、validate_experience、extract_experience以及SDK purpose=learning。
 
-- [ ] **Step 1: 写来源失败测试。** `test_learning_input_excludes_fixed_and_answers`在同一任务保存original/fixed运行、含唯一marker的修复版、报告和历史经验，断言提炼payload及冻结JSONL无禁止marker。只从允许Issue/契约引用、候选、original执行和事件白名单取材，不读取reference文件。`test_learning_evidence_survives_event_append`在封存后追加事件，断言E1对应的整文件哈希及行号仍有效。
-- [ ] **Step 2: 写提炼校验失败测试。** `test_learning_ids_are_mapped_by_program`断言模型只选1–3个唯一EID，最终来源任务/exp哈希由程序提供；未知ID、篡改文件、非当前原版来源、重复/额外JSON字段、非法分类和最终卡>2048字节返回invalid；`test_null_experience_is_empty`断言无写入。`test_learning_input_overflow_skips_instead_of_truncating`断言实际请求材料和指令/schema的用户JSON<=8192字节，完整有用片段无法保留时不请求。
-- [ ] **Step 3: 跑RED。** 运行新单测；错误必须定位到新行为缺失，避免把伪造fixture当产品失败。
-- [ ] **Step 4: 实现材料冻结。** 固定来源task_id+任务目录摘要；读取时校验来源绑定/哈希/行号，受控事件摘seq/code/payload测量，忽略未知字段和自由文本指令。将脱敏JSONL一次写入learning/evidence.jsonl并禁止覆盖，EID映射只引用该文件；写学习事件发生在它之后。先保留失败观察和必要预期/候选，非必要材料可整体不选入，不截断保留片段。若来源损坏、候选不可读、无可信完整观察则返回None。
-- [ ] **Step 5: 实现一次提炼和验证。** extract只调用gateway.complete一次；messages为提炼system和material.payload，response_kind=learning，无工具/探索历史。提示词使用三个分类及重叠选择示例，要求条件/观察/建议/不确定性，允许experience=null。parse_json与专用schema严格检查，不请求模型修正格式；已知凭据脱敏后测量最终卡并生成规范化ID。
-- [ ] **Step 6: 扩展SDK用途与保护。** PURPOSES和purpose_for显式接受learning，不把它映射为contract；保留contract/action兼容，不将未知用途静默伪装。结构化finish_reason/正文完整性、1MiB响应限制、max_output_tokens、HTTP最多3次和每HTTP记账继续生效；learning带tools立即拒绝。
-- [ ] **Step 7: 真实SDK离线验收。** `test_learning_request_has_no_tools_and_own_deadline`用真实gateway+MockTransport返回经验，断言用途记录learning、无tools、主步数不变；`test_learning_retry_is_not_protocol_correction`模拟两次503再成功，断言3HTTP/1logical，坏JSON只1logical且不额外纠正。`test_learning_cancellation_and_timeout_close_clients`模拟停滞请求，断言独立30秒deadline/取消生效且aclose执行。
-- [ ] **Step 8: GREEN并提交。** 新单测/SDK学习及既有model_factory/gateway/protocol回归通过；建议提交 `feat: extract bounded experiences from sealed original evidence`。
+- [x] **Step 1: 写来源失败测试。** `test_learning_input_excludes_fixed_and_answers`在同一任务保存original/fixed运行、含唯一marker的修复版、报告和历史经验，断言提炼payload及冻结JSONL无禁止marker。只从允许Issue/契约引用、候选、original执行和事件白名单取材，不读取reference文件。`test_learning_evidence_survives_event_append`在封存后追加事件，断言E1对应的整文件哈希及行号仍有效。
+- [x] **Step 2: 写提炼校验失败测试。** `test_learning_ids_are_mapped_by_program`断言模型只选1–3个唯一EID，最终来源任务/exp哈希由程序提供；未知ID、篡改文件、非当前原版来源、重复/额外JSON字段、非法分类和最终卡>2048字节返回invalid；`test_null_experience_is_empty`断言无写入。`test_learning_input_overflow_skips_instead_of_truncating`断言实际请求材料和指令/schema的用户JSON<=8192字节，完整有用片段无法保留时不请求。
+- [x] **Step 3: 跑RED。** 运行新单测；错误必须定位到新行为缺失，避免把伪造fixture当产品失败。
+- [x] **Step 4: 实现材料冻结。** 固定来源task_id+任务目录摘要；读取时校验来源绑定/哈希/行号，受控事件摘seq/code/payload测量，忽略未知字段和自由文本指令。将脱敏JSONL一次写入learning/evidence.jsonl并禁止覆盖，EID映射只引用该文件；写学习事件发生在它之后。先保留失败观察和必要预期/候选，非必要材料可整体不选入，不截断保留片段。若来源损坏、候选不可读、无可信完整观察则返回None。
+- [x] **Step 5: 实现一次提炼和验证。** extract只调用gateway.complete一次；messages为提炼system和material.payload，response_kind=learning，无工具/探索历史。提示词使用三个分类及重叠选择示例，要求条件/观察/建议/不确定性，允许experience=null。parse_json与专用schema严格检查，不请求模型修正格式；已知凭据脱敏后测量最终卡并生成规范化ID。
+- [x] **Step 6: 扩展SDK用途与保护。** PURPOSES和purpose_for显式接受learning，不把它映射为contract；保留contract/action兼容，不将未知用途静默伪装。结构化finish_reason/正文完整性、1MiB响应限制、max_output_tokens、HTTP最多3次和每HTTP记账继续生效；learning带tools立即拒绝。
+- [x] **Step 7: 真实SDK离线验收。** `test_learning_request_has_no_tools_and_own_deadline`用真实gateway+MockTransport返回经验，断言用途记录learning、无tools、主步数不变；`test_learning_retry_is_not_protocol_correction`模拟两次503再成功，断言3HTTP/1logical，坏JSON只1logical且不额外纠正。`test_learning_cancellation_and_timeout_close_clients`模拟停滞请求，断言独立30秒deadline/取消生效且aclose执行。
+- [x] **Step 8: GREEN并提交。** 新单测/SDK学习及既有model_factory/gateway/protocol回归通过；建议提交 `feat: extract bounded experiences from sealed original evidence`。
 
 ## Task 4: Controller统一生命周期与自动写入
 

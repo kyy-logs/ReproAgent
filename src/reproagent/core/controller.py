@@ -140,13 +140,15 @@ class Controller:
         backend_info: what the ``backend.selected`` event reports about the components.
     """
 
-    def __init__(self, store, workspace, runner, gateway, verifier, exporter, secrets=(), explorer_factory=None, backend_info=None):
+    def __init__(self, store, workspace, runner, gateway, verifier, exporter, secrets=(), explorer_factory=None, backend_info=None, experience_service=None):
         if explorer_factory is None:
             raise ValueError('a Controller drives the product strategy: pass explorer_factory')
         self.store, self.workspace, self.runner = store, workspace, runner
         self.gateway, self.verifier, self.exporter = gateway, verifier, exporter
         self.secrets = tuple(secret for secret in secrets if secret)
         self.explorer_factory = explorer_factory
+        self.experience_service = experience_service
+        self.learning_result = None
         # The product's own component identity, under whatever this run recorded: a run
         # that injected its own boundary, or a record written before these fields existed,
         # keeps saying what it used instead of being relabelled here. A Controller built
@@ -406,6 +408,8 @@ class Controller:
         self.store.append_event('backend.selected', (), self.backend_info)
         result = self.state(result, TaskState.PREPARING)
         try:
+            if self.experience_service is not None:
+                self.experience_service.prepare(fixed, context)
             snapshot = self.workspace.freeze(request, context)
             environment = await self.runner.prepare(request, snapshot, context)
             context.budget.check()
@@ -418,13 +422,16 @@ class Controller:
             issue_hash = bytes_hash(issue_bytes)
             source = SourceRef('input/issue.md', issue_hash, 1, max(1, len(issue_bytes.splitlines())))
             project = ProjectView(snapshot)
-            self.explorer = self.explorer_factory(self.gateway, context, request.language.candidate_parent,
-                                                  project=project, workspace=self.workspace)
+            explorer_options = {"project": project, "workspace": self.workspace}
+            if self.experience_service is not None and self.experience_service.view is not None:
+                explorer_options["experience_view"] = self.experience_service.view
+            self.explorer = self.explorer_factory(self.gateway, context, request.language.candidate_parent, **explorer_options)
             contract = await self.explorer.analyze(IssueDescription(issue_text, issue_hash),
                                                    EvidenceContext((source,), (issue_text,)))
             for evidence in contract.sources:
                 self.verifier.resolve(evidence)
             self.store.save_contract(contract)
+            experience_summaries = self.experience_service.summaries(IssueDescription(issue_text, issue_hash)) if self.experience_service is not None else ()
             lifecycle = Lifecycle(request, fixed, snapshot, environment)
             feedback = self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else ''
             history = []
@@ -434,7 +441,7 @@ class Controller:
                 result = self.state(result, TaskState.GENERATING)
                 try:
                     phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
-                        issue=IssueDescription(issue_text, issue_hash)))
+                        issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:
@@ -523,6 +530,12 @@ class Controller:
             result = self.state(result, TaskState.CANCELLED if exc.reason == 'CANCELLED' else TaskState.EXHAUSTED, export_state='failed', stop_reason=exc.reason, duration=time.monotonic() - started)
         except Exception as exc:
             result = self.state(result, TaskState.FAILED, export_state='failed', stop_reason=result.stop_reason or 'EXPORT_FAILED', duration=time.monotonic() - started, uncertainties=(*result.uncertainties, self.feedback(str(exc))))
+        if self.experience_service is not None:
+            try:
+                self.learning_result = await self.experience_service.learn(result, context)
+            except Exception:
+                from ..experience import LearningResult
+                self.learning_result = LearningResult("store_error")
         return result
 
     async def close_explorer(self):

@@ -17,6 +17,7 @@ LIBRARY_BYTES = 1024 * 1024
 CARD_BYTES = 2048
 VISIBLE_BYTES = 2048
 INPUT_BYTES = 8192
+LEARNING_SECONDS = 30
 CATEGORIES = ("framework", "model", "workflow")
 
 
@@ -442,3 +443,96 @@ async def extract_experience(material, gateway, context, store, *, secrets=()):
         {"role": "user", "content": _redact(text, secrets)}), response_kind="learning"), context)
     _check(context)
     return validate_experience(parse_json(response.text), material, store, secrets=secrets)
+
+class ExperienceService:
+    """System-owned task lifecycle; the explorer only receives its advisory view."""
+    def __init__(self, request, store, learning_gateway_factory, *, secrets=()):
+        self.request, self.store = request, store
+        self.learning_gateway_factory = learning_gateway_factory
+        self.secrets = tuple(s for s in secrets if s)
+        self.path = None
+        self.view = None
+        self.snapshot = None
+        self._learning_started = False
+        self._learning_result = None
+
+    def prepare(self, fixed, context):
+        _check(context)
+        if self.request.experience_file is None:
+            return
+        self.path = validate_experience_path(self.request.experience_file, self.request, fixed)
+        self.snapshot = load_experience_snapshot(self.path, secrets=self.secrets)
+        if self.snapshot.state != "store_error":
+            self.view = ExperienceView(self.snapshot, secrets=self.secrets)
+        self.store.append_event("experience.loaded", (), {"state": self.snapshot.state,
+            "content_hash": self.snapshot.content_hash, "count": len(self.snapshot.cards)})
+
+    def summaries(self, issue):
+        if self.view is None:
+            return ()
+        values = self.view.select(issue.text, self.request.language.target_modules)
+        self.store.append_event("experience.matched", (), {"ids": [v.id for v in values]})
+        return values
+
+    async def learn(self, result, main_context):
+        import asyncio
+        import time
+        from .core.budget import Budget
+        from .core.models import BudgetLimits, CallContext, TaskState
+        if self._learning_started:
+            return self._learning_result or LearningResult("busy")
+        self._learning_started = True
+        started = time.monotonic()
+        gateway, card, code = None, None, "skipped_no_evidence"
+        context = CallContext(Budget(BudgetLimits(task_timeout_seconds=LEARNING_SECONDS)), cancel_event=main_context.cancel_event)
+        try:
+            if self.request.experience_file is None:
+                code = "skipped_disabled"
+            elif result.status == TaskState.CANCELLED or main_context.cancel_event.is_set():
+                code = "skipped_cancelled"
+            elif not self.request.learn_experience:
+                code = "skipped_read_only"
+            elif self.snapshot is not None and self.snapshot.state == "store_error":
+                code = "store_error"
+            elif self.path is not None and self.learning_gateway_factory is not None:
+                material = build_learning_input(self.store, result, context, secrets=self.secrets)
+                if material is not None:
+                    _check(context)
+                    gateway = self.learning_gateway_factory(self.store)
+                    card = await extract_experience(material, gateway, context, self.store, secrets=self.secrets)
+                    code = append_experience(self.path, card, context) if card is not None else "empty"
+        except BudgetStopped as exc:
+            code = "skipped_cancelled" if exc.reason == "CANCELLED" else "timeout"
+        except asyncio.CancelledError:
+            main_context.cancel_event.set()
+            code = "skipped_cancelled"
+        except (ValueError, TypeError, RuntimeError):
+            code = "invalid"
+        except Exception:
+            code = "store_error"
+        finally:
+            if gateway is not None:
+                close = getattr(gateway, "aclose", None)
+                if close is not None:
+                    try:
+                        await asyncio.wait_for(close(), timeout=1)
+                    except (Exception, asyncio.CancelledError):
+                        # Main evidence is sealed. Preserve the outcome, report cleanup failure.
+                        try:
+                            self.store.append_event("experience.cleanup_failed", (), {"code": "CLEANUP_FAILED"})
+                        except (OSError, ValueError):
+                            pass
+        try:
+            events, errors = self.store.read_events()
+            attempts = [e.payload for e in events if e.kind == "model.attempt" and e.payload.get("response_kind") == "learning"]
+            usage = {key: sum(item.get("usage", {}).get(key, 0) for item in attempts)
+                     for key in ("prompt_tokens", "completion_tokens", "total_tokens")}
+            outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
+                time.monotonic() - started, len(attempts), usage,
+                sum(item["cost_value"] for item in attempts if item.get("cost_value") is not None),
+                sum(item.get("cost_value") is None for item in attempts))
+            self.store.append_event("experience.learning", (), asdict(outcome))
+        except (OSError, ValueError, TypeError):
+            outcome = LearningResult(code, duration=time.monotonic() - started)
+        self._learning_result = outcome
+        return outcome
