@@ -270,8 +270,42 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 有据的契约 → 发布候选；缺事实的契约 → 用 `revise_contract` 引用已读到的证据，或 `request_information`
 报告缺什么。两个出口都是终态，所以阶段现在必然以某个结果收尾，而不是以预算收尾。
 
-**还没有在真实模型上重测这一改动**，本节上面所有数字都出自改动之前的实现。要验证效果需要重新冻结、重跑
-——而按上面那条噪声结论，重跑还必须先固定温度，否则测不出差别。
+本节上面所有数字都出自改动之前的实现。验证需要重新冻结、重跑，而按上面那条噪声结论，重跑还必须先固定
+温度，否则测不出差别——两件事都做了，结果见下一条。另外，产品此前**没有温度这个设置**，所以为它加了一个
+可选字段（提交 `88eb3b4`），并把"关闭思维链 + 温度 0"固化成 `examples/model.deepseek.deterministic.json`。
+
+### 修复后的验证轮（`sdk-holdout-005`，提交 `88eb3b4`，温度 0）
+
+同一批 7 例、同一份绑定、同一套预算。冻结回执 `.local/swt-bench/freeze-reserve-fix.json`。
+
+**机制层面——这一步可以直接归因于修复。** 每一例的最后三步：
+
+| 用例 | 004 轮（修复前）最后三步 | 005 轮（修复后）最后三步 |
+| --- | --- | --- |
+| pytest-5221 | Read(3) Read(2) Read(1) | write_candidate(2) revise_contract(1) revise_contract(0) |
+| pytest-5227 | Read(3) Read(2) Grep(1) | revise_contract(2) revise_contract(1) revise_contract(0) |
+| pytest-8365 | Read(3) revise_contract(2) Read(1) | write_candidate(2) write_candidate(1) write_candidate(0) |
+| pytest-8906 | revise_contract(6) write_candidate(5) … request_information(2) | revise_contract(2) revise_contract(1) write_candidate(0) |
+| sphinx-8474 | Read(3) Read(2) Grep(1) | revise_contract(2) revise_contract(1) write_candidate(0) |
+| sphinx-11445 | （协议错误，11 步中止） | Read(5) write_candidate(3) write_candidate(2) |
+| sphinx-8627 | write_candidate(2) write_candidate(1) | Read(4) Grep(3) write_candidate(2) |
+
+004 轮 7 例里有 5 例的最后三步是纯读取、**一个阶段结果都没有产生**；005 轮**每一例的最后三步都是
+`write_candidate` 或 `revise_contract`**，7 例全部产生了阶段结果。
+
+**结果层面：交付候选 0 → 2，差分确认 0 → 2。**
+
+- `sphinx-doc__sphinx-11445`：DONE / DIFFERENTIAL_VALIDATED，修复版对照通过。
+- `sphinx-doc__sphinx-8627`：DONE / DIFFERENTIAL_VALIDATED，修复版对照通过。
+- 其余 5 例仍是 EXHAUSTED，但现在各自以 `REVISION_REQUESTED` 或 `INVALID_CANDIDATE` 收尾，而不是空手耗尽。
+
+**这一轮同时改了两件事，必须说清楚。** 除了预留修复，温度也第一次固定在 0。所以：**"最后三步不再是读取、
+阶段结果从 0/7 变成 7/7"可以直接归因于修复**（那是代码层面的确定事实）；**"差分从 0 变成 2"无法在两个
+变量之间拆开**——要拆开需要一轮"温度 0 + 旧预留"的对照，而旧预留已经不存在于代码里了。
+
+**顺带暴露出的下一条缺陷**：`pytest-dev__pytest-8365` 在预留窗口里连发了 **3 次 `write_candidate`，三次
+都是 `INVALID_CANDIDATE`**。循环现在会终止了，所以"候选质量不够"这个问题才第一次看得见——它此前被
+"阶段根本不结束"盖住了。
 
 ## 九、与历史记录的关系
 
@@ -294,6 +328,7 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 | 官方判分 | `repro-results/sdk-holdout-001/official-execution.receipt.json`、harness 的 `evaluation_results/` |
 | 轮次驱动脚本 | `.local/swt-bench/run-sdk-round.ps1`、`.local/swt-bench/official-grade-sdk.sh` |
 | 补充轮次（7 例） | `repro-results/sdk-holdout-004/`；环境探针未过的那一轮保留在 `repro-results/sdk-holdout-002/` |
+| 修复后的验证轮 | `repro-results/sdk-holdout-005/`，冻结回执 `.local/swt-bench/freeze-reserve-fix.json` |
 | 补齐的环境与绑定 | `.local/swt-bench/envs/py39-*`、`.local/swt-bench/cases/<新增 7 例>`、`.local/swt-bench/holdout-task8/bindings-7.json` |
 | 数据集对照回执 | `.local/swt-bench/reference-controls-py39-002/verification.json` |
 | 版本模块 finder | `.local/swt-bench/version-shim.template.py`（各 py39 环境内 `zz_generated_version.py`） |
