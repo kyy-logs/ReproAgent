@@ -73,6 +73,9 @@ def deep_directory(base: Path, minimum_length: int) -> Path:
         while len(str(root)) < minimum_length:
             step = min(minimum_length - len(str(root)) - 1, 100)
             if step <= 0:
+                # A separator plus a one-character child needs two characters.
+                # Grow the last component when just one character remains.
+                root = root.with_name(root.name + 'd')
                 break
             root = root / ("d" * step)
     root.mkdir(parents=True, exist_ok=True)
@@ -85,6 +88,16 @@ def readable(path: Path) -> Path:
     if os.name == "nt" and len(text) >= MAX_PATH and not text.startswith("\\\\?\\"):
         return Path("\\\\?\\" + text)
     return path
+
+
+@WINDOWS_ONLY
+@pytest.mark.parametrize('extra_length', [1, 2, 100, 101, 102])
+def test_deep_directory_reaches_requested_length_at_component_boundaries(tmp_path, extra_length):
+    base = tmp_path / 'base'
+    length = len(str(base)) + extra_length
+    root = deep_directory(base, length)
+    assert len(str(root)) == length
+    assert readable(root).is_dir()
 
 
 @WINDOWS_ONLY
