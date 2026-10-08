@@ -103,5 +103,5 @@ def select_holdout(catalog,excluded_ids,*,repos,count=10,seed=HOLDOUT_SEED):
         if len(selected)==previous: raise ValueError('not enough eligible holdout samples')
     cases=[{key:entry[key] for key in ('instance_id','repo','base_commit','description_hash')} for entry in selected]
     return seal({'schema_version':1,'purpose':'holdout','seed':seed,'selection':'repo-round-robin-sha256-v1',
-        'source':catalog['source'],'catalog_hash':catalog['catalog_hash'],
+        'source':catalog['source'],'catalog_hash':catalog['catalog_hash'],'repos':list(repos),
         'excluded_ids':sorted(excluded_ids),'cases':cases},'manifest_hash')
