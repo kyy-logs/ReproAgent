@@ -1,24 +1,24 @@
-# ReproAgent 全面迁移 AgentScope 运行时
+# ReproAgent 以 AgentScope 为基础设施
 
-日期：2026-10-06。状态：迁移设计，待审阅；尚未实现。
+初稿：2026-10-06；按用户澄清修订：2026-10-07。状态：基础设施迁移设计，尚未实现。
 
 ## 1. 目标与现状
 
-用户明确要求 native 全面转向 AgentScope。目标是由 AgentScope 承担模型调用、工具注册、任务内上下文和 ReAct 探索循环，复用 Glob/Grep/Read；ReproAgent 保留 Bug 复现的领域服务和证据验收。
+用户澄清：AgentScope作为基础设施。目标是统一使用SDK提供模型、工具、消息上下文和中间件；ReproAgent自己定义如何理解Bug、探索代码、生成候选、执行验证与判定成功。复用Glob/Grep/Read，保留产品的业务Controller与复现策略。
 
-当前 AgentScopeExplorer 继承原生 ReproAgent，每次决策创建新 Agent、空 Toolkit、max_iters=1，并禁止工具调用。它是单步适配，不能代表完整 AgentScope 运行时。本次要替换这套探索机制，终态只有一套 AgentScope 实现。
+当前AgentScopeExplorer继承原生ReproAgent，每次决策创建新Agent、空Toolkit、max_iters=1，并禁止工具调用。它没有实际利用SDK工具和任务内上下文。本次把通用能力接入统一SDK底座，终态只有一套基础设施路径。
 
 现有 DeepSeek 接口、Python/pytest 目标环境、Claude Code 调用入口和独立复现包继续支持。迁移效果通过真实评测确认，不预先承诺复现率提高。
 
 ## 2. 架构选择
 
-采用单任务一个持续存在的 AgentScope Agent，领域工具调用现有 ReproSession 服务。分析契约、语义核验和经验提炼使用 SDK 的结构化模型请求；不增加多个自主 Agent 协作。
+采用“业务编排 + SDK基础设施”的结构。Controller掌握复现阶段；自定义ReproAgent探索组件用SDK Agent/Toolkit执行当前阶段的读取与候选生成，任务内SDK消息历史保留。分析契约、语义核验和经验提炼使用SDK结构化模型请求。
 
-另一种方案是探索、验证、学习各自建立自主 Agent 循环，但会增加上下文交接、重复调用和成功判定边界，第一版不采用。
+SDK ReAct可承担探索/生成阶段内的推理与工具调用，但不决定整个业务流程。候选产生后由Controller推进执行、核验和交付；失败是否继续探索、是否修改契约、何时停止都由产品规则决定。
 
 | AgentScope 负责 | ReproAgent 负责 |
 | --- | --- |
-| Agent 与 ReAct 循环 | 任务状态、候选与契约版本 |
+| 阶段内Agent/ReAct执行机制 | 复现策略、业务阶段、候选与契约版本 |
 | Msg/AgentState 任务内历史 | 不可变源码快照与证据引用 |
 | Toolkit 与工具 schema/调用 | 受控候选写入和真实 pytest 执行 |
 | Glob/Grep/Read | 读取范围、来源哈希和命中引用 |
@@ -28,15 +28,13 @@
 ```text
 CLI / Claude Code
         ↓
-Controller：准备原版快照和目标环境
-        ↓
-SDK 结构化分析：形成有来源的 IssueContract
-        ↓
-AgentScope Agent + Toolkit + Msg/AgentState
-        ├─ Glob / Grep / Read → 受限 SnapshotBackend
-        └─ 领域工具 → ReproSession → Runner / Verifier
-                                   ↓
-                   重复运行 / 修复版验证 / Exporter
+ReproAgent Controller：准备 → 理解 → 探索/生成 → 执行 → 核验 → 交付
+        ├─ 探索策略 → SDK Agent + Toolkit + Msg/AgentState
+        │                ├─ Glob / Grep / Read → 受限 SnapshotBackend
+        │                └─ write_candidate / revise_contract / request_information
+        ├─ 执行/重复/修复版验证 → Runner / Workspace
+        ├─ 成功判定 → Verifier硬检查 + SDK结构化模型请求
+        └─ 导出 → Exporter
 ```
 
 ## 3. 工具复用与读取范围
@@ -56,21 +54,21 @@ SnapshotBackend 是原版快照的只读视图，负责：
 
 ## 4. 业务工具与领域服务
 
-领域工具通过 SDK Toolkit 注册，参数使用受校验的 schema：
+阶段内领域工具通过SDK Toolkit注册，参数使用受校验的schema：
 
 | 工具 | 责任 |
 | --- | --- |
-| write_candidate | 生成新候选ID，检查目录、文件角色、不可覆盖规则和哈希 |
-| run_candidate | Runner 在新副本执行，Verifier 做硬检查与 SDK 语义核验 |
-| submit_candidate | 核对已验证原版失败，执行独立重复及可选修复版检查 |
-| revise_contract | 只使用已读取的原版证据；升级契约并废弃旧候选验收状态 |
-| request_information | 记录缺失信息并结束任务 |
+| write_candidate | 生成新候选ID，检查目录、角色、不可覆盖规则和哈希，结束本轮生成阶段 |
+| revise_contract | 提交已读取原版证据的修订请求，交Controller验证并升级契约 |
+| request_information | 返回缺失信息给Controller，由业务流程结束任务 |
 
-从现有 Controller 的 action 分支提取 ReproSession 服务供工具调用。Controller 不再逐步请求旧JSON动作、解析 name/parameters、分发 search_code/read_file；这些调度交给SDK。
+Controller收到真实候选ID后立即调用Runner和Verifier，条件满足时自动执行独立重复与可选修复版验证。run/submit不再需要模型额外选择，也不把业务阶段选择交给通用SDK Agent。
 
-SDK自然语言结尾不构成成功。Session内的证据状态才决定DONE、BLOCKED、EXHAUSTED、NEEDS_INFORMATION等结果。没有完成submit的候选不能因为Agent说“复现成功”而导出成功包。
+Controller不再维护通用文件工具的JSON动作schema或自行实现搜索算法；它接收SDK阶段结果、调用业务服务并管理状态。业务状态机是ReproAgent的产品逻辑，继续保留。
 
-submit/request_information完成后发出明确的领域结束事件。运行时停止后续探索模型请求，关闭并等待SDK任务；不设置用户取消标志来伪装正常结束。SDK结束原因与领域结果分开记录，避免额外总结调用或重复执行。
+SDK自然语言结尾不构成成功。Controller的证据状态决定DONE、BLOCKED、EXHAUSTED、NEEDS_INFORMATION。没有经过执行和确认的候选不能因为Agent说“复现成功”而导出成功包。
+
+候选发布、契约修订请求或缺失信息产生后，发出明确的阶段结束事件，停止后续探索请求并关闭/等待SDK任务；Controller接手下一业务阶段。正常阶段结束不设置用户取消标志，SDK结束原因与业务状态分开记录。
 
 ## 5. 模型统一使用 SDK
 
@@ -104,17 +102,18 @@ SDK max_iters不是唯一硬上限：已核对2.0.9的structured_output_grace_it
 
 | 位置 | 迁移动作 |
 | --- | --- |
-| app.py | 只创建SDK模型工厂、任务Session与完整SDK运行时 |
-| adapters/agentscope/runtime.py | 新增持续Agent、Toolkit和结束事件协调 |
+| app.py | 创建唯一SDK基础设施与产品Controller |
+| adapters/agentscope/runtime.py | 提供阶段内SDK Agent、Toolkit、消息上下文和阶段结果 |
 | adapters/agentscope/tools.py、snapshot_backend.py | 新增业务工具绑定及受限SDK文件工具后端 |
 | adapters/agentscope/middleware.py | 新增预算、来源引用、动作审计与调用边界 |
-| core/controller.py | 保留外层准备/收尾，提取领域服务，移除JSON动作循环 |
-| core/agent.py、adapters/agentscope/explorer.py | 旧探索实现与单决策桥接退出产品路径 |
+| core/controller.py | 保留业务状态机，接收阶段结果并推进执行/核验/交付 |
+| core/agent.py | 保留自定义复现策略的职责，改用SDK能力，不再维护通用JSON动作协议 |
+| adapters/agentscope/explorer.py | 单决策桥接改为业务探索组件与SDK阶段执行器的接入 |
 | core/tools.py | 原生通用搜索/读文件退出；候选/契约检查按职责归入领域服务 |
 | adapters/models/provider.py | native gateway退出；必要的独立预算辅助函数移至共享模块 |
 | core/verifier.py、Runner/Workspace/Exporter | 保留证据职责，模型请求走SDK |
 
-CLI不再提供两套backend选择。过渡期旧后端参数只做弃用兼容映射，所有请求进入AgentScope并记录真实backend；不保留native回退。更新仓库内Claude launcher、评测CLI、示例和说明，确保旧默认值不能选回旧运行时。
+CLI不再提供两套基础设施选择。过渡期旧后端参数只做弃用兼容映射，所有请求进入AgentScope并记录实际组件；不保留native回退。自定义业务策略与Controller继续属于ReproAgent，不以native后端命名。更新Claude launcher、评测CLI、示例与说明。
 
 SDK只安装在工具解释器；目标Python/pytest和独立replay不依赖AgentScope。历史任务包与native评测结果保持原样，不重写成SDK成绩。
 
@@ -126,13 +125,13 @@ SDK只安装在工具解释器；目标Python/pytest和独立replay不依赖Agen
 
 ## 9. 迁移验收
 
-1. 真实SDK + MockTransport的多轮工具轨迹完成Glob/Grep/Read、写候选、真实pytest、语义核验、重复/修复版和独立replay；不是手写下一步动作绕过SDK循环。
+1. 真实SDK + MockTransport完成Glob/Grep/Read和候选生成；Controller随后完成真实pytest、SDK语义请求、重复/修复版及独立replay。文件工具与模型请求实际经过SDK组件。
 2. 未注册工具、跨根路径、哈希变化、候选覆盖、隐藏修复读取及伪造引用仍被拒绝。
 3. 第20步、格式纠正、工具多调用、结构化补救、最终总结和SDK压缩不能触发额外探索HTTP请求。
-4. 领域已完成后没有额外模型请求或重复执行；取消/超时后的所有子进程清理有证据。
+4. 生成阶段已完成后没有额外探索请求；Controller及时执行候选，不额外请求模型选择run/submit。取消/超时后的子进程清理有证据。
 5. SDK只返回成功文字、测试未执行、原版通过、语义否定或修复版失败时，不伪造有效差分交付。
 6. Windows/Linux、Unicode/长路径、目标venv身份和无SDK目标环境的replay通过回归；经验接口默认空时不改变判断。
-7. Claude launcher与SWT批量入口报告唯一SDK运行时。新任务真模型定点和固定清单复测，分别记录迁移/模型配置/环境变化，不合并最佳结果。
+7. Claude launcher与SWT入口报告唯一SDK基础设施和产品策略版本。真模型定点和固定清单复测分别记录组件/配置/环境变化，不合并最佳结果。
 
 实现方式沿用用户选择：当前会话逐项执行。下一步根据本设计改写实施计划，再开展迁移；本文没有声称迁移已完成。
 
