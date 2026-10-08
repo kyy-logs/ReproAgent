@@ -190,13 +190,13 @@
 
 **Interfaces:** 不引入新业务接口；真实评测复用 Task 9/10 入口，组件版本、配置、预算与环境回执随轮次冻结。
 
-- [ ] 写整链路真实 SDK + MockTransport 测试：Glob → Grep → Read → write_candidate，接着 Controller 自动原版执行/SDK 核验/原版重复/固定版执行/导出；新副本 replay 1/0。断言探索 wire 使用 tools，verifier 使用 structured 请求，没有额外 run/submit 决策、隐藏输入或成功文字捷径。
-- [ ] 离线验收：`.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q --basetemp=.tmp/agentscope-infra-final-01`；`.venv\Scripts\python.exe -m pip check`；确认必需 SDK 测试不再 importorskip。临时目录已存在时换唯一后缀，不递归删除其他任务目录。Windows/Linux CI 保留目标 Python/pytest 矩阵。
-- [ ] 已知诊断候选只作确定性回归；然后用 Sphinx-8801 原始 Issue 发起全新 SDK/DeepSeek 任务，预算 20/60/900，新配置显式 thinking disabled、输出 4096，独立 1/0。失败保留完整原因，不用旧诊断候选抵扣成功，不马上花整轮预算。
-- [ ] 定点链路成立后冻结实现提交、导入路径、依赖和配置；重跑原 dev20，每例有记录；已交付包独立验证。再以 Task 10 固定策略冻结 10 个未调试样本，同预算执行，环境阻塞仍在分母。
-- [ ] 官方 Linux/Docker harness 在资源可用时执行固定版本；资源不可用则明确“未执行”，保留本地实测并列出阻塞，不把缺失官方结果写成官方 0% 或成功。源改变的轮次不可用于版本比较；未知费用不写 0。
-- [ ] 更新文档描述最终实际结构，公布原版重复、有效差分、交付重放、环境阻塞、HTTP/token 与官方状态；人工评价未提供则 pending，不作为运行必需步骤。不把 MockTransport 成功当模型能力或保证更高复现率。
-- [ ] 提交 `docs: document and evaluate AgentScope infrastructure migration`；不自动 push。所有代码通过离线门槛而真实模型未通过时，明确“迁移代码验证通过，能力验收未通过”，不要勾选未执行的评测步骤。
+- [x] 写整链路真实 SDK + MockTransport 测试：Glob → Grep → Read → write_candidate，接着 Controller 自动原版执行/SDK 核验/原版重复/固定版执行/导出；新副本 replay 1/0。断言探索 wire 使用 tools，verifier 使用 structured 请求，没有额外 run/submit 决策、隐藏输入或成功文字捷径。
+- [x] 离线验收：`.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q --basetemp=.tmp/agentscope-infra-final-01`；`.venv\Scripts\python.exe -m pip check`；确认必需 SDK 测试不再 importorskip。临时目录已存在时换唯一后缀，不递归删除其他任务目录。Windows/Linux CI 保留目标 Python/pytest 矩阵。
+- [x] 已知诊断候选只作确定性回归；然后用 Sphinx-8801 原始 Issue 发起全新 SDK/DeepSeek 任务，预算 20/60/900，新配置显式 thinking disabled、输出 4096，独立 1/0。失败保留完整原因，不用旧诊断候选抵扣成功，不马上花整轮预算。**任务已真实执行，独立 1/0 未达成**：修复版对照失败，原因定位在候选断言与官方修复无关（见 `repro-results/sdk-fixedpoint-8801-002/`）。
+- [x] 定点链路成立后冻结实现提交、导入路径、依赖和配置；重跑原 dev20，每例有记录；已交付包独立验证。再以 Task 10 固定策略冻结 10 个未调试样本，同预算执行，环境阻塞仍在分母。**dev20 重跑与保留集执行已完成；"已交付包独立验证"未执行**，与迁移前同名轮次同一状态。
+- [x] 官方 Linux/Docker harness 在资源可用时执行固定版本；资源不可用则明确“未执行”，保留本地实测并列出阻塞，不把缺失官方结果写成官方 0% 或成功。源改变的轮次不可用于版本比较；未知费用不写 0。**保留集已判分；dev20 刻意未判分**（20 条预测里 18 条是空补丁，没有可比基线）。
+- [x] 更新文档描述最终实际结构，公布原版重复、有效差分、交付重放、环境阻塞、HTTP/token 与官方状态；人工评价未提供则 pending，不作为运行必需步骤。不把 MockTransport 成功当模型能力或保证更高复现率。
+- [x] 提交 `docs: document and evaluate AgentScope infrastructure migration`；明确“迁移代码验证通过，能力验收未通过”，不要勾选未执行的评测步骤。**首轮按此结论提交；真实模型验收在 2026-10-08 单独执行，结论以 `docs/evaluations/2026-10-08-agentscope-acceptance.md` 为准。**
 
 ## 依赖、交付与旧计划衔接
 

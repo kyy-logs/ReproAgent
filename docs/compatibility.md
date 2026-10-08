@@ -3,7 +3,7 @@
 | Tool runtime | Target runtime | pytest | Platform | Status |
 | --- | --- | --- | --- | --- |
 | CPython 3.12.14 | CPython 3.12.14 | 9.1.1 | Windows | Actual local tests: live parent/child cleanup, pytest Probe, src/conftest, export replay and installed wheel; the whole SDK chain (Glob → Grep → Read → write_candidate → execute → verify → repeat → fixed version → export) runs over a mock transport |
-| CPython 3.12 | CPython 3.10 / 3.11 / 3.12 | 7.4.4 / 8.x / 9.x | Windows / Ubuntu | CI matrix passes 18/18 (Windows 245 passed; Ubuntu 240 passed, 5 Windows-only launcher tests skipped), AgentScope SDK modules and the SWT chain included; the first run failed on environment coupling, see docs/implementation-status.md |
+| CPython 3.12 | CPython 3.10 / 3.11 / 3.12 | 7.4.4 / 8.x / 9.x | Windows / Ubuntu | CI matrix passes 18/18 (Windows 245 passed; Ubuntu 240 passed, 5 Windows-only launcher tests skipped), AgentScope SDK modules and the SWT chain included; the first run failed on environment coupling, see docs/implementation-status.md. One later run (`a2aae15`) failed a single job on `windows-latest, 3.11, pytest>=8,<9`: `test_the_fixed_version_never_reaches_the_exploration` returned `TaskState.FAILED` instead of `DONE` while the SDK logged an exhausted model call. It is intermittent — the same test passed on the commits before and after, and 20/20 locally — and is not yet diagnosed. |
 
 `agentscope==2.0.9` is a main dependency, so it is installed by the plain `pip install -e ".[dev]"`
 the README and CI use; the `[agentscope]` extra is empty and kept only for one deprecation cycle.

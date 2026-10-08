@@ -107,5 +107,7 @@ Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时�
 领域请求是无 tools 的结构化请求，Controller 的执行业务步骤不经过模型。这些测试证明的是产品行为
 （边界、预算、证据、装配），**不是模型能力**，也不能用来宣称复现率提升。
 
-真实模型的定点与冻结轮次的执行状态见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)；
+真实模型的定点、开发子集重跑与冻结保留集轮次，以及保留集的官方判分，见
+[架构验收记录](evaluations/2026-10-08-agentscope-acceptance.md)；更早那一轮只跑了离线门槛、
+真实模型一步未执行的记录，保留在 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
 历史验证记录见 [实现记录](implementation-status.md)。

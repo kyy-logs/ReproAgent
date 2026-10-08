@@ -179,8 +179,13 @@ manifest = select_holdout(catalog, excluded_ids, repos=(...), count=10)
 
 2026-10-07 已用公开 catalog 冻结 10 个未调试样本（五仓库 × 2，仓库全部取自开发轮未使用的项目），
 manifest 哈希 `d2f91341d5b718eaffa88ca1d1401acd798af3937c389c18d6fdd0798525b4dc`，记为
-`.local/swt-bench/holdout10.json`。**冻结本身是离线可达的；用同一预算执行这 10 个样本需要真实模型凭据，
-本次没有执行**，见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
+`.local/swt-bench/holdout10.json`。
+
+另有一份**更早冻结、并且已经真实执行过两轮**的保留集（`.local/swt-bench/holdout-task8/holdout.json`，
+manifest 哈希 `6781580c27d38867f64c88b3de3ba77fa1afff1d58b07f1ff86df972ee53c113`，样本为 4×pytest-dev、
+3×sphinx、3×sympy），迁移前的轮次与迁移后的轮次用的是同一份，因此它是本轮架构对比的基线。
+两份保留集不可混用：上表那份尚未执行，下面这份已执行。执行与官方判分结果见
+[架构验收记录](evaluations/2026-10-08-agentscope-acceptance.md)。
 
 重新生成汇总不调用模型：
 

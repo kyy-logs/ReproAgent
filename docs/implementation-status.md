@@ -152,8 +152,10 @@ Glob → Grep → Read → `write_candidate`，再由 Controller 自动执行原
 错误，而不是让这些模块静默跳过（`test_windows_long_paths.py` 内在 helper 级的那个保留，因为该模块
 同时承载不依赖 SDK 的路径与 venv 回归）。
 
-**真实模型步骤未执行。** 本环境没有 `REPROAGENT_API_KEY`、`DEEPSEEK_API_KEY` 或 `OPENAI_API_KEY`，
-也没有可用的 Linux/Docker，因此 Sphinx-8801 定点任务、dev20 重跑、冻结保留集执行和官方 harness 判分
-都没有运行，没有产生任何真实模型结果，也没有可用于对比的 HTTP/token 计数。保留集 manifest 已按固定
-策略离线冻结（见 [评测说明](swt-bench.md)），但**没有执行**。结论：**迁移代码验证通过，能力验收未通过。**
-详见 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
+**真实模型验收已执行（2026-10-08）。** dev20 重跑、冻结保留集执行、Sphinx-8801 定点任务，以及保留集的
+官方 Docker harness 判分都已完成；轮次在 `repro-results/sdk-dev20-001/`、`repro-results/sdk-holdout-001/`，
+定点在 `repro-results/sdk-fixedpoint-8801-002/`。要点：在能跑起来的 3 例保留集样本上，两套架构各自差分
+成功 1 例，且**不是同一例**；定点任务未达成，原因在候选质量而非基础设施。代价在 token 与步数上——单次
+调用约翻倍。dev20 没有做官方判分，因为它的 20 条预测里有 18 条是空补丁。完整结论、每个用例的前后对照
+与两条基础设施修复见 [架构验收记录](evaluations/2026-10-08-agentscope-acceptance.md)；上一轮"一步都没有
+执行"的记录保留在 [2026-10-07 的评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
