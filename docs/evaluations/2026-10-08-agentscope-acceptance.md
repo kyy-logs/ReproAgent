@@ -1,8 +1,16 @@
 # AgentScope 单运行时架构真实验收：2026-10-08
 
-**结论：验收已真实执行（上一轮"一项都没跑"的状态已解除）。两套架构在本样本量下不可区分：本地差分各
-中 1 例、且不是同一例；官方判分 1 → 0，但那 1 的差别全部落在唯一一个官方判分可用的实例上，其余实例的
-环境本身跑不出结论。代价是可测的：单次模型调用 token 约翻倍，每例几乎烧完 20 步预算。**
+**结论：验收已真实执行（上一轮"一项都没跑"的状态已解除）。已交付候选几乎不发生——这是比"两套架构谁
+更强"更要紧的一条。** 具体地：
+
+- 两套架构的本地差分各中 1 例、且不是同一例；官方判分 1 → 0，但那 1 的差别全部落在唯一一个官方判分
+  可用的实例上（见第五节）。
+- 把 4 个 pytest 用例的环境补齐后（第八节），它们第一次真正跑起来，**7 例执行、交付候选 0 例**：模型
+  确实转向了 `write_candidate`，但都在**剩余 0～1 步**时才调，候选来不及落地。发布预留解决了"从不尝试
+  发布"，没有解决"来得及发布"。
+- 模型配置没有设温度，同配置三轮对同样 3 个用例给出三组不同结果（第八节）。**本文件里所有"各中 1 例"
+  量级的对比都落在噪声里**，只能作为个案，不能作为架构优劣的结论。
+- 代价是可测的：单次模型调用 token 约翻倍，每例几乎烧完 20 步预算。
 
 本文件是 [2026-10-07 的基础设施评测](2026-10-07-agentscope-infrastructure.md) 的续篇：那一轮记录了
 "迁移代码验证通过、能力验收未执行"，本轮把没执行的部分补上了。那一轮的结论仍然有效，只是**它的第 3、4、
@@ -34,6 +42,7 @@
 | 3 | Sphinx-8801 定点任务 | **EXECUTED**，未达成（见第四节） |
 | 4 | 官方 Linux/Docker harness 判分 | **EXECUTED**（保留集）；dev20 **未判分**，理由见第五节 |
 | 5 | 已交付包的独立重放 | **未执行**，与迁移前同一状态（见第六节） |
+| 6 | 补齐 7 个未跑用例的环境并重跑 | **EXECUTED**（4 例就绪并执行，3 例 sympy 结构性排除），见第八节 |
 
 ## 三、开发子集（dev20）与冻结保留集
 
@@ -176,7 +185,80 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 打出 `Model offline exhausted all 1 attempt(s)`。同一个测试在前后两个提交、以及本地连跑 20 次都是通过的，
 所以它是间歇性的、只在这个 CI 组合上出现过一次。已记录，尚未定位。
 
-## 八、与历史记录的关系
+## 八、补齐没跑起来的用例，以及由此得到的架构结论（同日补充）
+
+第三节里 7 例 "NOT_PREPARED" 是**没有环境**，不是没来得及。把环境补上之后，这四个 pytest 用例第一次真正
+跑了起来，结果反而更清楚地暴露了架构问题。
+
+### 原来卡在哪（两个都可复现）
+
+1. **目标仓库必须以源码形式被 `import pytest` 找到。** 产品开跑前有一次环境探针：
+   `python -c "import pytest; print(pytest.__version__)"`，它**不带 `PYTHONPATH`**。而 pytest / sympy
+   这些仓库自己就是被测对象，代码在 `src/` 下、并未安装，探针于是 `ModuleNotFoundError`，任务在第 3 个
+   事件、**一次模型调用都没发生**时就判 `BLOCKED`。这正是官方镜像里 `pip install -e .` 存在的原因。
+2. **构建期生成的版本模块。** `pytest/__init__.py` 要 `from ._version import version`，那个文件由构建期
+   写入。写进 checkout 会留下未跟踪文件、破坏冻结源码校验，所以改由环境提供：一个**只在 `PYTHONPATH`
+   上确实有 checkout 时才安装**的 finder —— 普通 `import pytest` 仍报告安装版（4.4.2 / 6.2.5 / 7.0.1），
+   checkout 在场时报告数据集标注的版本（4.4 / 6.3 / 7.0）。
+
+第一次重跑（`sdk-holdout-002`）把第一条原样撞了出来：7 例全部在第 3 个事件 `environment.probed`
+（exit 1）就判 `BLOCKED`。那一轮**保留为证据，没有被覆盖**。
+
+### 补上了什么
+
+按官方 `exec_spec.json` 的规格建环境——**7 例全部指定 Python 3.9**，并采用官方锁定版本：
+
+| 用例 | 环境 | 数据集自己的判定节点 | 对照 |
+| --- | --- | --- | --- |
+| pytest-dev__pytest-5221 | py3.9 / pluggy 0.13.1 / attrs 23.1.0 | `TestShowFixtures::test_show_fixtures` 等 2 个 | **discriminating** |
+| pytest-dev__pytest-5227 | 同上 | `test_log_cli_default_level` 等 3 个 | **discriminating** |
+| pytest-dev__pytest-8365 | py3.9 / iniconfig 2.0 / toml 0.10.2 | `test_tmp_path_factory_handles_invalid_dir_characters` | **discriminating** |
+| pytest-dev__pytest-8906 | py3.9 / pluggy 0.13.1 | `test_module_level_skip_error` | **discriminating** |
+| sympy ×3 | —— | —— | **结构性排除**，见下 |
+
+"discriminating" 是用**数据集自己的测试**跑出来的：原版失败、修复版通过。回执在
+`.local/swt-bench/reference-controls-py39-002/verification.json`。
+
+**3 个 sympy 是结构性排除，不是没做。** 官方对 sympy 用的是 **`bin/test`——sympy 自己的测试运行器**，
+不是 pytest；`FAIL_TO_PASS` 记的是 `test_idiff` 这种裸名字，本地这套 pytest harness 无法选择。而且这
+三例在官方判分里**两轮都是 1800 秒超时 error**，永远出不了官方分。跑它们只会得到一份既无法验证、也
+无法判分的本地数据。
+
+### 跑出来的结果（`sdk-holdout-004`，7 例执行，未被中断）
+
+2,780,155 token、140 次 HTTP 尝试、单例耗时 p50 63.6 秒。**交付候选 0 例，差分 0 例。**
+
+| 用例 | 实际动作 | 最后一个发布动作时的剩余步数 | 结束于 |
+| --- | --- | --- | --- |
+| pytest-5221 | Grep 5、Read 14 | 从未发布 | EXHAUSTED |
+| pytest-5227 | Grep 7、Read 11 | 从未发布 | EXHAUSTED |
+| pytest-8365 | Read 11、Grep 2、Glob 1、write_candidate 1、revise_contract 5 | revise_contract，**0** | EXHAUSTED |
+| pytest-8906 | Read 6、Grep 2、write_candidate 3、revise_contract 7 | request_information，2 | NEEDS_INFORMATION |
+| sphinx-11445 | Grep 3、Read 5 | 从未发布 | FAILED / MODEL_PROTOCOL_ERROR |
+| sphinx-8474 | Grep 7、Read 11、write_candidate 1 | write_candidate，**0** | EXHAUSTED |
+| sphinx-8627 | Glob 1、Grep 9、Read 6、write_candidate 2 | write_candidate，**1** | BLOCKED / ENVIRONMENT_BLOCKED |
+
+**这是本轮最具体的一条架构结论：发布预留解决了"从不尝试发布"，没有解决"来得及发布"。** 第 7 节记录
+的那个修复让中间件在剩余 ≤ 3 步时拒绝 `Read`/`Grep`/`Glob`，模型因此确实转向了 `write_candidate`——
+4 例都调了——但它是在**剩余 0～1 步**时才调的，候选还没落地预算就没了。预留只拒绝了读取工具，没有
+拒绝 `revise_contract` 和 `request_information`，模型可以把那 3 步继续花在别处。
+
+### 同配置三次运行给出三组结果
+
+`sdk-holdout-001`（3 例）、`sdk-holdout-003`（被中断，不可用）、`sdk-holdout-004`（7 例）**用的是同一
+批绑定、同一份冻结配置**，而同样 3 个 sphinx 用例的结果完全不同：
+
+| 用例 | 001 | 004 |
+| --- | --- | --- |
+| sphinx-11445 | BLOCKED / ENVIRONMENT_BLOCKED | FAILED / MODEL_PROTOCOL_ERROR |
+| sphinx-8474 | NEEDS_INFORMATION | EXHAUSTED |
+| sphinx-8627 | DONE / **DIFFERENTIAL_VALIDATED** | BLOCKED / ENVIRONMENT_BLOCKED |
+
+原因是模型配置 `examples/model.deepseek.non-thinking.json` **没有设置温度**，用的是服务端默认值。
+**所以本文件此前那些"各中 1 例"的对比都落在噪声里**：单轮、3～7 例，说明不了两套架构的差别。要拿到
+可比较的数字，至少需要固定温度、并在同一配置下重复多轮。这一点同样适用于第五节的官方 1 → 0。
+
+## 九、与历史记录的关系
 
 - 本文件不改写任何旧轮次的结果。
 - 迁移前的基线取自 `repro-results/swt-bench/dev20-repaired-001`、`repro-results/swt-bench/holdout-repaired-001`
@@ -185,7 +267,7 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
   3 例 error（三个 sympy 实例在 harness 侧报错，没有产出判定）。
 - 本轮没有产生任何可用于版本比较的"源改变"轮次：两个轮次的 `source_comparison_status` 都是 verified。
 
-## 九、证据在哪
+## 十、证据在哪
 
 | 内容 | 位置 |
 | --- | --- |
@@ -196,3 +278,7 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 | 定点任务 | `repro-results/sdk-fixedpoint-8801-002/` |
 | 官方判分 | `repro-results/sdk-holdout-001/official-execution.receipt.json`、harness 的 `evaluation_results/` |
 | 轮次驱动脚本 | `.local/swt-bench/run-sdk-round.ps1`、`.local/swt-bench/official-grade-sdk.sh` |
+| 补充轮次（7 例） | `repro-results/sdk-holdout-004/`；环境探针未过的那一轮保留在 `repro-results/sdk-holdout-002/` |
+| 补齐的环境与绑定 | `.local/swt-bench/envs/py39-*`、`.local/swt-bench/cases/<新增 7 例>`、`.local/swt-bench/holdout-task8/bindings-7.json` |
+| 数据集对照回执 | `.local/swt-bench/reference-controls-py39-002/verification.json` |
+| 版本模块 finder | `.local/swt-bench/version-shim.template.py`（各 py39 环境内 `zz_generated_version.py`） |
