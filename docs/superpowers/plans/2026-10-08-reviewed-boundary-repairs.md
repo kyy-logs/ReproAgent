@@ -36,7 +36,7 @@
 
 ### Task 2: 导出器的实际子路径访问
 
-**Files:** exporter.py、tests/integration/test_windows_long_paths.py。
+**Files:** exporter.py、paths.py、tests/integration/test_windows_long_paths.py。
 
 - [x] 任务根 208/209 字符，先用 atomic_write 写存在的长路径预检日志；导出诊断包并校验日志哈希和 manifest，运行 RED。
 - [x] 所有 glob/rglob 结果进入 I/O 前提升路径表示；相对包路径继续通过 relative_name 计算，平台前缀不进入报告。
@@ -49,4 +49,4 @@
 - [x] 真实导出包在全新原版/修复版目录重跑；输出目录长度 248/259 时 pytest 真执行，原版 1、修复版 0、probe 存在；安装文件父目录在窗口内正常 mkdir，运行 RED。
 - [x] stdlib 脚本补目录保留长度表示，进程 cwd 超过 OS 限制时具名拒绝且不安装候选、不创建输出；不改变解释器链接身份。
 - [x] 定点 GREEN、完整离线套件与 pip check；更新限制说明并提交 `fix: handle standalone replay directory boundaries`。
-- [ ] 全分支独立审查；必要修复再走 RED→GREEN 与完整套件；本地 main 快进合入修复并刷新工具环境。不自动 push，不把离线测试当真实模型能力分数。
+- [x] 全分支独立审查；必要修复再走 RED→GREEN 与完整套件；本地 main 快进合入修复并刷新工具环境。不自动 push，不把离线测试当真实模型能力分数。
