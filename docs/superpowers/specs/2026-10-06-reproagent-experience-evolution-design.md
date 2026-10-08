@@ -28,6 +28,8 @@
 
 用 tags 补充 flask、middleware、exception、pytest、windows 等关键词。一条经验只选一个主分类；暂不建立复杂的分类树、版本范围和阶段状态机。
 
+重叠时按记录的主要现象选类：项目本身的行为或环境限制归framework；模型理解、生成或工具调用错误归model；探索/执行/验收的组织方式归workflow。例如“中间件把异常转成响应”归framework，“因此误写pytest.raises”归model，“反复读文件耗尽预算未发布候选”归workflow。先保持三类，用tags细化，不让模型新增类别。
+
 ## 4. 一份文件，一种经验卡
 
 经验文件由任务配置中的可选 `experience_file` 指定，推荐使用工具目录下的 `.local/experiences.json`。相对路径按任务配置文件目录解析，不按 pytest cwd 解析。未提供路径时不加载、不注册经验工具、不提炼。`learn_experience` 默认 true，只在配置经验文件时生效；设为 false 时允许读取已有经验但不写入，供冻结库评测使用。
