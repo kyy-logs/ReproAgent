@@ -1,9 +1,9 @@
 # ReproAgent 项目工程架构
 
-日期：2026-10-05  
-状态：基于已讨论方案整理并完成文档自审，用户已授权据此编写[实施计划](../plans/2026-10-05-reproagent-mvp.md)。本文规定工程边界和接口，不代表运行实现已经验证。
+初稿：2026-10-05；AgentScope 底座与经验生命周期修订：2026-10-08。
+状态：基础复现流水线已实现；自动经验机制是用户已授权的待实施扩展。本文区分现有组件与拟新增组件，不用设计声明替代运行验证。
 
-依据：[项目设计与优化路线](2026-10-05-reproagent-design.md)、[设计审查记录](2026-10-05-reproagent-review.md)，以及后续关于模块化单体、扩展接口和设计难点的讨论。当前工作区只有设计资料，本文中的代码目录和接口均为拟议结构。
+依据：[项目设计与优化路线](2026-10-05-reproagent-design.md)、[AgentScope 基础设施设计](2026-10-06-reproagent-agentscope-runtime-migration-design.md)、[经验最小版设计](2026-10-06-reproagent-experience-evolution-design.md)和当前代码。经验字段、工具及学习步骤在以下各节标为拟新增；探索的定位/取证/生成阶段约束不在本次范围。
 
 ## 1. 目标与范围
 
@@ -31,11 +31,11 @@
 | 图编排框架 | 暂不采用。当前状态转换和单 Agent 工具闭环可以直接表达，尚无需要框架解决的并行编排问题 |
 | 服务与执行 Worker | 后续按并发和远程运行需求引入，目前会增加部署、队列和状态一致性的成本 |
 
-保持四个变化边界：模型供应商、语言/测试框架、执行环境、探索策略。前三个定义小接口；探索策略通过 `next_action` 边界组织，第一版只有一个实现，不建设动态插件系统。
+保持四个变化边界：模型配置、语言/测试框架、执行环境、探索策略。模型和阶段内 ReAct 统一使用 AgentScope 2.0.9；语言和执行后端定义小接口，探索策略通过 `analyze/explore/aclose` 接口交回 PhaseResult。Controller 保留产品状态机，不决定每一步读哪个文件，不建设动态插件系统。
 
 通用核心保存任务、契约、候选和证据关系。语言适配器负责测试命令和框架信息，执行后端负责进程与资源。验证器执行不可绕过的通用规则，并使用语言适配器提供的框架事实。
 
-## 3. 拟议项目目录
+## 3. 项目目录与拟新增经验模块
 
 ```text
 reproagent/
@@ -52,11 +52,22 @@ reproagent/
 │   │   ├── controller.py
 │   │   ├── budget.py
 │   │   ├── agent.py
-│   │   ├── tools.py
+│   │   ├── candidate_service.py
+│   │   ├── phase.py
+│   │   ├── review_context.py
 │   │   └── verifier.py
 │   ├── adapters/
+│   │   ├── agentscope/
+│   │   │   ├── model_factory.py
+│   │   │   ├── gateway.py
+│   │   │   ├── explorer.py
+│   │   │   ├── runtime.py
+│   │   │   ├── middleware.py
+│   │   │   ├── tools.py
+│   │   │   ├── evidence.py
+│   │   │   └── snapshot_backend.py
 │   │   ├── models/
-│   │   │   └── provider.py
+│   │   │   └── options.py
 │   │   ├── languages/
 │   │   │   └── python_pytest/
 │   │   │       ├── adapter.py
@@ -69,6 +80,7 @@ reproagent/
 │   ├── runner.py
 │   ├── store.py
 │   ├── exporter.py
+│   ├── experience.py          # 拟新增：固定经验视图、检索、提炼与持久化
 │   └── prompts/
 │       ├── analyze_issue.md
 │       ├── explore.md
@@ -83,7 +95,7 @@ reproagent/
 └── docs/superpowers/specs/
 ```
 
-这是职责地图，实施时允许合并短小且紧密关联的文件。不得为了与目录一一对应而增加独立服务、管理器或抽象基类。`provider.py` 表示首个供应商适配文件；核心不依赖供应商 SDK。目录中不提前创建 Docker、JS/TS 等空实现。
+这是职责地图，允许合并短小且紧密关联的文件；省略部分已经存在的辅助模块。核心领域接口不直接依赖 SDK，具体 SDK 接入集中在 adapters/agentscope。经验扩展不增加数据库、独立服务、后台队列或第二套 Agent 编排；不提前创建 Docker、JS/TS 等空实现。
 
 `probe` 是随工具分发的独立执行辅助模块，不导入 ReproAgent 主包、模型 SDK或存储模块。它仅使用目标环境已有的 pytest 和兼容的标准库；控制器与目标项目解释器不必相同。发布支持范围以集成测试覆盖的解释器/pytest 组合为准，遇到不兼容时报告明确限制，不升级用户环境。
 
@@ -93,27 +105,29 @@ reproagent/
 | --- | --- | --- |
 | CLI | 参数与配置读取、进度显示、取消请求、退出码 | 调用应用入口，不写入任务状态 |
 | App | 校验配置并组装模块 | 唯一选择具体适配器的位置，不承载复现逻辑 |
-| Controller | 状态转换、动作分发、预算、重放和终止 | 调用其他模块；独占任务状态写入权限 |
-| Agent | 整理 Issue 契约、提出探索动作和候选假设 | 通过受预算控制的模型接口调用；无直接子进程和文件写入权限 |
-| Tools | 搜索、读取、候选写入与动作参数校验 | 访问工作空间和候选仓库；不能调用 Controller |
+| Controller | 准备、理解、探索、执行、核验、重复确认、导出和终止；拟安排经验加载/封存后学习 | 调用其他模块；独占复现任务状态写入权限，不分发 SDK 通用文件动作 |
+| ReproAgent 策略 / SDK Explorer | 整理 Issue 契约，通过 SDK Agent 执行探索阶段 | 任务内历史由 SDK AgentState 保存；生成 PhaseResult，不能自行宣布成功 |
+| SDK Toolkit / SnapshotBackend | 受限 Glob/Grep/Read、候选发布、契约修订和缺失信息 | 文件视图只读；领域工具结束阶段后交回 Controller，不回调 Controller |
 | Workspace | 冻结代码、文件清单、候选落位、干净运行副本 | 文件操作；不判断是否复现 |
 | Runner | 组织一次执行、采集并归一化结果 | 协调 Workspace、LanguageAdapter 和 ExecutionBackend；不作语义判定 |
 | Verifier | 硬性规则检查与目标问题语义核对 | 读取契约/候选/证据；可调用预算模型接口；不执行测试 |
 | Store | 原子保存对象、追加事件、读取记录 | 第一版为本地文件，单任务单写者；不调度或自动恢复 |
 | Exporter | 输出清单、报告、候选和运行说明 | 只使用已保存的结构化记录，不额外调用模型 |
+| Experience（拟新增） | 固定库视图、摘要匹配、只读详情、证据提炼/校验/原子追加 | 经验仅提示探索；写入只由主流程结束后的系统代码触发，学习有独立预算和模型资源 |
 
 ```mermaid
 flowchart TD
-    CLI[CLI] --> APP[App：依赖组装]
+    CLI[CLI / Claude Code / 批量评测] --> APP[App：依赖组装]
     APP --> C[Controller]
-    C --> A[Agent]
-    C --> T[Tools]
+    C --> A[SDK Explorer：阶段结果]
+    A --> RT[AgentScope Agent / Toolkit / AgentState]
+    RT --> T[受限文件和领域工具]
     C --> R[Runner]
     C --> V[Verifier]
     C --> E[Exporter]
     A --> M[预算模型接口]
     V --> M
-    M --> MG[ModelGateway 供应商实现]
+    M --> MG[AgentScope ModelFactory / Gateway]
     T --> W[Workspace]
     R --> W
     R --> L[LanguageAdapter：Python/pytest]
@@ -122,11 +136,17 @@ flowchart TD
     C --> S[TaskStore]
     R --> S
     E --> S
+    C --> X[Experience：拟新增]
+    X --> XS[任务启动固定经验库]
+    X --> XL[结果封存后：独立 learning 请求]
+    XL --> MG
+    RT --> XR[read_experience：固定视图只读]
+    XR --> XS
 ```
 
 图中是调用与依赖关系，Probe 实际运行在测试子进程中。通用数据和接口位于依赖底层，不导入控制器或基础设施；core 不导入适配器目录。Controller 使用 App 注入的模块，Workspace、Store、Exporter 第一版直接使用具体模块，暂不为假设中的远程存储增加接口层。基础设施可以引用通用数据类型，不能回调 Controller。
 
-原设计中 `Tools.invoke(run_candidate)` 的逻辑在工程实现中细化为：Controller 识别执行动作并调用 Runner；Tools 不持有 Controller 回调。这样避免 Tools → Runner → Controller 的循环依赖。Agent 的 `submit_candidate` 也仅是验收申请，Controller 决定是否进入重放。
+工具发布候选后，PhaseGate 固定阶段结果；Controller 收到真实 candidate_id 即调用 Runner 和 Verifier，条件满足时自动重复确认。模型没有 run_candidate/submit_candidate 工具。经验工具不是结束工具，只返回固定历史建议；经验写入不暴露给 SDK Toolkit。
 
 ## 5. 扩展接口
 
@@ -147,14 +167,18 @@ LanguageAdapter.check_framework(Candidate, TestObservation) -> FrameworkChecks
 ExecutionBackend.execute(ExecutionSpec, RunContext) -> RawExecution
 
 Explorer.analyze(IssueDescription, EvidenceContext) -> IssueContract
-Explorer.next_action(AgentContext) -> AgentAction
+Explorer.explore(AgentContext) -> PhaseResult
+Explorer.aclose() -> None
+
+Experience（拟新增）：固定库快照 → 摘要视图 / 只读详情
+Experience（拟新增）：主结果封存 → 独立学习上下文 → 校验并追加
 ```
 
 ### 5.1 ModelGateway
 
 统一文本、结构化动作、调用 ID、token 用量、耗时、计费来源和错误类别。供应商特有字段保存在适配器元数据里，不进入 Controller 的判断分支。
 
-所有调用先经过同一个预算包装器，Issue 分析、探索、语义验证与重试均包含在内。调用方不能拿到绕过预算的原始 SDK 客户端。费用记录区分供应商报告、估算和未知；估算不能显示为精确账单。用户配置费用限制时，适配器必须支持调用前保守预留和调用后结算，否则报告不支持该限制，不静默忽略。时间与步数限制始终执行。
+主复现的 Issue 分析、探索、语义验证与网络重试共享复现预算，并经过 SDK 工厂的有界 HTTP、响应检查和记账。调用方不能拿到绕过预算的原始 SDK 客户端。费用记录区分估算和未知，当前适配器拒绝无法保证的金额硬上限；时间、输出和探索步数限制执行。拟新增学习使用同一模型配置和保护规则，但有独立30秒上下文及新客户端，以 learning 用途单独记账。
 
 每次调用都有超时和输出上限；取消后不发新请求。临时错误最多额外重试两次，消耗原预算；格式错误反馈给 Agent，计入探索步数。未知动作或无效参数不能获得文件/执行权限。
 
@@ -174,7 +198,9 @@ Python/pytest 实现负责识别配置和测试作用域、形成解释器与参
 
 ### 5.4 探索策略
 
-`analyze` 在分析阶段整理契约，必要时根据新来源返回新契约版本；`next_action` 接收契约、只读历史和本轮反馈，返回一个有类型的动作。契约更新由 Controller 校验来源并发布，不能由 Agent 覆盖文件。第一版使用单个模型探索策略；后续多候选、检索增强和执行范围选择仍通过这一边界与 Controller 协作。
+`analyze` 在分析阶段整理契约，必要时根据新原版来源返回新契约版本；`explore` 接收原始Issue、契约和本轮反馈，在 SDK 原生 ReAct 中自主选择工具，返回 candidate/revise_contract/request_information/no_candidate。契约更新由 Controller 校验来源并发布，不能由 Agent 覆盖文件。每任务复用一个 SDK AgentState；不强制定位/取证/生成的阶段路线。
+
+经验摘要拟只在首次 explore 输入中注入，详情通过只读工具进入同一个 SDK 历史。分析、契约修订和 Verifier 不加载经验；历史建议不能成为当前问题的事实或合法原版证据引用。
 
 策略不能访问用户原仓库进行编辑，不能启动任意命令，也不能修改硬性验收规则。预算与候选历史来自任务上下文，不由每个策略另建一份。
 
@@ -184,7 +210,8 @@ Python/pytest 实现负责识别配置和测试作用域、形成解释器与参
 
 | 对象 | 必要内容与约束 |
 | --- | --- |
-| TaskRequest | 仓库、原始 Issue、语言标识、运行配置、输出目录、预算；原请求保存，适配器配置单独归一化 |
+| TaskRequest | 仓库、原始 Issue、语言标识、运行配置、输出目录、预算；拟新增可选 experience_file 和 learn_experience；原请求保存 |
+| PhaseResult | candidate/revise_contract/request_information/no_candidate；由工具生成，Controller按结果推进业务 |
 | IssueContract | 触发、预期、报告现象、可观察条件、来源、假设、缺口、版本和修订理由；既有版本不覆盖 |
 | CodeSnapshot | 当前本地代码清单、内容哈希、排除项、Git 状态（若有）；包含必要未提交内容 |
 | EnvironmentSnapshot | 解释器/工具版本、代码来源、导入配置、资源前提及能力；是观察记录，不是可重建环境承诺 |
@@ -203,13 +230,13 @@ Python/pytest 实现负责识别配置和测试作用域、形成解释器与参
 
 ## 7. 工具与动作权限
 
-| 动作 | Controller 的处理 |
+| SDK 工具 | 处理与边界 |
 | --- | --- |
-| search_code | Tools 在冻结代码和已登记候选中检索，返回带位置的有限结果 |
-| read_file | Tools 检查路径和范围，分段读取；不读取凭据和排除文件 |
-| write_candidate | 校验新增文件、位置、支持数据和假设，原子发布新候选；修改产生新 ID |
-| run_candidate | 检查预算和候选存在性，交给 Runner，保存结果并运行 Verifier |
-| submit_candidate | 核对证据与当前契约/候选，再申请确认重放；模型自报成功无效 |
+| Glob / Grep / Read | SDK执行文件工具，SnapshotBackend限制在冻结清单中；只完整显示过的行能成为原版引用 |
+| write_candidate | 校验新增文件、位置、角色与契约绑定，原子发布新候选并结束阶段；修改产生新ID |
+| revise_contract | 提交已读原版引用和理由，结束阶段，由Controller重新分析契约 |
+| request_information | 报告缺失信息，结束阶段，由Controller确定终态 |
+| read_experience（拟新增、启用时） | 从本任务固定视图读取已提供摘要的一个ID；只读、不结束阶段，历史建议不能成为原版证据 |
 
 动作入口不接受任意 shell 字符串、任意业务文件路径或无限输出。用户预先配置的 pytest 参数和项目插件属于可信项目配置，仍记录最终生效命令；Agent 不能用动作覆盖 Probe、扩大测试选择范围或关闭验证。参数冲突在执行前报告。
 
@@ -218,24 +245,37 @@ Issue、仓库文本和测试输出作为待分析数据进入模型上下文；
 ## 8. 一次任务的完整流程
 
 1. App 校验请求、解释器路径、输出位置和适配器能力，创建任务目录。不能把任务目录递归复制进自身快照。
-2. Controller 创建统一 Budget 和取消上下文，保存原始请求与 Issue。
-3. Workspace 冻结当前代码状态，生成清单；后续运行只从这个快照创建副本。
+2. 应用入口创建主 Budget 和取消上下文，Controller 保存原始请求；拟在准备阶段固定经验库快照，只让程序持有。
+3. Workspace 冻结当前代码状态，生成清单；后续运行只从这个快照创建副本。原始Issue另行冻结为input/issue.md。
 4. 语言适配器提出基础检查，由 Runner 在临时副本执行，保存环境事实。已有测试断言失败不直接等于环境不可用。
-5. Agent 整理 IssueContract；预期或关键触发条件无法确定时保存问题并以 NEEDS_INFORMATION 结束。
-6. Agent 提出搜索/读取动作，Controller 通过 Tools 执行并反馈带来源的位置。
+5. Agent通过SDK结构化请求整理IssueContract，不加载历史经验；缺失事实可在探索中补足原版证据、申请修订，无法补足时报告NEEDS_INFORMATION。
+6. 首次探索拟注入关键词匹配的经验摘要。SDK Agent自主选择Glob/Grep/Read及可选read_experience，SDK执行工具并保存历史；Controller不逐个分发搜索/读取。
 7. Agent 提出候选，Workspace/Store 冻结文件、参数和安装位置，分配新 ID。
-8. Controller 接收 run_candidate，Runner 新建运行副本，核对保护文件与候选哈希。
+8. Controller收到PhaseResult(candidate)立即执行，Runner新建运行副本，核对保护文件与候选哈希。
 9. LanguageAdapter 形成 ExecutionSpec；ExecutionBackend 启动测试、采集日志并完成受控清理。
 10. Runner 保存原始结果、Probe 产物、实际导入路径、文件变化检查与归一化观察。
 11. Verifier 先检查硬性规则，再进行带证据引用的语义核对，反馈具体失败原因。
 12. 无效候选或未复现返回探索；确定的环境阻塞终止。没有足够信息作分类时保留不确定项，不强行判断成功。
-13. 候选得到初次支持并提交后，Controller 在相同冻结快照的新副本中执行同一候选，再次验证。
+13. 候选得到初次支持后，Controller自动在相同冻结快照的新副本中执行同一候选，再次验证，无模型submit决策。
 14. 两次目标观察一致且满足全部条件后进入导出。可选修复版本验证在独立上下文执行，生成阶段不可读取修复材料。
-15. Exporter 原子发布清单和报告。只有成功包完整、必需证据齐备且执行清理确认后，Controller 才标记 DONE。
+15. 关闭主探索/模型资源后，Exporter原子发布清单和报告；保存最终TaskResult。只有成功包完整、必需证据齐备且执行清理确认后，才标记DONE。
+16. 拟在此后同步执行独立、限时的经验学习，晚于包封存和结果落盘，早于Controller.run返回。学习结束或跳过后返回原TaskResult，入口显示独立学习汇总。
 
 状态沿用原设计：PREPARING → ANALYZING → GENERATING → EXECUTING → VERIFYING → REPLAYING → EXPORTING。探索反馈回到 ANALYZING/GENERATING；终止为 DONE、BLOCKED、NEEDS_INFORMATION、EXHAUSTED、FAILED 或 CANCELLED。
 
 REPRODUCED 是候选受到当前证据支持的判定，不等于任务 DONE。重放未完成、导出失败或清理失败时，保留已有观察并报告实际终止状态。结束状态、证据级别和导出状态为三个独立字段。
+
+### 8.1 经验加载与写入时序（拟新增）
+
+| 时机 | 系统动作 | 模型可见性 |
+| --- | --- | --- |
+| 配置校验后、首次分析前 | 读取最多1MiB经验库，校验并固定本任务视图与哈希；缺文件为空，损坏则本任务关闭经验 | 无模型请求 |
+| 契约分析完成、首次explore前 | 根据原始Issue/明确目标包匹配最多3条摘要，首轮输入只注入一次 | 仅探索模型看到摘要；不传分析模型 |
+| 探索主动调用read_experience | 限已展示ID，整个任务最多成功读取1条；摘要与详情共2048字节 | 详情进当前SDK AgentState；不进入Verifier |
+| 主复现关闭、包发布或失败、最终结果落盘后 | 从允许原版记录冻结learning/evidence.jsonl，新建learning请求，检查、去重、系统锁和原子写库 | 提炼模型只看到最多8192字节允许材料，不带探索历史或修复材料 |
+| 学习资源关闭后 | 追加学习结果/开销事件，Controller.run返回已封存的主结果 | 新经验仅供下一任务加载 |
+
+学习独立30秒、一次逻辑请求、最多3次HTTP尝试；共享SDK保护规则和模型配置，不共享已经结束的会话或主复现预算。只读评测、用户取消、经验库损坏和无可用证据时跳过。学习失败不能改变TaskResult或重写复现包；主任务耗时与学习额外耗时分开展示。具体契约见[经验最小版设计](2026-10-06-reproagent-experience-evolution-design.md)。
 
 ## 9. 工作副本与候选冻结
 
@@ -299,9 +339,9 @@ Verifier 分为规则阶段与语义阶段。规则阶段不通过，模型不�
 
 ## 12. 预算、错误与结束
 
-预算包括探索步骤、任务时间、单次命令时间、模型用量/费用。默认建议沿用原设计的 20 步、60 秒命令、900 秒任务、10 秒清理；它们是可配置起点，不是性能承诺。每次 Agent 动作计一步，内部模型调用额外计入调用、时间和费用统计。
+预算包括探索步骤、任务时间、单次命令时间、模型用量/费用。默认20步探索、60秒命令、900秒主任务、10秒清理；这些值可配置，不是性能承诺。一次探索逻辑模型请求计一步，包括协议纠正；工具执行和网络重试不额外扣探索步数。分析与Verifier请求计时间/HTTP/token/费用，不占探索步数。事实充分时沿用最后3步的发布预留；不新增探索阶段状态机。
 
-主任务预算结束后停止新模型调用、搜索和候选执行。进程清理使用独立有限预算，本地记录与诊断输出使用有限收尾预算，两者均计入总耗时且不可用于继续探索。Exporter 无模型调用，不在收尾阶段补造成功证据。
+主任务预算结束后停止主复现的新模型调用、搜索和候选执行。进程清理和本地诊断使用有限收尾预算，不可用于继续探索；Exporter无模型调用、不补造成功证据。拟新增学习只在最终结果封存后启动自己的30秒预算，独立记账；主预算耗尽不禁止总结已有原版观察，用户取消则禁止新学习请求。当前适配器不支持金额硬上限或任务总token硬上限。
 
 | 情况 | 任务终止或处理 |
 | --- | --- |
@@ -322,7 +362,7 @@ Verifier 分为规则阶段与语义阶段。规则阶段不通过，模型不�
 ```text
 task-id/
 ├── request.json
-├── issue.md
+├── input/issue.md
 ├── task.json
 ├── events.jsonl
 ├── contracts/
@@ -337,17 +377,17 @@ task-id/
 │   ├── stdout.log
 │   └── stderr.log
 ├── verdicts/
-└── export/
+├── learning/evidence.jsonl   # 拟新增：封存后一次写入的机器证据，不追加
+└── artifacts/reproduction/  # 未确认任务使用 artifacts/diagnostic/
     ├── manifest.json
     ├── report.md
-    ├── issue_contract.json
-    ├── repro/
-    ├── candidates/
-    ├── runs/
-    └── events.jsonl
+    ├── report.json
+    ├── replay.py
+    ├── candidate/
+    └── 其他清单登记的必要证据
 ```
 
-内部任务目录包含更多诊断数据，公开复现包仍沿用原设计的布局；未验证任务导出诊断包并明确类型，不能提供成功复现标记。
+内部任务目录包含更多诊断数据；公开包以实际Exporter清单为准，未确认任务导出diagnostic包，不能提供成功复现标记。共享experience_file及其稳定.lock文件位于工具侧、目标仓库和任务目录之外。learning/evidence.jsonl只保存允许材料的脱敏冻结行，经验引用该文件而不是会继续追加的events.jsonl；原始来源可追溯。
 
 对象先写临时文件，再原子替换；候选清单发布前校验文件完整性。事件由单写者分配单调序号，保存状态转换、工具调用、候选发布、执行开始/结束、判定、重放和导出。先写实体再追加引用事件；崩溃可能留下未引用实体或不完整末行，读取时标注而不凭事件推断执行成功。
 
@@ -356,6 +396,8 @@ task-id/
 Exporter 根据冻结候选清单逐字节复制测试与支持数据，记录包内路径和仓库安装路径、命令、节点、源码根目录、fixture 哈希、环境变量名称、前置条件和证据级别。报告由结构化记录形成，不能由另一次模型润色改变验证结论。
 
 成功包在临时导出目录形成并校验后整体发布。最终任务事件及状态不放入包内相互递归计算哈希；manifest 的文件清单不包含自身哈希。源 task 的 export.completed 事件引用包清单哈希，报告明确其包含的事件截止序号。
+
+拟新增经验读取事件发生在上述事件截止之前，report.md只显示实际读取的经验ID；封存后的学习事件、费用、新卡和内部提炼证据不回填包。库写入使用稳定旁路.lock上的非阻塞系统锁，锁住读取—去重—追加—替换；库文件最大1MiB，损坏、未知schema、锁冲突或达到上限时跳过，不覆盖旧库。锁句柄关闭时释放占用，不把.lock文件存在误判为占用。
 
 内部两次执行均经过同一候选安装清单；产物验收还必须从导出包安装到独立工作副本验证，不能只证明任务内部路径可用。第一版 CLI 提供 run 和 inspect；导出报告给出项目重跑命令，不提前提供 resume 命令或额外服务 API。
 
@@ -371,6 +413,7 @@ Exporter 根据冻结候选清单逐字节复制测试与支持数据，记录�
 | 自动选择执行范围 | 版本化 ExecutionPlan、策略与适配器支持 | 替代入口保留真实触发路径；本轮不实现 |
 | 用例最小化 | 接受候选后的限额优化阶段 | 每次变化生成新候选、重新运行；失败回退原有效候选 |
 | 恢复与交互补充 | Store 检查点和应用入口 | 环境漂移、旧证据失效、取消遗留状态 |
+| 踩坑经验最小版（已授权、待实现） | experience.py、SDK只读工具、Controller生命周期和learning请求用途 | 加载/写入时机、证据固定、无隐藏修复泄漏、无验收污染、开关对照收益 |
 | 非确定性问题 | 确认策略与新的证据结构 | 次数、种子、并发条件和统计结论；不能沿用两次观察保证 |
 | GitHub / IDE | 输入适配或 App 外部入口、事件展示 | 权限、来源记录和取消传播；不绕过核心验证 |
 | 服务与并发 Worker | 任务 API、队列、存储所有权和工作空间隔离 | 单任务写者、租约/幂等、共享资源；并非直接换一个 CLI 即完成 |
@@ -390,6 +433,7 @@ Exporter 根据冻结候选清单逐字节复制测试与支持数据，记录�
 | 预算闭合 | 分析/探索/验证共享预算；模型重试受限；确认前耗尽保留部分证据；未知计费不冒充准确费用 |
 | 存储与导出 | 写入中断、事件末行损坏、导出失败、清单哈希不一致；按导出路径独立重跑 |
 | 实际能力 | 约 20 个有已知历史修复的 Bug，生成阶段隐藏修复信息，固定候选后差异验证及人工审查 |
+| 经验时序（待实现） | 分析和Verifier不带经验；摘要只注入一次；固定库不漂移；详情不双扣步数；learning晚于关闭/封存/结果落盘；取消不学习；学习失败不改变主结果 |
 
 不使用只检查目录存在、类名正确或复刻实现条件的测试证明功能完成。支持操作系统与解释器/pytest 组合逐项记录通过的集成检查，未验证组合不列为已支持。
 
@@ -401,11 +445,11 @@ Exporter 根据冻结候选清单逐字节复制测试与支持数据，记录�
 
 - 单 Agent 和 Controller 的权限分开，Tools 不回调 Controller。
 - pytest 信息位于语言适配层，本地进程管理位于执行后端。
-- 所有模型调用共用预算，导出不继续调用模型。
+- 主复现模型调用共用主预算，导出不调用模型；拟新增learning使用独立预算，晚于结果封存。
 - 不可变候选、契约版本、快照与执行证据形成关联链。
 - 目标失败、初次观察、确认成功和最终任务状态不会混为一个布尔值。
 - 干净副本是文件隔离，真实外部状态和进程能力另行说明。
 - 运行受阻自动换入口、恢复、多语言、容器和服务化未进入第一版验收。
 - 包清单与最终事件不存在相互包含的哈希循环。
 
-以上是文档自审，尚未运行产品实现或评估复现率。用户评审本稿后，再依据本稿与原产品设计编写实施计划；执行产品代码前还需评审计划并选择执行方式。
+以上是架构文档自审。已有SDK底座和边界修复的验证见独立实现记录；经验接入仍未实现，其收益也未评估。下一步依据已修订的经验规格编写实施计划，沿用用户选择的当前会话逐项执行方式。实现必须验证本稿的加载和封存后写入顺序，不把文档中的拟新增能力标为已完成。
