@@ -36,6 +36,29 @@ def official_command(round_dir,data):
     return '# Run inside the pinned SWT-Bench harness on Linux with Docker.\n# Harness commit: '+data['harness_commit']+'\n'+command+'\n'
 
 
+def prepare_retry(root):
+    """Clear a failed official attempt so its round can be graded again.
+
+    A recorded verdict is never re-run: the round keeps the one official result it has.  An
+    attempt that failed for infrastructure is not a verdict -- it leaves ``infra_error`` on
+    every case and no report hashes -- so it must not cost the round.  It must not require
+    deleting its leftovers by hand either: the attempt owns ``official.stdout.log`` and
+    ``official.stderr.log``, and the runner opens those exclusively, so a retry otherwise
+    died on them with a FileExistsError that named neither the file nor the reason.
+
+    Returns:
+        str | None: the stop reason being retried, or None when this is a first attempt.
+    """
+    receipt=Path(root).resolve()/'official-execution.receipt.json'
+    if not receipt.exists(): return None
+    recorded=read_json(receipt)
+    if not recorded.get('stop_reason'): raise ValueError('official execution already recorded; choose a new round')
+    for name in ('official.stdout.log','official.stderr.log'):
+        (receipt.parent/name).unlink(missing_ok=True)
+    receipt.unlink()
+    return recorded['stop_reason']
+
+
 def run_official(round_dir,harness_dir,python=None,snapshot_path=None):
     root=Path(round_dir).resolve(); harness=Path(harness_dir).resolve()
     data=read_json(root/'round.json'); verify_seal(data,'round_hash')
@@ -44,23 +67,28 @@ def run_official(round_dir,harness_dir,python=None,snapshot_path=None):
     if snapshot_path is None or file_hash(snapshot_path)!=data['manifest']['source']['snapshot_sha256']:
         raise ValueError('pinned dataset snapshot missing or changed')
     if file_hash(root/'predictions.jsonl')!=data['predictions_hash']: raise ValueError('prediction hash mismatch')
-    if (root/'official-execution.receipt.json').exists(): raise ValueError('official execution already recorded; choose a new round')
     ids=[case['instance_id'] for case in data['manifest']['cases']]
     args=[python or sys.executable,'-m','src.main','--dataset_name',str(Path(snapshot_path).resolve()),
         '--predictions_path',str(root/'predictions.jsonl'),'--run_id',data['run_id'],'--instance_ids',*ids,
         '--max_workers','1','--compute_coverage','false','--exec_mode','unit_test']
     if (harness/'run_instance_swt_logs'/data['run_id']).exists(): raise ValueError('harness run already exists')
-    return execute_official(root,harness,data,args,harness_hash)
+    # Last, so a retry that fails a precondition above leaves the attempt it would replace
+    # recorded rather than erasing the only evidence of it.
+    retried_after=prepare_retry(root)
+    return execute_official(root,harness,data,args,harness_hash,retried_after=retried_after)
 
 
-def execute_official(root,harness,data,args,harness_hash):
+def execute_official(root,harness,data,args,harness_hash,retried_after=None):
     from .io import seal
     from .results import save_summary,import_reports
     ids=[case['instance_id'] for case in data['manifest']['cases']]
     receipt={'executor':'reproagent-swt-official-run-v1','run_id':data['run_id'],'model_name':data['model_name'],
         'harness_commit':data['harness_commit'],'predictions_hash':data['predictions_hash'],
         'manifest_hash':data['manifest']['manifest_hash'],'report_hashes':{},'command':args,'harness_source_hash':harness_hash,
-        'dataset_snapshot_hash':data['manifest'].get('source',{}).get('snapshot_sha256'),'exit_code':None,'stop_reason':''}
+        'dataset_snapshot_hash':data['manifest'].get('source',{}).get('snapshot_sha256'),'exit_code':None,'stop_reason':'',
+        #: The stop reason of the attempt this one retries, so a retry is visible in the
+        #: record that survives rather than only in the attempt it replaced.
+        'retried_after':retried_after}
     started=time.monotonic()
     def failure(reason):
         receipt.update(stop_reason=reason,duration=time.monotonic()-started)

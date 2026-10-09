@@ -209,6 +209,43 @@ def test_failed_official_execution_is_retained_as_infrastructure_failure(tmp_pat
     assert receipt['stop_reason'] and receipt['exit_code']!=0
 
 
+def failed_round(tmp_path, *, stop_reason='HARNESS_NONZERO'):
+    """A round whose official attempt failed for infrastructure, leftovers and all."""
+    from evals.swt_bench.io import write_json
+    root=tmp_path/'round'; root.mkdir()
+    write_json(root/'official-execution.receipt.json',
+        {'executor':'reproagent-swt-official-run-v1','run_id':'r','exit_code':1,'stop_reason':stop_reason})
+    (root/'official.stdout.log').write_text('the failed attempt')
+    (root/'official.stderr.log').write_text('the failed attempt')
+    return root
+
+
+def test_a_failed_official_attempt_can_be_retried_on_the_same_round(tmp_path):
+    """An infrastructure failure must not cost the round, nor need manual file surgery.
+
+    The attempt leaves its own stdout and stderr behind, and the runner opens those
+    exclusively, so the retry died on them with a FileExistsError that named neither the
+    file nor the reason, and the only way through was deleting them by hand.
+    """
+    from evals.swt_bench.official import prepare_retry
+    root=failed_round(tmp_path)
+    assert prepare_retry(root)=='HARNESS_NONZERO'
+    assert not (root/'official.stdout.log').exists() and not (root/'official.stderr.log').exists()
+    assert not (root/'official-execution.receipt.json').exists()
+    assert prepare_retry(root) is None      # the retry now starts like a first attempt
+
+
+def test_a_completed_official_attempt_is_still_not_rerunnable(tmp_path):
+    """A recorded verdict stays recorded: only a failed attempt may be retried."""
+    from evals.swt_bench.io import write_json
+    from evals.swt_bench.official import prepare_retry
+    root=tmp_path/'round'; root.mkdir()
+    write_json(root/'official-execution.receipt.json',
+        {'executor':'reproagent-swt-official-run-v1','run_id':'r','exit_code':0,'stop_reason':'','report_hashes':{}})
+    with pytest.raises(ValueError): prepare_retry(root)
+    assert (root/'official-execution.receipt.json').exists()
+
+
 def test_generated_official_command_uses_pinned_snapshot_not_floating_dataset():
     from evals.swt_bench.official import official_command
     command=official_command('round',{'run_id':'r','harness_commit':'a'*40,'manifest':{'cases':[{'instance_id':'known'}]}})
