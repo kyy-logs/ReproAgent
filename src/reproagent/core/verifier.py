@@ -2,6 +2,7 @@ import json
 from importlib.resources import files
 from pathlib import Path
 
+from ..observability import span
 from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
 from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
@@ -32,6 +33,10 @@ class Verifier:
         return run.candidate_id == candidate.candidate_id and run.manifest_hash == candidate.manifest_hash and run.contract_id == contract.contract_id == candidate.contract_id and run.contract_version == contract.version == candidate.contract_version and run.snapshot_id == candidate.snapshot_id and run.execution_role == 'original'
 
     async def evaluate(self, contract, candidate, executions, context):
+        with span('verify'):
+            return await self._evaluate(contract, candidate, executions, context)
+
+    async def _evaluate(self, contract, candidate, executions, context):
         context.budget.check()
         def verdict(classification, reason, refs=(), uncertainty=()):
             return Verdict(classification, reason, refs, uncertainties=uncertainty, candidate_id=candidate.candidate_id,

@@ -20,6 +20,7 @@ import json
 import time
 import uuid
 from contextvars import ContextVar
+from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 SCHEMA_VERSION = 1
@@ -28,6 +29,13 @@ SCHEMA_VERSION = 1
 #: be able to fail the task it describes.
 MAX_SPANS = 1024
 MAX_ATTRIBUTE_BYTES = 2048
+MAX_DOCUMENT_BYTES = 1 << 20
+
+#: Where a traced task keeps its trace, relative to the task's own output directory.
+TRACE_DIRECTORY = "observability"
+TRACE_FILENAME = "trace.json"
+WARNING_DOCUMENT_TOO_LARGE = "the trace exceeded the document ceiling and was written marked incomplete"
+WARNING_TRACE_PATH_UNSAFE = "the trace destination is not a plain task-local directory and was refused"
 
 #: The only attribute keys a span may carry.  Anything else is dropped rather than
 #: redacted, so a new field cannot start leaking by accident.
@@ -339,3 +347,42 @@ def mark(name: str, *, attributes: dict | None = None) -> None:
     if recorder is None or not recorder._active:
         return
     recorder._note_event(name, attributes)
+
+
+def _encode_document(document: dict) -> bytes:
+    return json.dumps(document, ensure_ascii=False, sort_keys=True).encode("utf-8")
+
+
+def _plain_destination(path: Path) -> bool:
+    """Whether this path is a real file or directory rather than a link to elsewhere."""
+    return not path.is_symlink()
+
+
+def write_trace(task_dir: Path, document: dict) -> Path:
+    """Write one task's trace beside the task, atomically, or refuse.
+
+    The trace is a local diagnostic: it belongs to the task's own output directory and
+    never to the sealed package.  A document over the ceiling is written *marked*
+    incomplete rather than silently kept whole, and a destination that is a link -- so
+    that "the task directory" would mean somewhere else -- is refused outright.
+
+    Raises:
+        ValueError: the destination is not inside the task directory, or is a link.
+        OSError: the task directory could not be written.
+    """
+    from .paths import is_within, workspace_path
+    from .store import atomic_write
+
+    root = workspace_path(Path(task_dir))
+    target = workspace_path(root / TRACE_DIRECTORY / TRACE_FILENAME)
+    if not is_within(target, root) or not is_within(target.parent, root):
+        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    if not _plain_destination(target.parent) or not _plain_destination(target):
+        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    encoded = _encode_document(document)
+    if len(encoded) > MAX_DOCUMENT_BYTES:
+        document = {**document, "partial": True, "metrics_complete": False,
+                    "warnings": [*document.get("warnings", ()), WARNING_DOCUMENT_TOO_LARGE]}
+        encoded = _encode_document(document)
+    atomic_write(target, encoded)
+    return target

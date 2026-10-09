@@ -10,6 +10,7 @@ from pathlib import Path
 from .core.budget import BudgetStopped
 from .core.models import EvidenceRef
 from .core.serialization import canonical_bytes, canonical_hash, parse_json, bytes_hash
+from .observability import span
 from .paths import directory_path, workspace_path, is_within
 from .store import atomic_write
 
@@ -479,6 +480,12 @@ class ExperienceService:
         return values
 
     async def learn(self, result, main_context):
+        # Learning runs inside the task's own trace scope, on its own budget: the span
+        # shows it without its seconds ever being folded into the task's duration.
+        with span('learn'):
+            return await self._learn(result, main_context)
+
+    async def _learn(self, result, main_context):
         import asyncio
         import time
         from .core.budget import Budget
