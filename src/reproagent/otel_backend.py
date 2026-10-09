@@ -10,7 +10,7 @@ from opentelemetry.context import Context
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, SpanLimits
 from opentelemetry.sdk.trace.sampling import Sampler, SamplingResult, Decision
 
-_active_sink = ContextVar("reproagent_otel_sink", default=None)
+from .observability import _recorder as _active_sink
 _lock = RLock()
 _provider = None
 _routes = {}
@@ -24,7 +24,8 @@ class ProviderActivation:
 class SessionSampler(Sampler):
     def should_sample(self, parent_context, trace_id, name, kind=None, attributes=None, links=None, trace_state=None):
         sink = _active_sink.get()
-        enabled = sink is not None and sink._active and not sink._frozen
+        enabled = (sink is not None and sink._active and not sink._frozen and
+                   (sink.trace_id is None or trace_id == int(sink.trace_id,16)))
         return SamplingResult(Decision.RECORD_AND_SAMPLE if enabled else Decision.DROP, attributes, trace_state)
     def get_description(self):
         return "ReproAgent active local session only"
@@ -33,6 +34,8 @@ class TaskSpanProcessor(SpanProcessor):
     def on_start(self, span, parent_context=None):
         sink = _active_sink.get()
         if sink is None or not sink._active or sink._frozen:
+            return
+        if sink.trace_id is not None and span.context.trace_id != int(sink.trace_id,16):
             return
         try:
             with _lock:

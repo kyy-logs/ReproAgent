@@ -47,3 +47,35 @@ def test_dropped_sdk_attributes_mark_partial():
         session.close()
         doc=session.sink.finish(task_id="one",status="DONE",main_duration=1)
     assert doc["partial"] and not doc["metrics_complete"]
+
+
+def test_native_tool_parts_strip_raw_ids_and_unknown_names():
+    from reproagent.observability import trace_session
+    with trace_session() as recorder:
+        with trace.get_tracer('agentscope').start_as_current_span('chat offline') as s:
+            s.set_attribute('gen_ai.operation.name','chat')
+            s.set_attribute('gen_ai.output.messages',json.dumps([{'role':'assistant','parts':[
+                {'type':'tool_call','id':'RAW_NESTED_CALL_ID','name':'UNKNOWN_NESTED_TOOL','arguments':{'path':'example.py'}},
+                {'type':'tool_call_response','id':'RAW_NESTED_CALL_ID','response':'valid-result'}]}]))
+        doc=recorder.finish(task_id='one',status='DONE',main_duration=1)
+    text=json.dumps(doc)
+    assert 'RAW_NESTED_CALL_ID' not in text and 'UNKNOWN_NESTED_TOOL' not in text
+    assert 'valid-result' in text and 'example.py' in text
+
+
+def test_event_names_are_redacted_before_storage():
+    from reproagent.observability import trace_session,mark
+    with trace_session(secrets=('PRIVATE_EVENT_SECRET',)) as recorder:
+        mark('event PRIVATE_EVENT_SECRET')
+        doc=recorder.finish(task_id='one',status='DONE',main_duration=1)
+    assert 'PRIVATE_EVENT_SECRET' not in json.dumps(doc)
+
+
+def test_whole_metadata_entry_remains_bounded_with_long_names_and_many_refs():
+    from reproagent.observability import trace_session,span
+    with trace_session() as recorder:
+        with span('long-'+('x'*3000)) as h:
+            for i in range(100): h.capture('body',str(i),source='program_artifact')
+        doc=recorder.finish(task_id='one',status='DONE',main_duration=1)
+    assert doc['partial']
+    assert all(len(json.dumps(s,ensure_ascii=False).encode())<=2048 for s in doc['spans'])

@@ -111,22 +111,29 @@ class TraceRecorder:
     def finish(self, **kwargs):
         return self._sink.finish(**kwargs)
 
+def _active_sink():
+    sink=_recorder.get()
+    return sink if sink is not None and sink._active and not sink._frozen else None
+
 def tracing_enabled():
-    from .otel_backend import current_sink
-    return current_sink() is not None
+    return _active_sink() is not None
 
 @contextlib.contextmanager
 def trace_session(*, enabled=True, secrets=()):
     if not enabled:
-        yield None
+        token=_recorder.set(None)
+        try: yield None
+        finally: _recorder.reset(token)
         return
-    recorder=TraceRecorder(secrets=secrets)
     try:
+        recorder=TraceRecorder(secrets=secrets)
         recorder.__enter__()
     except Exception:
         import sys
         print("ReproAgent tracing is unavailable; the task will continue without tracing.", file=sys.stderr)
-        yield None
+        token=_recorder.set(None)
+        try: yield None
+        finally: _recorder.reset(token)
         return
     try:
         yield recorder
@@ -134,8 +141,7 @@ def trace_session(*, enabled=True, secrets=()):
         recorder.__exit__(None,None,None)
 
 def current_handle():
-    from .otel_backend import current_sink
-    sink=current_sink()
+    sink=_active_sink()
     if sink is None: return _NOOP_HANDLE
     entry=sink.current_entry()
     if entry is None: return _NOOP_HANDLE
@@ -143,12 +149,11 @@ def current_handle():
 
 @contextlib.contextmanager
 def span(name, *, attributes=None, expected=()):
-    from opentelemetry import trace, context
-    from .otel_backend import current_sink
-    sink=current_sink()
+    sink=_active_sink()
     if sink is None:
         yield _NOOP_HANDLE
         return
+    from opentelemetry import trace, context
     from .otel_backend import context_owner
     owner=context_owner()
     active=None;token=None
@@ -183,8 +188,7 @@ def capture(kind,value,*,source,availability="captured"):
     return current_handle().capture(kind,value,source=source,availability=availability)
 
 def mark(name, *, attributes=None):
-    from .otel_backend import current_sink
-    sink=current_sink()
+    sink=_active_sink()
     if sink is None: return _NOOP_HANDLE
     try:
         entry=sink.note_event(name,attributes)
@@ -198,8 +202,7 @@ def record_check(name,value,*,source="program_check"):
     return value
 
 def tool_call_key(*,sdk_call_id,step_index):
-    from .otel_backend import current_sink
-    sink=current_sink()
+    sink=_active_sink()
     return sink._tool_call_key(sdk_call_id,step_index) if sink is not None else None
 
 def _sum_tokens(spans: list[dict]) -> dict:

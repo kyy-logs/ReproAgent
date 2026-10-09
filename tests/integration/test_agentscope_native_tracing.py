@@ -120,3 +120,28 @@ def test_native_exception_recording_fault_preserves_original_domain_exception():
                     {'current_model':model,'messages':[]},handler)
             assert caught.value is original
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('hook',['on_reply','on_acting'])
+def test_public_native_stream_close_finishes_handler_before_freeze(hook):
+    from reproagent.adapters.agentscope.observability import SafeTracingMiddleware
+    from reproagent.observability import trace_session
+    from agentscope.message import ToolCallBlock
+    from types import SimpleNamespace
+    closed=[]
+    async def handler(**kwargs):
+        try:
+            yield 'published'
+            yield 'unused'
+        finally: closed.append('handler')
+    async def run():
+        with trace_session() as recorder:
+            agent=SimpleNamespace(name='offline',toolkit=SimpleNamespace(tools={}),state=SimpleNamespace(session_id='offline',reply_id='offline-reply'))
+            args={'tool_call':ToolCallBlock(id='call-1',name='Read',input='{}')} if hook=='on_acting' else {'inputs':None}
+            gen=getattr(SafeTracingMiddleware(),hook)(agent,args,handler)
+            assert await anext(gen)=='published'
+            await gen.aclose()
+            assert closed==['handler']
+            doc=recorder.finish(task_id='one',status='DONE',main_duration=1)
+            assert all(s['status']!='incomplete' for s in doc['spans'])
+    asyncio.run(run())

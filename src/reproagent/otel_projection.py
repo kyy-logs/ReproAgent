@@ -73,6 +73,9 @@ class TaskTraceSink:
             index = self._event_ordinals.get(host["span_id"],0)
             self._event_ordinals[host["span_id"]] = index+1
             # The event is also emitted to OTel; the local snapshot stays bounded.
+            name=self._redact(name)
+            if len(name.encode("utf-8"))>256:
+                name="event.omitted_name";self._partial=True
             trace.get_current_span().add_event(name)
             entry = dict(span_id=f"point:{host['span_id']}:{index}",parent_span_id=host['span_id'],
                 name=name,kind="point",offset_seconds=max(0.,self._clock()-self._started_clock),
@@ -93,6 +96,11 @@ class TaskTraceSink:
             for entry in self._spans:
                 if len(json.dumps(entry,ensure_ascii=False).encode()) > MAX_ATTRIBUTE_BYTES:
                     entry['attributes']={};self._partial=True
+                    if len(entry['name'].encode('utf-8'))>256: entry['name']='operation.omitted_name'
+                    while entry['content_refs'] and len(json.dumps(entry,ensure_ascii=False).encode())>MAX_ATTRIBUTE_BYTES:
+                        entry['content_refs'].pop()
+                        entry['content_status']='omitted_limit'
+                        self._content.complete=False
                 total += len(json.dumps(entry,ensure_ascii=False).encode())
             if total > 1<<20:
                 self._partial=True
@@ -214,6 +222,8 @@ def project_native_span(span, *, sink):
                     sink._partial=True;availability='omitted_limit'
                 try: value=json.loads(raw) if availability=='captured' else raw
                 except (ValueError,TypeError): value=raw
+                if source.startswith('sdk_agent_') or source.startswith('sdk_model_'):
+                    value=project_sdk_messages(value)
                 sink._capture(entry,source,value,source=source,availability=availability)
             usage={k:attributes.get('gen_ai.usage.'+v) for k,v in
                    [('input_tokens','input_tokens'),('output_tokens','output_tokens')]}
@@ -246,3 +256,19 @@ def classify_error(exc):
     elif isinstance(exc,TimeoutError): category='runtime'
     else: category='unknown'
     return dict(error_category=category,classification_source='exception_type')
+
+
+def project_sdk_messages(value):
+    """Constrain tool identifiers/names and media parts inside SDK message views."""
+    if isinstance(value,list): return [project_sdk_messages(item) for item in value]
+    if not isinstance(value,dict): return value
+    kind=value.get('type')
+    if kind in ('image','audio','video','file','data'):
+        return {'type':kind,'availability':'unsupported'}
+    if kind in ('tool_call','tool_call_response','tool_result'):
+        # Call correlation lives in controlled span fields, never the provider's ID.
+        value={k:v for k,v in value.items() if k not in ('id','tool_call_id')}
+        if 'name' in value:
+            from .adapters.agentscope.tools import TOOL_NAMES
+            if value['name'] not in (*TOOL_NAMES,'read_experience'): value['name']='unknown'
+    return {k:project_sdk_messages(v) for k,v in value.items()}

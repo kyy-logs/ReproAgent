@@ -90,6 +90,10 @@ def test_required_sdk_is_packaged_but_target_replay_is_independent(tmp_path, pro
     # no extra has to be asked for. The extra is still declared for one deprecation cycle,
     # which is what keeps an old `pip install reproagent-local[agentscope]` command working.
     assert 'Requires-Dist: agentscope==2.0.9' in requirements
+    assert 'Requires-Dist: opentelemetry-api==1.45.0' in requirements
+    assert 'Requires-Dist: opentelemetry-sdk==1.45.0' in requirements
+    with zipfile.ZipFile(wheel) as archive:
+        assert 'reproagent/resources/trace.html.template' in archive.namelist()
     assert 'Provides-Extra: agentscope' in requirements
     assert not any('agentscope' in line and 'extra ==' in line for line in requirements)
     target = target_python(checkout, tmp_path)

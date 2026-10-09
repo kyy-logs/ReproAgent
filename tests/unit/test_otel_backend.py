@@ -72,3 +72,45 @@ def test_late_span_never_reopens_a_finished_sink():
     pending.end()
     assert json.dumps(doc) == before
     assert doc["partial"]
+
+
+def test_explicit_foreign_context_cannot_create_a_second_task_trace():
+    from reproagent.otel_backend import open_task_trace
+    from reproagent.otel_projection import TaskTraceSink
+    from opentelemetry.context import Context
+    from opentelemetry.trace import NonRecordingSpan,SpanContext,TraceFlags
+    foreign=trace.set_span_in_context(NonRecordingSpan(SpanContext(
+        trace_id=123,span_id=456,is_remote=True,trace_flags=TraceFlags(1))),Context())
+    with open_task_trace(TaskTraceSink()) as session:
+        child=trace.get_tracer('test').start_span('foreign-context',context=foreign)
+        assert not child.is_recording()
+        child.end()
+
+
+def test_nested_disabled_session_does_not_capture_into_outer_session():
+    from reproagent.observability import trace_session,span,tracing_enabled
+    with trace_session() as recorder:
+        with trace_session(enabled=False) as disabled:
+            assert disabled is None and not tracing_enabled()
+            with span('disabled-task-content'): pass
+        doc=recorder.finish(task_id='outer',status='DONE',main_duration=1)
+    assert 'disabled-task-content' not in {s['name'] for s in doc['spans']}
+
+
+def test_untraced_facade_runs_without_optional_runtime_imports():
+    from pathlib import Path
+    code="import sys;sys.path.insert(0,"+repr(str(Path(__file__).resolve().parents[2]/'src'))+");from reproagent.observability import span,mark,record_check;exec(\"with span('untraced'): assert record_check('binding',True)\");assert 'opentelemetry' not in sys.modules"
+    result=subprocess.run([sys.executable,'-S','-c',code],capture_output=True,text=True)
+    assert result.returncode==0,result.stderr
+
+
+def test_recorder_constructor_failure_is_nonfatal(monkeypatch,capsys):
+    from reproagent import observability
+    calls=[]
+    def broken(**kwargs): raise RuntimeError('observer-constructor-only')
+    monkeypatch.setattr(observability,'TraceRecorder',broken)
+    with observability.trace_session() as recorder:
+        calls.append('domain-run')
+        assert recorder is None
+    assert calls==['domain-run']
+    assert 'observer-constructor-only' not in capsys.readouterr().err

@@ -93,13 +93,28 @@ class SafeTracingMiddleware(TracingMiddleware):
                     if source is None: source=next_handler(**input_kwargs)
                     async for item in source: yield item
         finally:
-            await gen.aclose()
-            if source is not None: await source.aclose()
+            # Always close the domain source, even if native observation fails on close.
+            try: await gen.aclose()
+            except BaseException:
+                sink=current_sink()
+                if sink is not None: sink._fault()
+            try:
+                if source is not None: await source.aclose()
+            except BaseException:
+                if domain_error is not None and not isinstance(domain_error,(GeneratorExit,asyncio.CancelledError)):
+                    raise domain_error
+                raise
 
     async def on_reply(self,agent,input_kwargs,next_handler):
-        async for item in self._stream(super().on_reply,agent,input_kwargs,next_handler): yield item
+        gen=self._stream(super().on_reply,agent,input_kwargs,next_handler)
+        try:
+            async for item in gen: yield item
+        finally: await gen.aclose()
     async def on_acting(self,agent,input_kwargs,next_handler):
-        async for item in self._stream(super().on_acting,agent,input_kwargs,next_handler): yield item
+        gen=self._stream(super().on_acting,agent,input_kwargs,next_handler)
+        try:
+            async for item in gen: yield item
+        finally: await gen.aclose()
 
 class ReproTraceMiddleware(MiddlewareBase):
     def __init__(self,context,*,allowed_tools=TOOL_NAMES):
@@ -135,8 +150,8 @@ class ReproTraceMiddleware(MiddlewareBase):
                 finally: otel_context.detach(token)
                 yield item
         finally:
-            await gen.aclose()
-            active.end()
+            try: await gen.aclose()
+            finally: active.end()
     async def on_acting(self,agent,input_kwargs,next_handler):
         tool_call=input_kwargs.get('tool_call')
         raw=getattr(tool_call,'name','')
@@ -145,8 +160,9 @@ class ReproTraceMiddleware(MiddlewareBase):
         handle.annotate(tool=name,tool_call_key=tool_call_key(sdk_call_id=getattr(tool_call,'id',''),
             step_index=self.context.budget.steps_used))
         terminal=None
+        gen=next_handler()
         try:
-            async for item in next_handler():
+            async for item in gen:
                 state=tool_state(item)
                 if state is not None:
                     terminal=state;handle.annotate(result_code=state)
@@ -159,6 +175,7 @@ class ReproTraceMiddleware(MiddlewareBase):
             if terminal is not None and hasattr(handle,'_entry'): handle._entry['_display_status']='ok'
             raise
         finally:
+            await gen.aclose()
             if terminal is None:
                 handle.annotate(result_code=INCOMPLETE)
                 handle.capture('sdk_tool_result',None,source='sdk_tool_result',availability='incomplete')
