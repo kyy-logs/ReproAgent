@@ -1,4 +1,5 @@
 import asyncio
+import os
 import importlib
 from dataclasses import replace
 
@@ -73,3 +74,28 @@ def test_replay_compares_target_failure_not_entire_stdout(tmp_path, projects, fa
     assert not verifier.confirm(contract, candidate, first, replace(second, execution_role='fixed'), verdicts)
     changed = replace(second, observation=replace(second.observation, tests=tuple(dict(t, crash={'path':'other.py','lineno':1,'message':'ValueError'}) if t['outcome']=='failed' else t for t in second.observation.tests)))
     assert not verifier.confirm(contract, candidate, first, changed, verdicts)
+
+
+def test_replay_ignores_the_run_beside_the_code_copy_too(tmp_path, projects, facts):
+    """A failure naming the run's own workspace must still compare equal.
+
+    The run root is the code copy, but the run also writes beside it: pytest puts its
+    basetemp under the run directory, so a tmpdir failure reports
+    ``<run>/tmp/pytest-of-.../...``.  Only the run id makes two such messages different,
+    and normalizing the code copy alone left them unequal, so the independent replay was
+    refused for a failure that was identical -- which is the whole of what it is for.
+    """
+    contract, candidate, first, verifier, _, runner, snapshot, request = prepare(tmp_path, projects, facts)
+    second = execute(request, snapshot, candidate, runner, facts.context())
+
+    def naming_its_own_workspace(run):
+        code_root = run.observation.framework_details['run_root']
+        reported = os.path.join(os.path.dirname(code_root), 'tmp', 'pytest-of-contoso', 'john_doe')
+        tests = tuple(dict(test, crash={'path': 'pathlib.py', 'lineno': 1,
+                                        'message': f"FileNotFoundError: [WinError 3]: '{reported}'"})
+                      if test['outcome'] == 'failed' else test for test in run.observation.tests)
+        return replace(run, observation=replace(run.observation, tests=tests))
+
+    verdicts = tuple(asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context())) for run in (first, second))
+    assert verifier.confirm(contract, candidate, naming_its_own_workspace(first),
+                            naming_its_own_workspace(second), verdicts)

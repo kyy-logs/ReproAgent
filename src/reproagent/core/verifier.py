@@ -3,7 +3,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
-from .review_context import ReviewContextTooLarge, build_review_context
+from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
@@ -144,21 +144,43 @@ class Verifier:
             return False
         if first.observation.framework_details.get('collected_nodeids') != second.observation.framework_details.get('collected_nodeids') or first.observation.framework_details.get('completed_nodeids') != second.observation.framework_details.get('completed_nodeids'):
             return False
+        def _run_roots(run_root):
+            """Every spelling of the directories one run's own paths may name, longest first.
+
+            The run root is the code copy, but the run writes beside it as well: pytest puts
+            its basetemp under the run directory, so a tmpdir failure reports ``<run>/tmp/...``
+            and not ``<run>/code/...``.  Normalizing the code copy alone left two runs of one
+            candidate reporting different messages for a failure that was identical, and the
+            independent replay -- whose whole job is to confirm the same failure -- refused
+            it.  Only what belongs to this run is replaced; the two runs differ by their run
+            directory, and that is exactly the difference the replay is supposed to ignore.
+            """
+            if not run_root:
+                return ()
+            workspace = str(Path(run_root).parent)
+            if workspace in ('', '.', run_root):
+                return _root_spellings(run_root)
+            return tuple(sorted(_root_spellings(run_root) + _root_spellings(workspace), key=len, reverse=True))
+
         def signatures(run):
             from .failure_signature import stable_failure_message
-            root = run.observation.framework_details.get('run_root', '')
+            roots = _run_roots(run.observation.framework_details.get('run_root', ''))
+            def normalized(text):
+                for spelling in roots:
+                    text = text.replace(spelling, RUN_ROOT)
+                return text
             result = []
             for phase in run.observation.tests:
                 if phase.get('outcome') == 'failed':
                     crash = dict(phase.get('crash', {}))
-                    crash['path'] = str(crash.get('path', '')).replace(root, '<run>')
-                    crash['message'] = stable_failure_message(str(crash.get('message', '')).replace(root, '<run>'))
+                    crash['path'] = normalized(str(crash.get('path', '')))
+                    crash['message'] = stable_failure_message(normalized(str(crash.get('message', ''))))
                     comparison = phase.get('assertion_comparison')
                     if phase.get('exception_type') == 'builtins.AssertionError' and comparison:
                         # Compare the observed complete values, not pytest's
                         # abbreviated display. Preserve location, type and op.
                         crash['message'] = {'operator': comparison['operator'],
-                            **{key:stable_failure_message(comparison[key].replace(root, '<run>'), comparison.get(key + '_object_ids', ()))
+                            **{key:stable_failure_message(normalized(comparison[key]), comparison.get(key + '_object_ids', ()))
                                for key in ('left', 'right')}}
                     nodeid = phase.get('nodeid', '').replace('\\', '/')
                     nodeid = nodeid.split(run.run_id + '/code/', 1)[-1]
