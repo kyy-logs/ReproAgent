@@ -194,23 +194,79 @@ def _render_timeline(spans) -> str:
     return f"<h2>Timeline</h2><table>{head}{''.join(rows)}</table>"
 
 
+#: A group of content larger than this opens collapsed: the wire request alone runs to
+#: tens of kilobytes, and a page that opens everything is as unreadable as one that
+#: opens nothing.
+OPEN_INLINE_BYTES = 6000
+
+
+def _order(entry: dict):
+    return (entry.get("offset_seconds") is None, entry.get("offset_seconds") or 0.0)
+
+
 def _render_contents(document: dict) -> str:
-    """The captured calls, each shown once, with how it was obtained."""
-    records = document.get("contents") or []
+    """The captured calls, grouped so a call's input and result stay together.
+
+    A flat list of content ids cannot answer "what was this tool given, and what did it
+    return": the permission point owns the arguments and the execution owns the result,
+    and only the shared call key puts them back in one place.  Small groups open by
+    default, so the page shows the model's calls rather than a list of hashes to click.
+    """
+    records = {record.get("content_id"): record for record in (document.get("contents") or ())}
+    spans = document.get("spans") or ()
     parts = ["<h2>Calls and content</h2>"]
-    if not records:
-        parts.append('<p class="unknown">No content was captured for this run.</p>')
-        return "\n".join(parts)
-    for record in records:
-        flags = [name for name in ("truncated", "redacted", "excerpt_mode")
-                 if record.get(name)]
-        label = " &middot; ".join(
-            [_esc(record.get("content_id")), _esc(record.get("source")),
-             _esc(record.get("availability")), _esc(record.get("kind"))]
-            + [_esc(record.get(name)) for name in flags])
+
+    arguments: dict = {}
+    for entry in spans:
+        key = (entry.get("attributes") or {}).get("tool_call_key")
+        if key and entry.get("kind") == "event":
+            arguments[key] = list(entry.get("content_refs") or ())
+
+    shown, emitted = set(), 0
+    for entry in sorted(spans, key=_order):
+        if entry.get("kind") != "span":
+            continue
+        attributes = entry.get("attributes") or {}
+        key = attributes.get("tool_call_key")
+        refs = list(entry.get("content_refs") or ())
+        if key:
+            refs = [ref for ref in arguments.get(key, ()) if ref not in refs] + refs
+        refs = [ref for ref in refs if ref in records]
+        if not refs:
+            continue
+        emitted += 1
+        size = sum(len((records[ref].get("text") or "").encode("utf-8")) for ref in refs)
+        # What is inside is named in the summary: a collapsed block labelled only with a
+        # byte count reads as empty, and the request is the thing people look for.
+        holds = ", ".join(dict.fromkeys(str(records[ref].get("source")) for ref in refs))
+        label = _esc(entry.get("name"))
+        if key:
+            label += f' &middot; call {_esc(str(key)[:8])}'
+        status = str(entry.get("status") or UNKNOWN_TEXT)
+        opener = " open" if size <= OPEN_INLINE_BYTES else ""
+        parts.append(f'<details{opener}><summary>{label} '
+                     f'<span class="status-{_esc(status)}">{_esc(status)}</span>'
+                     f' &middot; {_esc(holds)}'
+                     f' <span class="unknown">{_esc(size)} bytes</span></summary>')
+        for ref in refs:
+            record = records[ref]
+            shown.add(ref)
+            flags = ", ".join(name for name in ("truncated", "redacted") if record.get(name))
+            head = (f'<h4>{_esc(record.get("source"))} &middot; {_esc(record.get("availability"))}'
+                    + (f' &middot; {_esc(flags)}' if flags else '') + "</h4>")
+            text = record.get("text")
+            parts.append(head + (f"<pre>{_esc(text)}</pre>" if text
+                                 else f'<p class="unknown">{_esc(record.get("availability"))}</p>'))
+        parts.append("</details>")
+
+    orphans = [record for cid, record in records.items() if cid not in shown]
+    for record in orphans:
         text = record.get("text")
-        body = _esc(text) if text else f'<span class="unknown">{_esc(record.get("availability"))}</span>'
-        parts.append(f"<details><summary>{label}</summary><pre>{body}</pre></details>")
+        parts.append(f'<details><summary>{_esc(record.get("source"))} '
+                     f'&middot; {_esc(record.get("availability"))}</summary>'
+                     + (f"<pre>{_esc(text)}</pre>" if text else "") + "</details>")
+    if not emitted and not orphans:
+        parts.append('<p class="unknown">No content was captured for this run.</p>')
     return "\n".join(parts)
 
 

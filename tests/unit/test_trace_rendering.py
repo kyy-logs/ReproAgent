@@ -280,7 +280,7 @@ def test_a_missing_capture_is_shown_with_its_reason():
     assert "not_returned" in page
     # Not drawn as content that happened to be blank: the reason is what is shown.
     assert "<pre></pre>" not in page
-    assert "not_returned</span></pre>" in page
+    assert '<p class="unknown">not_returned</p>' in page
 
 
 def test_the_page_marks_an_incomplete_content_set():
