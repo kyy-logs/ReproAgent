@@ -90,11 +90,11 @@ def test_nested_spans_use_monotonic_duration():
     assert spans["tool.Read"]["offset_seconds"] == pytest.approx(0.5)
     # The parent link comes from this task's own stack.
     assert spans["tool.Read"]["parent_span_id"] == spans["explore"]["span_id"]
-    assert spans["explore"]["parent_span_id"] is None
+    assert spans["explore"]["parent_span_id"] == document["root_span_id"]
     assert len(document["trace_id"]) == 32
     assert len(spans["explore"]["span_id"]) == 16
 
-    assert document["schema_version"] == 1
+    assert document["schema_version"] == 2
     assert document["task_id"] == "task-1"
     assert document["status"] == "DONE"
     assert document["main_duration"] == 3.0
@@ -141,9 +141,9 @@ def test_concurrent_tasks_do_not_share_parent():
     for name, document in documents.items():
         spans = {entry["name"]: entry for entry in document["spans"]}
         # Each document holds exactly its own two spans, linked to each other.
-        assert sorted(spans) == [f"explore.{name}", f"tool.{name}"]
+        assert sorted(spans) == [f"explore.{name}", "reproagent.task", f"tool.{name}"]
         assert spans[f"tool.{name}"]["parent_span_id"] == spans[f"explore.{name}"]["span_id"]
-        assert spans[f"explore.{name}"]["parent_span_id"] is None
+        assert spans[f"explore.{name}"]["parent_span_id"] == document["root_span_id"]
 
 
 def test_recorder_failure_preserves_domain_exception():
@@ -193,7 +193,7 @@ def test_caps_mark_partial_without_faking_totals():
             handle.annotate(tool="Read")
 
     bounded_document = bounded.finish(task_id="task-2", status="DONE", main_duration=1.0)
-    first, second = bounded_document["spans"]
+    first, second = [s for s in bounded_document["spans"] if s["name"] != "reproagent.task"]
 
     assert "purpose" not in first["attributes"]
     assert first["attributes"]["tool"] == "Read"
@@ -229,7 +229,7 @@ def test_metadata_projection_excludes_content_and_credentials():
             handle.annotate(result_code=f"DENIED for {secret}")
 
     document = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
-    attributes = document["spans"][0]["attributes"]
+    attributes = named(document, "explore")[0]["attributes"]
 
     assert attributes["purpose"] == "exploration"
     assert attributes["tool"] == "Read"
@@ -241,7 +241,7 @@ def test_metadata_projection_excludes_content_and_credentials():
         assert dropped not in attributes
 
     # The allowed field keeps its shape, with the credential masked in place.
-    assert document["spans"][1]["attributes"]["result_code"] == "DENIED for <redacted>"
+    assert named(document,"explore")[1]["attributes"]["result_code"] == "DENIED for <redacted>"
 
     blob = json.dumps(document)
     assert secret not in blob
@@ -310,7 +310,7 @@ def test_a_span_closed_from_another_context_still_propagates():
             return recorder
 
     document = asyncio.run(main()).finish(task_id="task-1", status="DONE", main_duration=1.0)
-    assert [entry["name"] for entry in document["spans"]] == ["tool.Read"]
+    assert [entry["name"] for entry in document["spans"]] == ["reproagent.task", "tool.Read"]
 
 
 def test_a_nested_session_does_not_inherit_a_foreign_parent():
@@ -323,10 +323,10 @@ def test_a_nested_session_does_not_inherit_a_foreign_parent():
             inner_document = inner.finish(task_id="inner", status="DONE", main_duration=1.0)
         outer_document = outer.finish(task_id="outer", status="DONE", main_duration=1.0)
 
-    inner_span = inner_document["spans"][0]
+    inner_span = named(inner_document,"inner-work")[0]
     assert inner_span["name"] == "inner-work"
     # The outer span is still open here, but it belongs to another document.
-    assert inner_span["parent_span_id"] is None
+    assert inner_span["parent_span_id"] == inner_document["root_span_id"]
     assert inner_span["span_id"] not in {entry["span_id"] for entry in outer_document["spans"]}
 
 
@@ -373,8 +373,8 @@ def test_finishing_freezes_the_document_it_returns():
         with span("closes-after-finish"):
             pass
 
-    assert [entry["name"] for entry in document["spans"]] == ["before-finish"]
-    assert document["summary"]["span_count"] == len(document["spans"]) == 1
+    assert [entry["name"] for entry in document["spans"]] == ["reproagent.task", "before-finish"]
+    assert document["summary"]["span_count"] == len(document["spans"]) == 2
 
 
 def test_a_span_captures_redacted_content_and_refers_to_it():

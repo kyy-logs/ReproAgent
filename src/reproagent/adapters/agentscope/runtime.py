@@ -25,7 +25,7 @@ from agentscope.state import AgentState
 
 from .dependency import require_agentscope
 from .middleware import PROTOCOL_ATTEMPTS, ExplorationMiddleware, PhaseEnded, PhaseProtocolError
-from .observability import TraceMiddleware
+from .observability import ReproTraceMiddleware, SafeTracingMiddleware
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.models import AgentContext
@@ -93,7 +93,7 @@ class AgentScopeRuntime:
         # this task is traced: the phase answers ``on_model_call`` itself instead of
         # delegating, so a middleware behind it would never see a model call at all --
         # including the rejected ones a trace exists to explain.
-        middlewares = ([TraceMiddleware(context, allowed_tools=self.allowed_tools)]
+        middlewares = ([SafeTracingMiddleware(), ReproTraceMiddleware(context, allowed_tools=self.allowed_tools)]
                        if tracing_enabled() else [])
         self._agent = Agent(
             name=AGENT_NAME, system_prompt=system_prompt, model=model, toolkit=toolkit,

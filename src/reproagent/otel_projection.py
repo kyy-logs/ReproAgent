@@ -224,3 +224,21 @@ def project_native_span(span, *, sink):
         if any(getattr(span,k,0) for k in ('dropped_attributes','dropped_events','dropped_links')):
             sink._partial=True
             sink._warn('OpenTelemetry omitted some attributes, events or links')
+
+
+def classify_error(exc):
+    code=getattr(getattr(exc,'response',None),'status_code',None)
+    if isinstance(code,int):
+        category={400:'input',422:'input',401:'authentication',403:'authentication',429:'rate_limit'}.get(code,
+            'provider' if 500<=code<=599 else 'unknown')
+        return dict(error_category=category,classification_source='http_status')
+    if getattr(exc,'code',None):
+        return dict(error_category='protocol',classification_source='program_code')
+    import asyncio
+    import httpx
+    if isinstance(exc,(asyncio.CancelledError,GeneratorExit)):
+        category='cancelled'
+    elif isinstance(exc,httpx.TransportError): category='transport'
+    elif isinstance(exc,TimeoutError): category='runtime'
+    else: category='unknown'
+    return dict(error_category=category,classification_source='exception_type')

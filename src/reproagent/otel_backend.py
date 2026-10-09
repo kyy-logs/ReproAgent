@@ -3,7 +3,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from threading import RLock
+from threading import RLock, get_ident
+import asyncio
 from opentelemetry import context, trace
 from opentelemetry.context import Context
 from opentelemetry.sdk.trace import TracerProvider, SpanProcessor, SpanLimits
@@ -71,14 +72,21 @@ def ensure_local_provider():
         _provider = provider
         return ProviderActivation(True)
 
+def context_owner():
+    try: task=asyncio.current_task()
+    except RuntimeError: task=None
+    return get_ident(),task
+
 class TaskTraceSession:
     def __init__(self, sink):
         self.sink = sink
         self.closed = False
         self.token = None
         self.root = None
+        self.owner = context_owner()
     def close(self):
         if self.closed:
+            self.detach_context()
             return
         self.closed = True
         if self.root is not None:
@@ -86,7 +94,9 @@ class TaskTraceSession:
             with _lock:
                 _routes.pop(self.root.get_span_context().trace_id, None)
         self.sink._active = False
-        if self.token is not None:
+        self.detach_context()
+    def detach_context(self):
+        if self.token is not None and context_owner() == self.owner:
             try:
                 context.detach(self.token)
             except (ValueError, RuntimeError):

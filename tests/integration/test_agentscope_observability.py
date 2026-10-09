@@ -30,7 +30,7 @@ from reproagent.adapters.agentscope.middleware import (
     PhaseProtocolError,
 )
 from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
-from reproagent.adapters.agentscope.observability import TraceMiddleware
+from reproagent.adapters.agentscope.observability import ReproTraceMiddleware, SafeTracingMiddleware
 from reproagent.adapters.agentscope.runtime import AgentScopeRuntime
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend
 from reproagent.adapters.agentscope.tools import TOOL_NAMES, build_toolkit
@@ -50,6 +50,15 @@ from reproagent.core.phase import PhaseGate
 from reproagent.observability import TraceRecorder
 from reproagent.store import TaskStore
 from reproagent.workspace import Workspace
+
+class TraceMiddleware(ReproTraceMiddleware):
+    """Standalone hook test harness with the actual native tool span outside it."""
+    async def on_acting(self,agent,input_kwargs,next_handler):
+        if agent is None:
+            agent=SimpleNamespace(toolkit=SimpleNamespace(tools={}), state=SimpleNamespace(session_id="offline"))
+        async def domain(**kwargs):
+            async for item in super(TraceMiddleware,self).on_acting(agent,input_kwargs,next_handler): yield item
+        async for item in SafeTracingMiddleware().on_acting(agent,input_kwargs,domain): yield item
 
 SYSTEM_PROMPT = "Explore the frozen snapshot and publish one reproduction candidate."
 MODULE_TEXT = "def parse(values):\n    return [values[0]]\n"
@@ -183,14 +192,17 @@ def test_native_hooks_observe_without_changing_response(tmp_path, projects, fact
     # The observation changed neither the domain result nor the conversation the task kept.
     assert result == plain
     assert len(messages) == len(untraced.runtime.messages)
-    assert [entry["name"] for entry in named(doc, "sdk.model_round")]
+    assert [entry["name"] for entry in named(doc, "sdk.model_call")]
     read = named(doc, "tool.Read")
     assert len(read) == 1 and read[0]["attributes"]["tool"] == "Read"
     assert read[0]["attributes"]["result_code"] == "SUCCESS"
     # The round closes before the agent acts, so a tool is a sibling of the model round
     # it followed -- not a child of it. Both hang off the phase span Task 3 will add.
-    round_entry = named(doc, "sdk.model_round")[0]
-    assert read[0]["parent_span_id"] == round_entry["parent_span_id"]
+    round_entry = named(doc, "sdk.model_call")[0]
+    by_id = {s["span_id"]: s for s in doc["spans"]}
+    assert by_id[read[0]["parent_span_id"]]["name"] == "sdk.agent_reply"
+    assert by_id[round_entry["parent_span_id"]]["name"] == "agent.reasoning"
+    assert by_id[round_entry["parent_span_id"]]["parent_span_id"] == read[0]["parent_span_id"]
 
 
 def test_outer_hook_sees_protocol_rejection(tmp_path, projects, facts):
@@ -201,7 +213,7 @@ def test_outer_hook_sees_protocol_rejection(tmp_path, projects, facts):
             explore(env)
         doc = document(env, status="FAILED")
 
-    rounds = named(doc, "sdk.model_round")
+    rounds = named(doc, "sdk.model_call")
     # The domain middleware answers its own on_model_call without delegating, so the
     # outer hook can only see the rejection if it wraps the whole call.
     assert rounds and all(entry["attributes"].get("result_code") == "MULTIPLE_TOOL_CALLS"
@@ -222,7 +234,7 @@ def test_denial_is_not_tool_execution(tmp_path, projects, facts):
     # No execution happened, and none is counted -- there was never a call to refuse.
     assert not [entry for entry in doc["spans"] if entry["name"].startswith("tool.")]
     assert doc["summary"]["tool_executions"] == 0
-    codes = [entry["attributes"].get("result_code") for entry in named(doc, "sdk.model_round")]
+    codes = [entry["attributes"].get("result_code") for entry in named(doc, "sdk.model_call")]
     assert codes == ["UNKNOWN_TOOL"] * PROTOCOL_ATTEMPTS
 
 
@@ -243,7 +255,7 @@ def test_a_refused_permission_is_a_point_and_runs_nothing(tmp_path, projects, fa
         assert asyncio.run(refuse()).behavior is PermissionBehavior.DENY
         doc = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
 
-    points = [entry for entry in by_kind(doc, "event") if entry["name"] == "permission"]
+    points = [entry for entry in by_kind(doc, "point") if entry["name"] == "permission"]
     assert [entry["attributes"]["result_code"] for entry in points] == ["DENIED"]
     # The decision is a point event with no duration, and no execution was recorded.
     assert points[0]["duration_seconds"] is None
@@ -262,7 +274,7 @@ def test_permission_and_execution_are_joined_by_call(tmp_path, projects, facts):
         explore(env)
         doc = document(env)
 
-    allowed = [entry for entry in by_kind(doc, "event")
+    allowed = [entry for entry in by_kind(doc, "point")
                if entry["name"] == "permission" and entry["attributes"].get("result_code") == "ALLOWED"]
     executions = named(doc, "tool.Read")
 
@@ -282,7 +294,7 @@ def test_the_trace_records_the_budget_and_the_registered_tool_set(tmp_path, proj
         explore(env)
         doc = document(env)
 
-    registered = [entry for entry in by_kind(doc, "event") if entry["name"] == "exploration.tools"]
+    registered = [entry for entry in by_kind(doc, "point") if entry["name"] == "exploration.tools"]
     assert registered, "the phase records the surface it actually registered"
     attributes = registered[0]["attributes"]
     # The real toolkit, not the six the docstring happens to mention.
@@ -320,7 +332,7 @@ def test_reserved_denial_is_distinct_from_plain_denial(tmp_path, projects, facts
         explore(env)
         doc = document(env)
 
-    codes = [entry["attributes"].get("result_code") for entry in by_kind(doc, "event")
+    codes = [entry["attributes"].get("result_code") for entry in by_kind(doc, "point")
              if entry["name"] == "permission"]
     assert "ALLOWED" in codes
     assert "RESERVED_FOR_PUBLISHING" in codes
@@ -439,7 +451,7 @@ def test_the_tool_input_and_result_are_captured_and_correlated(tmp_path, project
         explore(env)
         doc = document(env)
 
-    permission = next(entry for entry in by_kind(doc, "event") if entry["name"] == "permission")
+    permission = next(entry for entry in by_kind(doc, "point") if entry["name"] == "permission")
     executed = named(doc, "tool.Read")[0]
     stored = {record["content_id"]: record for record in doc["contents"]}
 
@@ -517,7 +529,7 @@ def test_a_finished_phase_does_not_report_a_failed_model_round(tmp_path, project
         doc = document(env)
 
     assert result.kind == "candidate"
-    rounds = named(doc, "sdk.model_round")
+    rounds = named(doc, "sdk.model_call")
     assert rounds
     assert all(entry["status"] != "error" for entry in rounds), \
         [(entry["status"], entry["attributes"]) for entry in rounds]
@@ -537,7 +549,7 @@ def test_a_budget_stop_is_not_a_failed_model_round(tmp_path, projects, facts):
             explore(env)
         doc = document(env, status="EXHAUSTED")
 
-    rounds = named(doc, "sdk.model_round")
+    rounds = named(doc, "sdk.model_call")
     assert rounds
     assert all(entry["status"] != "error" for entry in rounds), \
         [(entry["status"], entry["attributes"]) for entry in rounds]

@@ -1,41 +1,21 @@
-"""The SDK's own hooks, observed without being changed.
+"""Native AgentScope spans plus controlled domain observations.
 
-This middleware only reads what the SDK and the phase's own middleware already made:
-which replies were rejected and why, which tools really executed, and how each one
-ended.  It never calls a permission check of its own (the phase's decision is
-projected instead), never inspects tool payloads, and never returns anything other
-than what it was handed.
-
-Registration order matters and is the one thing this module insists on.  The phase's
-``ExplorationMiddleware`` answers ``on_model_call`` itself rather than delegating to
-the next handler -- it has to, because it is the only place the output ceiling is put
-on the wire -- so a middleware registered *after* it would never see a model call at
-all, including the rejected ones a trace most needs to explain.  The trace therefore
-goes in front.
+SafeTracingMiddleware delegates to the real public SDK hooks. The wrapper isolates
+observation faults without replaying an already executed handler.
 """
-from __future__ import annotations
-
-from agentscope.middleware import MiddlewareBase
+import asyncio
+from collections import deque
+from agentscope.middleware import MiddlewareBase, TracingMiddleware
 from agentscope.tool import ToolResponse
-
-from .dependency import require_agentscope
+from opentelemetry import trace, context as otel_context
 from .middleware import PhaseEnded
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
-from ...observability import span, tool_call_key
+from ...observability import current_handle, span, tool_call_key
+from ...otel_backend import current_sink
 
-#: The span a whole SDK reply sits in: one model round, checked as a unit.
-MODEL_ROUND_SPAN = "sdk.model_round"
-
-#: What a round that was turned away because the phase already has its result is called.
-PHASE_ENDED_CODE = "PHASE_ENDED"
-#: What a round cut short by the budget, with no reason of its own, is called.
-BUDGET_STOPPED_CODE = "BUDGET_STOPPED"
-
-#: Marks the controlled outcome a tool reported, so a refusal and an execution never
-#: look alike.  The values are the SDK's own ``ToolResultState`` names.
-INCOMPLETE = "INCOMPLETE"
-
+MODEL_ROUND_SPAN='sdk.model_call'
+INCOMPLETE='INCOMPLETE'
 
 def tool_state(item) -> str | None:
     """What one streamed item says about the tool, or None while it is still running.
@@ -61,71 +41,127 @@ def tool_result(response) -> dict:
     return {"content": blocks, "state": str(getattr(response, "state", ""))}
 
 
-class TraceMiddleware(MiddlewareBase):
-    """Records the SDK's model rounds and tool executions into the task's trace."""
-
-    def __init__(self, context, *, allowed_tools=TOOL_NAMES) -> None:
-        require_agentscope()
-        self.context = context
-        self.allowed_tools = tuple(allowed_tools)
-
-    async def on_model_call(self, agent, input_kwargs, next_handler):
-        """Time one SDK model round and record how the whole reply was judged."""
-        with span(MODEL_ROUND_SPAN, attributes={"purpose": "exploration"},
-                  expected=(PhaseEnded, BudgetStopped)) as handle:
+class SafeTracingMiddleware(TracingMiddleware):
+    """Public-hook guard around native tracing; native code creates the spans."""
+    async def on_model_call(self,agent,input_kwargs,next_handler):
+        called=False;result=None;domain_error=None
+        async def tracked(**kwargs):
+            nonlocal called,result,domain_error
+            called=True
             try:
-                response = await next_handler()
-            except (PhaseEnded, BudgetStopped) as ended:
-                # Both are how a phase *ends* rather than how it fails: the phase either
-                # already has its result, or the task ran out of budget.  An EXHAUSTED
-                # task whose last round reads as a failure is exactly the mislabelling
-                # this handles.
-                handle.annotate(result_code=PHASE_ENDED_CODE if isinstance(ended, PhaseEnded)
-                                else str(getattr(ended, "reason", "") or BUDGET_STOPPED_CODE))
+                result=await next_handler(**kwargs)
+                return result
+            except BaseException as exc:
+                domain_error=exc
                 raise
-            except BaseException as failure:
-                # A rejected reply is the fact worth keeping: the phase's own check
-                # ran inside this call and refused the whole response.
-                code = getattr(failure, "code", None)
-                if isinstance(code, str):
-                    handle.annotate(result_code=code)
-                raise
-            return response
+        try:
+            return await super().on_model_call(agent,input_kwargs,tracked)
+        except BaseException:
+            if domain_error is not None: raise domain_error
+            sink=current_sink()
+            if sink is not None: sink._fault()
+            if not called: return await tracked(**input_kwargs)
+            return result
 
-    async def on_acting(self, agent, input_kwargs, next_handler):
-        """Forward the tool's stream unchanged, timing it and recording its outcome."""
-        tool_call = input_kwargs.get("tool_call")
-        raw_name = getattr(tool_call, "name", "")
-        # A name the phase never registered is model-controlled text, so only a
-        # registered one is written down -- as the domain event already does.
-        name = raw_name if raw_name in self.allowed_tools else ""
-        # The SDK's own call id, turned into a key: the only thing that pairs this
-        # execution with the permission decision that admitted it.  A tool name cannot:
-        # the same tool is called many times in one phase.
-        key = tool_call_key(sdk_call_id=getattr(tool_call, "id", ""),
-                            step_index=self.context.budget.steps_used)
-        attributes = {"tool": name}
-        if key is not None:
-            attributes["tool_call_key"] = key
-        # Named from the sanitized name, not the raw one: a span name is written down
-        # like any other field, and the raw name is model-controlled text.
-        with span(f"tool.{name or 'unknown'}", attributes=attributes) as handle:
-            terminal = None
-            async for item in next_handler():
-                state = tool_state(item)
-                if state is not None:
-                    # Recorded before the final item is handed on: a consumer that stops
-                    # the moment a candidate is published must not turn an execution that
-                    # already finished into a failure.
-                    terminal = state
-                    handle.annotate(result_code=state)
-                    handle.capture("sdk_tool_result", tool_result(item), source="sdk_tool_result")
+    async def _stream(self,native,agent,input_kwargs,next_handler):
+        pending=deque();source=None;domain_error=None;exhausted=False
+        async def tracked(**kwargs):
+            nonlocal source,domain_error,exhausted
+            source=next_handler(**kwargs)
+            try:
+                async for item in source:
+                    pending.append(item)
+                    yield item
+                exhausted=True
+            except BaseException as exc:
+                domain_error=exc
+                raise
+        gen=native(agent,input_kwargs,tracked)
+        try:
+            try:
+                async for item in gen:
+                    if pending and pending[0] is item: pending.popleft()
+                    yield item
+            except (GeneratorExit,asyncio.CancelledError):
+                raise
+            except BaseException:
+                if domain_error is not None: raise domain_error
+                sink=current_sink()
+                if sink is not None: sink._fault()
+                while pending: yield pending.popleft()
+                if not exhausted:
+                    if source is None: source=next_handler(**input_kwargs)
+                    async for item in source: yield item
+        finally:
+            await gen.aclose()
+            if source is not None: await source.aclose()
+
+    async def on_reply(self,agent,input_kwargs,next_handler):
+        async for item in self._stream(super().on_reply,agent,input_kwargs,next_handler): yield item
+    async def on_acting(self,agent,input_kwargs,next_handler):
+        async for item in self._stream(super().on_acting,agent,input_kwargs,next_handler): yield item
+
+class ReproTraceMiddleware(MiddlewareBase):
+    def __init__(self,context,*,allowed_tools=TOOL_NAMES):
+        self.context=context;self.allowed_tools=tuple(allowed_tools)
+    async def on_model_call(self,agent,input_kwargs,next_handler):
+        handle=current_handle()
+        handle.annotate(purpose='exploration')
+        try: return await next_handler()
+        except (PhaseEnded,BudgetStopped) as exc:
+            handle.annotate(result_code='PHASE_ENDED' if isinstance(exc,PhaseEnded) else str(exc.reason))
+            if hasattr(handle,'_entry'): handle._entry['_display_status']='ok'
+            raise
+        except BaseException as exc:
+            from ...otel_projection import classify_error
+            handle.annotate(**classify_error(exc))
+            code=getattr(exc,'code',None)
+            if isinstance(code,str): handle.annotate(result_code=code)
+            raise
+    async def on_reasoning(self,agent,input_kwargs,next_handler):
+        # OTel's context cannot remain attached across a yielded stream item.
+        sink=current_sink()
+        if sink is None:
+            async for item in next_handler(): yield item
+            return
+        parent=otel_context.get_current()
+        active=trace.get_tracer('reproagent').start_span('agent.reasoning',context=parent)
+        gen=next_handler()
+        try:
+            while True:
+                token=otel_context.attach(trace.set_span_in_context(active,parent))
+                try: item=await anext(gen)
+                except StopAsyncIteration: break
+                finally: otel_context.detach(token)
                 yield item
+        finally:
+            await gen.aclose()
+            active.end()
+    async def on_acting(self,agent,input_kwargs,next_handler):
+        tool_call=input_kwargs.get('tool_call')
+        raw=getattr(tool_call,'name','')
+        name=raw if raw in self.allowed_tools else ''
+        handle=current_handle()
+        handle.annotate(tool=name,tool_call_key=tool_call_key(sdk_call_id=getattr(tool_call,'id',''),
+            step_index=self.context.budget.steps_used))
+        terminal=None
+        try:
+            async for item in next_handler():
+                state=tool_state(item)
+                if state is not None:
+                    terminal=state;handle.annotate(result_code=state)
+                    handle.capture('sdk_tool_result',tool_result(item),source='sdk_tool_result')
+                yield item
+        except asyncio.CancelledError:
+            if hasattr(handle,"_entry"): handle._entry["_display_status"]="cancelled"
+            raise
+        except GeneratorExit:
+            if terminal is not None and hasattr(handle,'_entry'): handle._entry['_display_status']='ok'
+            raise
+        finally:
             if terminal is None:
-                # What arrived was never a result, so the pieces are not reported as one.
                 handle.annotate(result_code=INCOMPLETE)
-                handle.capture("sdk_tool_result", None, source="sdk_tool_result",
-                               availability="incomplete")
+                handle.capture('sdk_tool_result',None,source='sdk_tool_result',availability='incomplete')
 
-
-__all__ = ["INCOMPLETE", "MODEL_ROUND_SPAN", "TraceMiddleware", "tool_state"]
+# Temporary import compatibility for test helpers; no second engine or spans.
+TraceMiddleware=ReproTraceMiddleware
