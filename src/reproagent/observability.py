@@ -31,6 +31,7 @@ SCHEMA_VERSION = 1
 MAX_SPANS = 1024
 MAX_ATTRIBUTE_BYTES = 2048
 MAX_DOCUMENT_BYTES = 1 << 20
+MAX_HTML_BYTES = 4 << 20
 
 #: Where a traced task keeps its trace, relative to the task's own output directory.
 TRACE_DIRECTORY = "observability"
@@ -39,6 +40,7 @@ TRACE_HTML_FILENAME = "trace.html"
 TEMPLATE_MARKER = "<!--TRACE-CONTENT-->"
 UNKNOWN_TEXT = "unknown"
 WARNING_DOCUMENT_TOO_LARGE = "the trace exceeded the document ceiling and was written marked incomplete"
+WARNING_PAGE_TOO_LARGE = "the rendered page exceeded the viewer ceiling and was refused"
 WARNING_TRACE_PATH_UNSAFE = "the trace destination is not a plain task-local directory and was refused"
 
 #: The only attribute keys a span may carry.  Anything else is dropped rather than
@@ -520,7 +522,11 @@ def render_trace(document: dict) -> str:
     from importlib.resources import files
 
     template = files("reproagent").joinpath("resources/trace.html.template").read_text(encoding="utf-8")
-    return template.replace(TEMPLATE_MARKER, _render_body(document))
+    page = template.replace(TEMPLATE_MARKER, _render_body(document))
+    if len(page.encode("utf-8")) > MAX_HTML_BYTES:
+        # Refused rather than cut: half a timeline reads as a whole one.
+        raise ValueError(WARNING_PAGE_TOO_LARGE)
+    return page
 
 
 def write_trace_html(task_dir: Path) -> Path:

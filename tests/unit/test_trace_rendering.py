@@ -137,6 +137,15 @@ def test_missing_or_corrupt_trace_is_rejected(tmp_path):
     assert cli.main(["trace", str(tmp_path / "absent")]) == 2
 
 
+def test_an_oversized_page_is_refused():
+    """The page has a ceiling too, and a document past it is refused rather than cut."""
+    oversized = document(spans=[span(f"{index:016x}", "tool.Read", tool="x" * 400)
+                                for index in range(20000)])
+
+    with pytest.raises(ValueError):
+        render_trace(oversized)
+
+
 def test_observability_output_cannot_redirect_to_artifacts(tmp_path):
     task = tmp_path / "task"
     (task / "artifacts").mkdir(parents=True)
