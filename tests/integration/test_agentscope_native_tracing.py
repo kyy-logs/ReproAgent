@@ -75,3 +75,48 @@ def test_native_observer_failure_after_handler_returns_keeps_result():
             return actual,doc
     actual,doc=asyncio.run(run())
     assert actual is result and calls==[1] and doc['partial']
+
+
+def test_native_stream_serialization_failure_keeps_items_and_does_not_replay():
+    from reproagent.adapters.agentscope.observability import SafeTracingMiddleware
+    from reproagent.observability import trace_session
+    from agentscope.message import ToolCallBlock
+    from types import SimpleNamespace
+    class Unserializable:
+        def __str__(self): raise ValueError('observer serializer failed')
+    first=object();final=Unserializable();calls=[]
+    async def handler(**kwargs):
+        calls.append(1)
+        yield first
+        yield final
+    async def run():
+        with trace_session() as recorder:
+            received=[]
+            agent=SimpleNamespace(toolkit=SimpleNamespace(tools={}),state=SimpleNamespace(session_id='offline'))
+            async for item in SafeTracingMiddleware().on_acting(agent,
+                {'tool_call':ToolCallBlock(id='call-1',name='Read',input='{}')},handler):
+                received.append(item)
+            return received,recorder.finish(task_id='t',status='DONE',main_duration=1)
+    received,doc=asyncio.run(run())
+    assert received==[first,final] and calls==[1] and doc['partial']
+
+
+def test_native_exception_recording_fault_preserves_original_domain_exception():
+    from reproagent.adapters.agentscope.observability import SafeTracingMiddleware
+    from reproagent.observability import trace_session
+    from agentscope.model import OpenAIChatModel
+    from agentscope.credential import OpenAICredential
+    from types import SimpleNamespace
+    class DomainError(ValueError):
+        def __str__(self): raise RuntimeError('observer cannot stringify exception')
+    original=DomainError()
+    async def handler(**kwargs): raise original
+    async def run():
+        with trace_session():
+            model=OpenAIChatModel(model='offline',credential=OpenAICredential(api_key='offline'))
+            with pytest.raises(DomainError) as caught:
+                await SafeTracingMiddleware().on_model_call(
+                    SimpleNamespace(state=SimpleNamespace(session_id='offline')),
+                    {'current_model':model,'messages':[]},handler)
+            assert caught.value is original
+    asyncio.run(run())

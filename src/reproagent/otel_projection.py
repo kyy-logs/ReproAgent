@@ -57,6 +57,10 @@ class TaskTraceSink:
                 status="incomplete",attributes={},content_refs=[],content_status=None,
                 otel_span_id=ident,instrumentation_scope=span.instrumentation_scope.name,
                 otel_status="UNSET",otel_start_time_ns=span.start_time,otel_end_time_ns=None)
+            if span.instrumentation_scope.name == 'agentscope':
+                operation=(span.attributes or {}).get('gen_ai.operation.name')
+                entry['name']={'chat':'sdk.model_call','invoke_agent':'sdk.agent_reply',
+                               'execute_tool':'tool.unknown'}.get(operation,'sdk.operation')
             if self._admit(entry):
                 self._started[ident] = now
     def current_entry(self):
@@ -171,7 +175,7 @@ class TaskTraceSink:
                 "logical_calls": sum(1 for entry in self._spans if entry["name"] == LOGICAL_SPAN),
                 "http_attempts": len(leaves),
                 "tool_executions": sum(1 for entry in self._spans
-                                       if entry["kind"] == "span" and entry["name"].startswith("tool.")),
+                                       if entry["kind"] == "span" and entry["name"].startswith("tool.") and entry.get("instrumentation_scope")=="agentscope"),
                 "usage": _sum_tokens(leaves),
                 "cost": _sum_cost(leaves),
                 "learning": learning,

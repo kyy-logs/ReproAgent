@@ -1,6 +1,6 @@
 # ReproAgent AgentScope 原生观测迁移设计
 
-日期：2026-10-09。状态：待实现；本次仅提交设计与计划。
+日期：2026-10-09。状态：迁移实现中，验收结果另见回执。
 基线：main `cd309c685a1591820330fef78893eb4641a68bd9`。
 已读本地 AgentScope 2.0.9 与 OpenTelemetry API/SDK 1.45.0 源码。
 
@@ -61,7 +61,9 @@ close先结束根span，在该on_end完成投影后注销路由；finish再冻�
 
 ## Native与业务补充的边界
 
-注册顺序：`[TracingMiddleware(), ReproTraceMiddleware(...), ExplorationMiddleware(...)]`，仅在本项目会话可用时注册前两项。
+注册顺序：`[SafeTracingMiddleware(), ReproTraceMiddleware(...), ExplorationMiddleware(...)]`，仅在本项目会话可用时注册前两项。
+
+SafeTracingMiddleware继承原生TracingMiddleware，调用其公开super hooks创建span；在外层记录handler是否已经执行及已产生结果，观测序列化失败只降级，不重跑handler，也不改SDK私有实现。
 
 原生负责reply/model/tool span；ReproTraceMiddleware只添加reasoning周期span，以及当前native span的受控业务字段、工具关联和终态。不再创建第二个tool span或sdk.model_round通用span。外层原生model middleware不可放在直接调用模型的ExplorationMiddleware之后。
 
@@ -107,4 +109,4 @@ summary仍只汇总model.http_attempt的usage/费用、model.logical的逻辑次
 
 原生middleware确实创建Agent/model/tool span；一条统一trace包含程序和SDK节点；正常/拒绝/预留/重试/取消/学习均可解释。默认与--no-trace业务请求字节、次数、工具输出、预算、结论保持等价。schema1/2、页面、脱敏、限额、Windows长路径和安装包验证通过。
 
-实现步骤及逐项验收见 `../plans/2026-10-09-reproagent-agentscope-observability-migration.md`。本设计没有执行测试结果；不得引用旧验收数字作为本次迁移通过证据。
+实现步骤及逐项验收见 `../plans/2026-10-09-reproagent-agentscope-observability-migration.md`。本设计不承载测试结果；不得引用旧验收数字作为本次迁移通过证据。
