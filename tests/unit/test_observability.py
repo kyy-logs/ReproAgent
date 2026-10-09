@@ -324,6 +324,26 @@ def test_a_nested_session_does_not_inherit_a_foreign_parent():
     assert inner_span["span_id"] not in {entry["span_id"] for entry in outer_document["spans"]}
 
 
+def test_finishing_freezes_the_document_it_returns():
+    """A span that closes afterwards must not rewrite a document already handed out.
+
+    The stored spans are the live list, so an async generator the loop finalizes late --
+    or a caller finishing inside its own session -- would add timeline rows to a
+    document whose summary still counted the spans it had at finish.  The two would
+    disagree, and nothing would say the trace was incomplete.
+    """
+    recorder = TraceRecorder()
+    with recorder:
+        with span("before-finish"):
+            pass
+        document = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
+        with span("closes-after-finish"):
+            pass
+
+    assert [entry["name"] for entry in document["spans"]] == ["before-finish"]
+    assert document["summary"]["span_count"] == len(document["spans"]) == 1
+
+
 def test_learning_is_reported_separately_from_the_main_run():
     with TraceRecorder() as recorder:
         with span("learn"):

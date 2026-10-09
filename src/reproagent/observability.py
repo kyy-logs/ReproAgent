@@ -123,6 +123,7 @@ class TraceRecorder:
         self._partial = False
         self._failed = False
         self._active = False
+        self._frozen = False
         self._started_clock: float | None = None
         self._started_wall: float | None = None
         self._token = None
@@ -163,6 +164,8 @@ class TraceRecorder:
         return value
 
     def _annotate(self, entry: dict, fields: dict) -> None:
+        if self._frozen:
+            return
         try:
             for key, raw in fields.items():
                 if key not in ALLOWED_ATTRIBUTES:
@@ -212,6 +215,10 @@ class TraceRecorder:
         return entry
 
     def _append(self, entry: dict) -> None:
+        if self._frozen:
+            # The document has been handed out; a span that closes afterwards must not
+            # add a row its own summary never counted.
+            return
         if len(self._spans) >= MAX_SPANS:
             self._warn(WARNING_SPAN_CAP)
             self._partial = True
@@ -262,6 +269,9 @@ class TraceRecorder:
                 total = max(0.0, self._clock() - self._started_clock)
         except Exception:  # noqa: BLE001 - observation never escapes
             self._fault()
+        # Frozen before the document is built: what a reader gets is what the summary
+        # counted, however late anything still in flight finishes.
+        self._frozen = True
         return {
             "schema_version": SCHEMA_VERSION,
             "trace_id": self.trace_id,
@@ -272,7 +282,7 @@ class TraceRecorder:
             "partial": self._partial,
             "metrics_complete": not (self._partial or self._failed),
             "warnings": list(self._warnings),
-            "spans": self._spans,
+            "spans": list(self._spans),
             "summary": self._summarise(learning),
         }
 

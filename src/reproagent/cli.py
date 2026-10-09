@@ -27,7 +27,9 @@ TRACE_WRITE_WARNING = 'reproagent: could not write the activity trace; the task 
 def _write_trace_or_warn(task_dir, document) -> bool:
     try:
         write_trace(task_dir, document)
-    except (OSError, ValueError):
+    except (OSError, ValueError, TypeError):
+        # TypeError is in the list because ``write_trace`` is public: a document it
+        # cannot encode is a failed observation, not a failed task.
         print(TRACE_WRITE_WARNING, file=sys.stderr)
         return False
     return True

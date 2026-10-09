@@ -231,6 +231,14 @@ def test_an_oversized_stored_trace_is_refused_before_it_is_read(tmp_path):
     assert cli.main(["trace", str(task.parent)]) == 2
 
 
+def test_a_trace_that_cannot_be_encoded_is_a_warning(tmp_path, capsys):
+    """``write_trace`` is public and can be handed anything; a bad value is still a warning."""
+    (tmp_path / TRACE_DIRECTORY).mkdir()
+
+    assert cli._write_trace_or_warn(tmp_path, {"schema_version": 1, "not_encodable": object()}) is False
+    assert cli.TRACE_WRITE_WARNING in capsys.readouterr().err
+
+
 def test_observability_output_cannot_redirect_to_artifacts(tmp_path):
     task = tmp_path / "task"
     (task / "artifacts").mkdir(parents=True)
