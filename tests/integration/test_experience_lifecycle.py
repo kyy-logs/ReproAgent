@@ -171,7 +171,16 @@ def test_skipped_learning_never_calls_gateway(tmp_path, projects, facts, mode):
     assert outcome.code in ("skipped_cancelled", "skipped_read_only", "store_error", "skipped_no_evidence")
 
 def test_learning_timeout_preserves_sealed_result(tmp_path, projects, facts, monkeypatch):
-    monkeypatch.setattr(exp(), "LEARNING_SECONDS", 0.15)
+    """The deadline must cut off the call, which means it has to outlast the preparation.
+
+    The learning budget starts before ``build_learning_input`` and the check that raises is
+    taken before the request is sent, so a budget shorter than the preparation produces
+    ``timeout`` with no request at all -- the same code, from the other side of the call.
+    At 0.15s that is what happened on CI, where the whole of the store reading and hashing
+    took longer than the budget; 5s keeps the deadline far above preparation and still
+    reaches the hanging call, which is the branch this test is about.
+    """
+    monkeypatch.setattr(exp(), "LEARNING_SECONDS", 5)
     _, controller, result, _, _, calls = run_sdk_task(tmp_path, projects, facts, learning="timeout")
     assert result.status == TaskState.DONE and controller.learning_result.code == "timeout"
     assert len(calls) == 1 and controller.store.load_record("task", result.task_id) == result
