@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Evidence-first local Python bug reproduction agent"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["httpx>=0.27,<1", "agentscope==2.0.9"]
+dependencies = ["httpx>=0.27,<1", "agentscope==2.0.9", "opentelemetry-api==1.45.0", "opentelemetry-sdk==1.45.0"]
 
 [project.optional-dependencies]
 # Tests build a wheel with --no-build-isolation, which needs the backend importable.
