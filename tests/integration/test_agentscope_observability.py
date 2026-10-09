@@ -348,7 +348,7 @@ def test_tool_stream_is_forwarded_once(tmp_path, projects, facts):
     final = ToolResponse(content=[TextBlock(text="done")], state=ToolResultState.SUCCESS)
 
     with TraceRecorder() as recorder:
-        middleware = TraceMiddleware()
+        middleware = TraceMiddleware(facts.context())
         forward, received = asyncio.run(acting(middleware, CALL, [chunk, final]))
         doc = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
 
@@ -374,6 +374,130 @@ def test_published_candidate_survives_retirement(tmp_path, projects, facts):
     # not rewrite a successful publication into a tool failure.
     assert published[0]["attributes"]["result_code"] == "SUCCESS"
     assert published[0]["status"] != "error"
+
+
+def contents(doc, source):
+    return [record for record in doc["contents"] if record["source"] == source]
+
+
+def test_the_real_wire_request_is_captured(tmp_path, projects, facts):
+    """The input captured is the request that was sent, not the message before formatting."""
+    with traced(tmp_path, projects, facts,
+                answers=[read_reply(None, "call-1"), text_reply()]) as env:
+        env.answers[0] = read_reply(env.module, "call-1")
+        explore(env)
+        doc = document(env)
+
+    wires = contents(doc, "wire_request")
+    assert len(wires) == len(env.requests), "one capture per HTTP attempt"
+
+    bodies = [json.loads(record["text"]) for record in wires]
+    # The provider's own request shape, not this product's.
+    assert "messages" in bodies[0] and "model" in bodies[0]
+    # The second request really carries the first tool's result, so the capture follows
+    # the conversation rather than a snapshot of the first call.
+    assert len(bodies[-1]["messages"]) > len(bodies[0]["messages"])
+
+
+def test_a_rejected_response_is_captured_before_it_is_refused(tmp_path, projects, facts):
+    two_calls = tool_reply(calls=[("Read", {"file_path": "a.py"}, "call-1"),
+                                  ("Read", {"file_path": "b.py"}, "call-2")])
+    with traced(tmp_path, projects, facts, answers=[two_calls] * PROTOCOL_ATTEMPTS) as env:
+        with pytest.raises(PhaseProtocolError):
+            explore(env)
+        doc = document(env, status="FAILED")
+
+    responses = contents(doc, "provider_response")
+    # A response the phase refuses whole is exactly the one worth reading afterwards.
+    assert responses
+    assert any("tool_calls" in record["text"] and "Read" in record["text"] for record in responses)
+
+
+def test_reasoning_is_kept_when_returned_and_marked_when_absent(tmp_path, projects, facts):
+    with_reasoning = chat({"role": "assistant", "content": "done", "reasoning_content": "I checked the parser"},
+                          "stop")
+    without_reasoning = text_reply()
+
+    with traced(tmp_path, projects, facts, answers=[with_reasoning]) as env:
+        explore(env)
+        present = contents(document(env), "provider_reasoning")[0]
+
+    with traced(tmp_path / "plain", projects, facts, answers=[without_reasoning]) as env:
+        explore(env)
+        absent = contents(document(env), "provider_reasoning")[0]
+
+    assert present["availability"] == "captured" and "I checked the parser" in present["text"]
+    # A provider that returns no reasoning is normal, and is not reported as a fault.
+    assert absent["availability"] == "not_returned"
+
+
+def test_the_tool_input_and_result_are_captured_and_correlated(tmp_path, projects, facts):
+    with traced(tmp_path, projects, facts,
+                answers=[read_reply(None, "call-1"), text_reply()]) as env:
+        env.answers[0] = read_reply(env.module, "call-1")
+        explore(env)
+        doc = document(env)
+
+    permission = next(entry for entry in by_kind(doc, "event") if entry["name"] == "permission")
+    executed = named(doc, "tool.Read")[0]
+    stored = {record["content_id"]: record for record in doc["contents"]}
+
+    # The decision and the execution are the same call, by key.
+    assert permission["attributes"]["tool_call_key"] == executed["attributes"]["tool_call_key"]
+    # The arguments were captured on the permission point, the result on the execution.
+    assert stored[permission["content_refs"][0]]["source"] == "sdk_tool_input"
+    assert stored[executed["content_refs"][0]]["source"] == "sdk_tool_result"
+    result = json.loads(stored[executed["content_refs"][0]]["text"])
+    assert any("parse" in str(block) for block in result["content"])
+
+
+def stable_requests(requests, root=None):
+    """Request bodies with the two things that legitimately differ between runs removed.
+
+    The seconds left on the task move between two runs, and each run works in its own
+    tmp directory so its absolute paths differ.  What is left is the comparison that
+    means something: the messages, the tools and the request options.
+    """
+    cleaned = []
+    for body in requests:
+        body = json.loads(json.dumps(body))
+        for message in body.get("messages", []):
+            content = message.get("content")
+            if isinstance(content, str) and content.startswith("{"):
+                try:
+                    data = json.loads(content)
+                except ValueError:
+                    continue
+                if isinstance(data, dict) and isinstance(data.get("budget"), dict):
+                    data["budget"].pop("seconds_remaining", None)
+                    message["content"] = json.dumps(data, sort_keys=True)
+        text = json.dumps(body, sort_keys=True)
+        if root is not None:
+            # A path inside a tool call's arguments is a JSON string within a JSON string,
+            # so the same root appears with its backslashes escaped once and twice over.
+            text_root = str(root)
+            for form in (text_root, text_root.replace("\\", "/"),
+                         text_root.replace("\\", "\\\\"), text_root.replace("\\", "\\\\\\\\")):
+                text = text.replace(form, "<root>")
+        cleaned.append(text)
+    return cleaned
+
+
+def test_capture_does_not_change_the_request_or_add_a_call(tmp_path, projects, facts):
+    """The same fixed scenario, traced and not, must reach the provider identically."""
+    scripted = [read_reply(None, "call-1"), text_reply()]
+
+    plain = environment(tmp_path / "plain", projects, facts, answers=list(scripted))
+    plain.answers[0] = read_reply(plain.module, "call-1")
+    explore(plain)
+
+    with traced(tmp_path / "traced", projects, facts, answers=list(scripted)) as env:
+        env.answers[0] = read_reply(env.module, "call-1")
+        explore(env)
+
+    assert len(env.requests) == len(plain.requests), "capture adds no request"
+    assert stable_requests(env.requests, env.root) == stable_requests(plain.requests, plain.root), \
+        "capture does not change what is sent"
 
 
 def test_a_finished_phase_does_not_report_a_failed_model_round(tmp_path, projects, facts):
@@ -407,7 +531,7 @@ def test_cancelled_tool_is_not_reported_success(tmp_path, projects, facts):
             yield final
             raise asyncio.CancelledError()
 
-        middleware = TraceMiddleware()
+        middleware = TraceMiddleware(facts.context())
         with pytest.raises(asyncio.CancelledError):
             async for _item in middleware.on_acting(agent=None, input_kwargs={"tool_call": CALL},
                                                     next_handler=next_handler):

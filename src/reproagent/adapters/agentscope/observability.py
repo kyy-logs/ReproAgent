@@ -20,7 +20,8 @@ from agentscope.tool import ToolResponse
 
 from .dependency import require_agentscope
 from .middleware import PhaseEnded
-from ...observability import span
+from .tools import TOOL_NAMES
+from ...observability import span, tool_call_key
 
 #: The span a whole SDK reply sits in: one model round, checked as a unit.
 MODEL_ROUND_SPAN = "sdk.model_round"
@@ -44,11 +45,26 @@ def tool_state(item) -> str | None:
     return None
 
 
+def tool_result(response) -> dict:
+    """The text a finished tool returned, in the shape the model received it.
+
+    Binary blocks are named, never decoded: the trace says an image came back, it does
+    not carry the image.
+    """
+    blocks = []
+    for block in getattr(response, "content", ()) or ():
+        text = getattr(block, "text", None)
+        blocks.append(text if isinstance(text, str) else {"type": getattr(block, "type", "unknown")})
+    return {"content": blocks, "state": str(getattr(response, "state", ""))}
+
+
 class TraceMiddleware(MiddlewareBase):
     """Records the SDK's model rounds and tool executions into the task's trace."""
 
-    def __init__(self) -> None:
+    def __init__(self, context, *, allowed_tools=TOOL_NAMES) -> None:
         require_agentscope()
+        self.context = context
+        self.allowed_tools = tuple(allowed_tools)
 
     async def on_model_call(self, agent, input_kwargs, next_handler):
         """Time one SDK model round and record how the whole reply was judged."""
@@ -74,12 +90,19 @@ class TraceMiddleware(MiddlewareBase):
     async def on_acting(self, agent, input_kwargs, next_handler):
         """Forward the tool's stream unchanged, timing it and recording its outcome."""
         tool_call = input_kwargs.get("tool_call")
-        name = getattr(tool_call, "name", "")
-        # The SDK's own call id: the only thing that pairs this execution with the
-        # permission decision that admitted it.  A tool name cannot -- the same tool is
-        # called many times in one phase.
-        key = getattr(tool_call, "id", "")
-        with span(f"tool.{name}", attributes={"tool": name, "tool_call_key": key}) as handle:
+        raw_name = getattr(tool_call, "name", "")
+        # A name the phase never registered is model-controlled text, so only a
+        # registered one is written down -- as the domain event already does.
+        name = raw_name if raw_name in self.allowed_tools else ""
+        # The SDK's own call id, turned into a key: the only thing that pairs this
+        # execution with the permission decision that admitted it.  A tool name cannot:
+        # the same tool is called many times in one phase.
+        key = tool_call_key(sdk_call_id=getattr(tool_call, "id", ""),
+                            step_index=self.context.budget.steps_used)
+        attributes = {"tool": name}
+        if key is not None:
+            attributes["tool_call_key"] = key
+        with span(f"tool.{raw_name or 'unknown'}", attributes=attributes) as handle:
             terminal = None
             async for item in next_handler():
                 state = tool_state(item)
@@ -89,9 +112,13 @@ class TraceMiddleware(MiddlewareBase):
                     # already finished into a failure.
                     terminal = state
                     handle.annotate(result_code=state)
+                    handle.capture("sdk_tool_result", tool_result(item), source="sdk_tool_result")
                 yield item
             if terminal is None:
+                # What arrived was never a result, so the pieces are not reported as one.
                 handle.annotate(result_code=INCOMPLETE)
+                handle.capture("sdk_tool_result", None, source="sdk_tool_result",
+                               availability="incomplete")
 
 
 __all__ = ["INCOMPLETE", "MODEL_ROUND_SPAN", "TraceMiddleware", "tool_state"]

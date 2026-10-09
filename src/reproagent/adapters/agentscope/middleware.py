@@ -35,7 +35,7 @@ from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
-from ...observability import mark
+from ...observability import mark, tool_call_key
 
 #: The phase these events belong to; one runtime runs the exploration phases of one task.
 PHASE = "EXPLORATION"
@@ -195,9 +195,18 @@ class ExplorationMiddleware(MiddlewareBase):
             decision = PermissionDecision(
                 behavior=PermissionBehavior.DENY, decision_reason="outside the phase tool set",
                 message=f"{name or 'this tool'} is not part of the exploration phase")
+        # The decision is projected, never asked again: a second permission check would
+        # be a second decision.  The arguments are captured once, here, whichever way
+        # the decision went -- a refused call is exactly the one worth looking at.
+        call_key = tool_call_key(sdk_call_id=getattr(input_kwargs.get("tool_call"), "id", ""),
+                                 step_index=self.context.budget.steps_used)
+        attributes = {"tool": name if name in self.allowed_tools else "", "result_code": code}
+        if call_key is not None:
+            attributes["tool_call_key"] = call_key
+        mark("permission", attributes=attributes).capture(
+            "sdk_tool_input", input_kwargs.get("tool_input"), source="sdk_tool_input")
         self.record("exploration.action", action=name if name in self.allowed_tools else "", result_code=code,
-                    arguments_hash=self._arguments_hash(input_kwargs.get("tool_input")),
-                    tool_call_key=getattr(input_kwargs.get("tool_call"), "id", ""))
+                    arguments_hash=self._arguments_hash(input_kwargs.get("tool_input")))
         return decision
 
     def _reserved_for_publishing(self, name) -> bool:
@@ -276,16 +285,6 @@ class ExplorationMiddleware(MiddlewareBase):
         components actually running.  A refused response admits no arguments, so its hash
         is empty; no event carries provider text.
         """
-        # The SDK call id is a correlator for the trace, not part of the domain event:
-        # it is projected into the observation and kept out of the stored record.
-        call_key = fields.pop("tool_call_key", "")
-        if kind == "exploration.action":
-            # The permission decision is projected, never asked again: this event already
-            # holds the controlled codes, and a second check would be a second decision.
-            # A code of ALLOWED still says nothing about whether the tool ever ran.
-            mark("permission", attributes={"tool": fields.get("action", ""),
-                                           "result_code": fields.get("result_code", ""),
-                                           "tool_call_key": call_key})
         if self.store is None:
             return
         self.store.append_event(kind, (), {

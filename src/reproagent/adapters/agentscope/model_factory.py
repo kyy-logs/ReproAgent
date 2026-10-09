@@ -18,7 +18,11 @@ from ...core.budget import BudgetStopped
 from ...core.models import ModelRequest
 from ...core.protocol import ModelOutputError, attempt_payload, classify_output
 from ...core.serialization import parse_json
-from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, span
+from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, capture, span
+
+#: The most of a rejected response body the trace will keep, so a preview cannot itself
+#: become the reason a run is unreadable.
+INVALID_PREVIEW_CHARACTERS = 512
 
 PURPOSES = frozenset({'exploration', 'contract', 'verdict', 'learning'})
 # A logical request may cost at most this many real HTTP attempts; transient failures
@@ -154,6 +158,9 @@ def _response_hook(observation, context, purpose):
             if not isinstance(message, dict):
                 raise ValueError('invalid provider response structure')
             observation.finish_reason = choice.get('finish_reason', '')
+            # Captured before the phase judges any of it, so a response that is refused
+            # whole is still reviewable rather than merely rejected.
+            _capture_response(message)
             text = message.get('content')
             observation.content_bytes = len(text.encode('utf-8')) if isinstance(text, str) else 0
             failure = classify_provider_output(purpose, observation.finish_reason, text,
@@ -164,8 +171,44 @@ def _response_hook(observation, context, purpose):
         except ModelOutputError:
             raise
         except (ValueError, KeyError, IndexError, TypeError):
+            # A body that is not the documented shape is worth keeping a bounded look at,
+            # because "the provider answered something else" is a fact about the provider.
+            try:
+                capture('invalid_response_preview', response.text[:INVALID_PREVIEW_CHARACTERS],
+                        source='invalid_response_preview')
+            except Exception:  # noqa: BLE001 - observation never escapes
+                pass
             raise _failed(observation, ModelOutputError(
                 'invalid, truncated or incompatible provider response')) from None
+    return observe
+
+
+def _capture_response(message: dict) -> None:
+    """Keep the provider's own content, tool calls and reasoning, as it returned them."""
+    capture('provider_response',
+            {'content': message.get('content'), 'tool_calls': message.get('tool_calls')},
+            source='provider_response')
+    reasoning = message.get('reasoning_content')
+    # An absent reasoning field is the provider's normal behaviour, not a recorder fault.
+    capture('provider_reasoning', reasoning, source='provider_reasoning',
+            availability='captured' if isinstance(reasoning, str) and reasoning else 'not_returned')
+
+
+def _request_hook(purpose: str):
+    """Keep the request the provider would actually receive, once per HTTP attempt.
+
+    Only the body httpx has already buffered is read: consuming a stream here would
+    change what is sent, and re-issuing the request would change what is paid for.
+    """
+    async def observe(request):
+        try:
+            body = request.content
+            if len(body) > RESPONSE_LIMIT_BYTES:
+                capture('wire_request', None, source='wire_request', availability='unsupported')
+                return
+            capture('wire_request', parse_json(body.decode('utf-8')), source='wire_request')
+        except Exception:  # noqa: BLE001 - observation never escapes
+            capture('wire_request', None, source='wire_request', availability='unsupported')
     return observe
 
 
@@ -375,7 +418,8 @@ class AgentScopeModelFactory:
         client = httpx.AsyncClient(transport=self.transport,
             timeout=min(REQUEST_TIMEOUT_SECONDS, context.budget.deadline - context.budget.clock()),
             headers={'Accept-Encoding': 'identity'}, follow_redirects=False, trust_env=False,
-            event_hooks={'response': [_response_hook(observation, context, purpose)]})
+            event_hooks={'request': [_request_hook(purpose)],
+                         'response': [_response_hook(observation, context, purpose)]})
         self._clients.append(client)
         return model_class(purpose=purpose, config=self.config, store=self.store, context=context,
             observation=observation, formatter=formatter_class(), stream=False, max_retries=0,

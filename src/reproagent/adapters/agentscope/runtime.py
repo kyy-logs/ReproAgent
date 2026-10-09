@@ -93,7 +93,8 @@ class AgentScopeRuntime:
         # this task is traced: the phase answers ``on_model_call`` itself instead of
         # delegating, so a middleware behind it would never see a model call at all --
         # including the rejected ones a trace exists to explain.
-        middlewares = [TraceMiddleware()] if tracing_enabled() else []
+        middlewares = ([TraceMiddleware(context, allowed_tools=self.allowed_tools)]
+                       if tracing_enabled() else [])
         self._agent = Agent(
             name=AGENT_NAME, system_prompt=system_prompt, model=model, toolkit=toolkit,
             middlewares=middlewares + [self.middleware],

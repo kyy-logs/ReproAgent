@@ -144,6 +144,7 @@ class TraceRecorder:
         self._spans: list[dict] = []
         self._span_ids: set[str] = set()
         self._open: list[tuple[str, str]] = []
+        self._entries: dict[str, dict] = {}
         self._warnings: list[str] = []
         self._partial = False
         self._failed = False
@@ -239,6 +240,9 @@ class TraceRecorder:
             "content_status": None,
         }
         self._span_ids.add(entry["span_id"])
+        # Open entries are reachable by id before they close, so a hook deep inside a
+        # call can attach content to the span that is running.
+        self._entries[entry["span_id"]] = entry
         if kind == "span":
             self._open.append((entry["span_id"], name))
         try:
@@ -466,6 +470,22 @@ def span(name: str, *, attributes: dict | None = None, expected: tuple = ()) -> 
             # different context than the one that opened it.  The token cannot be reset
             # there, and that must never replace what is travelling through the span.
             _current_span.set(previous)
+
+
+def capture(kind: str, value: Any, *, source: str, availability: str = "captured") -> str | None:
+    """Copy content onto whatever span is currently open.
+
+    The hook that holds the content is often several frames below the code that opened
+    the span -- an HTTP callback inside a model attempt, for instance -- so the span is
+    found through the context rather than passed down.
+    """
+    recorder = _recorder.get()
+    if recorder is None or not recorder._active:
+        return None
+    entry = recorder._entries.get(_current_span.get())
+    if entry is None:
+        return None
+    return recorder._capture(entry, kind, value, source=source, availability=availability)
 
 
 def mark(name: str, *, attributes: dict | None = None) -> Any:
