@@ -79,3 +79,17 @@ def test_whole_metadata_entry_remains_bounded_with_long_names_and_many_refs():
         doc=recorder.finish(task_id='one',status='DONE',main_duration=1)
     assert doc['partial']
     assert all(len(json.dumps(s,ensure_ascii=False).encode())<=2048 for s in doc['spans'])
+
+
+def test_sdk_native_blob_and_uri_parts_are_not_copied():
+    from reproagent.observability import trace_session
+    with trace_session() as recorder:
+        with trace.get_tracer('agentscope').start_as_current_span('invoke_agent offline') as s:
+            s.set_attribute('gen_ai.operation.name','invoke_agent')
+            s.set_attribute('gen_ai.input.messages',json.dumps([{'role':'user','parts':[
+                {'type':'blob','content':'PRIVATE_BINARY_PAYLOAD','media_type':'image/png','modality':'image'},
+                {'type':'uri','uri':'https://offline.invalid/?token=PRIVATE_MEDIA_URI','modality':'audio'}]}]))
+        doc=recorder.finish(task_id='one',status='DONE',main_duration=1)
+    text=json.dumps(doc)
+    assert 'PRIVATE_BINARY_PAYLOAD' not in text and 'PRIVATE_MEDIA_URI' not in text
+    assert 'unsupported' in text

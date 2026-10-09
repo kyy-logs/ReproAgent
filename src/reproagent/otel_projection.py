@@ -263,7 +263,7 @@ def project_sdk_messages(value):
     if isinstance(value,list): return [project_sdk_messages(item) for item in value]
     if not isinstance(value,dict): return value
     kind=value.get('type')
-    if kind in ('image','audio','video','file','data'):
+    if kind in ('image','audio','video','file','data','blob','uri'):
         return {'type':kind,'availability':'unsupported'}
     if kind in ('tool_call','tool_call_response','tool_result'):
         # Call correlation lives in controlled span fields, never the provider's ID.
