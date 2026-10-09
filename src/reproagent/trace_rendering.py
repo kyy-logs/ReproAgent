@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,8 @@ SOURCE_LABELS = {
     "sdk_tool_result": "tool result",
     "program_artifact": "program artifact",
     "invalid_response_preview": "unparsable response (preview)",
+    "sdk_agent_input": "SDK agent input", "sdk_agent_output": "SDK agent output",
+    "sdk_model_input": "SDK model input", "sdk_model_output": "SDK model output",
 }
 
 
@@ -91,8 +94,9 @@ def validate_trace(document: dict) -> dict:
             at a parent the trace does not contain (or at itself, in a cycle), or a
             span cites content that is missing or belongs to another span.
     """
-    if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
+    if not isinstance(document, dict) or document.get("schema_version") not in (1, 2):
         raise ValueError("the trace is not a document this viewer understands")
+    version = document["schema_version"]
     spans, contents = document.get("spans", []), document.get("contents", [])
     if not isinstance(spans, list) or not isinstance(contents, list):
         raise ValueError("the trace is not shaped like a trace")
@@ -109,12 +113,27 @@ def validate_trace(document: dict) -> dict:
     for entry in spans:
         if not isinstance(entry, dict) or not isinstance(entry.get("attributes", {}), dict):
             raise ValueError("the trace is not shaped like a trace")
-        by_id[entry.get("span_id")] = entry
+        ident=entry.get("span_id")
+        if not isinstance(ident,str) or ident in by_id:
+            raise ValueError("a trace span has an invalid or duplicate ID")
+        if version==2:
+            if entry.get("kind")=="point":
+                if entry.get("otel_span_id") is not None or not re.fullmatch(r"point:[0-9a-f]{16}:[0-9]+",ident):
+                    raise ValueError("a point is not an OpenTelemetry span")
+            elif not re.fullmatch(r"[0-9a-f]{16}",ident) or entry.get("otel_span_id")!=ident:
+                raise ValueError("an OpenTelemetry span has an invalid ID")
+            if entry.get("otel_status") not in ("UNSET","OK","ERROR"):
+                raise ValueError("an OpenTelemetry status is invalid")
+        by_id[ident] = entry
+    if version==2 and (not re.fullmatch(r"[0-9a-f]{32}", str(document.get("trace_id",""))) or
+                       document.get("root_span_id") not in by_id):
+        raise ValueError("an OpenTelemetry task root is invalid")
     for entry in spans:
         parent = entry.get("parent_span_id")
         if parent is None:
             continue
         if parent not in by_id:
+            if version==2 and document.get("partial") is True: continue
             raise ValueError("a span refers to a parent this trace does not contain")
         # Walk up: a cycle would leave the reader looping for the same reason, and a
         # missing ancestor is a broken chain even when the direct parent is present.
@@ -125,6 +144,7 @@ def validate_trace(document: dict) -> dict:
             seen.add(walker)
             node = by_id.get(walker)
             if node is None:
+                if version==2 and document.get("partial") is True: break
                 raise ValueError("a span refers to a parent this trace does not contain")
             walker = node.get("parent_span_id")
 
@@ -206,14 +226,22 @@ def _render_timeline(spans) -> str:
     ordered = sorted(spans, key=lambda entry: (entry.get("offset_seconds") is None,
                                                entry.get("offset_seconds") or 0.0))
     rows = []
+    kept = {s.get("span_id") for s in spans}
     for entry in ordered:
         status = str(entry.get("status") or UNKNOWN_TEXT)
         attributes = entry.get("attributes") or {}
         rendered = " ".join(f"{_esc(key)}={_esc(value)}" for key, value in sorted(attributes.items()))
+        extra = ""
+        if entry.get("otel_status"):
+            extra += f'<div class="attrs">OTel: {_esc(entry["otel_status"])} · {_esc(entry.get("instrumentation_scope", "unknown"))}</div>'
+        if entry.get("parent_span_id") and entry["parent_span_id"] not in kept:
+            extra += '<div class="unknown">parent not retained</div>'
+        if entry.get("kind")=="point":
+            extra += '<div class="attrs">program event · hosted by an OTel span</div>'
         depth = min(depths.get(entry.get("span_id"), 0), 6)
         rows.append(
             f'<tr><td class="depth-{depth}"><span class="span-name">{_esc(entry.get("name"))}</span>'
-            f'<div class="attrs">{rendered}</div></td>'
+            f'<div class="attrs">{rendered}</div>{extra}</td>'
             f'<td class="num">{_seconds(entry.get("offset_seconds"))}</td>'
             f'<td class="num">{_seconds(entry.get("duration_seconds"))}</td>'
             f'<td><span class="pill status-{_esc(status)}">{_esc(status)}</span></td></tr>')

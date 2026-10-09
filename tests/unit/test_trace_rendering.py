@@ -371,3 +371,43 @@ def test_trace_cli_changes_only_observability_files(tmp_path):
     # Exactly one new file, inside observability/, and nothing else touched.
     assert changed == {f"{TRACE_DIRECTORY}/trace.html"}
     assert json.loads((task / "artifacts" / "manifest.json").read_text(encoding="utf-8")) == {"sealed": True}
+
+
+def native_document():
+    from reproagent.observability import trace_session,span
+    with trace_session() as recorder:
+        with span('verify'):
+            pass
+        return recorder.finish(task_id='new',status='DONE',main_duration=1)
+
+
+def test_schema1_page_rebuild_remains_compatible(tmp_path):
+    legacy=document()
+    write_trace(tmp_path,legacy)
+    before=(tmp_path/'observability'/'trace.json').read_bytes()
+    write_trace_html(tmp_path,read_trace(tmp_path))
+    assert (tmp_path/'observability'/'trace.json').read_bytes()==before
+    assert read_trace(tmp_path)['schema_version']==1
+
+
+def test_schema2_displays_native_domain_and_reasoning_links():
+    doc=native_document()
+    doc['spans'][1]['otel_status']='ERROR'
+    doc['spans'][1]['status']='ok'
+    page=render_trace(doc)
+    assert 'OTel: ERROR' in page and 'reproagent' in page
+
+
+def test_missing_parent_and_late_span_are_explicitly_partial():
+    doc=native_document()
+    doc['spans'][1]['parent_span_id']='f'*16
+    with pytest.raises(ValueError): validate_trace(doc)
+    doc['partial']=True
+    page=render_trace(doc)
+    assert 'parent not retained' in page
+
+
+def test_schema2_rejects_invalid_native_ids():
+    doc=native_document()
+    doc['spans'][1]['otel_span_id']='not-an-otel-id'
+    with pytest.raises(ValueError): validate_trace(doc)
