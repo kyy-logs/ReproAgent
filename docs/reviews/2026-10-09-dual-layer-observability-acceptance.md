@@ -37,8 +37,8 @@ Windows 11，CPython 3.12.14，pytest 9.1.1，AgentScope 2.0.9。本 worktree �
 | O05 | 两种模式状态/证据/候选/调用/预算等价；学习在封存后且预算独立 | **pass** | `test_a_captured_run_reaches_the_same_result_as_an_uncaptured_one`（状态/证据/候选字节/请求种类与条数全等）、`test_main_and_learning_have_separate_budget_metrics` |
 | O06 | 只复用真实 probe/运行/清理；超时取消可见；候选退出 1 不伪报环境坏 | **pass** | `test_process_health_uses_only_the_runs_own_signals`（8 组参数化）、`test_a_candidates_failing_tests_are_not_a_broken_environment`、真实运行中 `process.health` 全为 `passed` 而候选退出码为 1 |
 | O07 | UTF-8 序列化大小、副本/脱敏、partial 分层；错误不影响主结果；不进入模型/证据/学习 | **pass** | `tests/unit/test_observability_content.py`（15 条，含 512/4MiB/32KiB 边界与 `capture_error`）、`test_trace_not_in_manifest_or_learning_material` |
-| O08 | 普通 run 只增两个观测文件；HTML 失败保留 JSON/主结果；HTML 纯文本、refs 可核对；长路径/链接/读限额/模板 wheel | **pass** | `tests/unit/test_trace_rendering.py`（24 条，含 junction 拒绝、读限额、注入转义）、`test_a_failed_json_write_skips_the_page_and_keeps_the_result`、`test_windows_long_paths.py` 全过、wheel 实测含三个新件 |
-| O09 | 完整 unit/integration 与 pip check 有实测日志；跳过/平台缺口单列 | **pass** | 审查修复**后**重跑：`pytest tests/unit -q` → **384 passed, 3 skipped**；`pytest tests/integration -q` → **279 passed, 6 skipped**；`pip check` → No broken requirements。（修正前为 382/278，差的 3 条是本次新增的回归测试。） |
+| O08 | 普通 run 只增两个观测文件；HTML 失败保留 JSON/主结果；HTML 纯文本、refs 可核对；长路径/链接/读限额/模板 wheel | **pass** | `tests/unit/test_trace_rendering.py`（25 条，含 junction 拒绝、读限额、注入转义、按调用分组）、`test_a_failed_json_write_skips_the_page_and_keeps_the_result`、`test_windows_long_paths.py` 全过、wheel 实测含三个新件 |
+| O09 | 完整 unit/integration 与 pip check 有实测日志；跳过/平台缺口单列 | **pass** | 审查修复**后**重跑：`pytest tests/unit -q` → **385 passed, 3 skipped**；`pytest tests/integration -q` → **279 passed, 6 skipped**；`pip check` → No broken requirements。（审查修复前为 382/278；差的 3 条为新增回归测试。页面按调用分组与可读性调整后重跑，集成半仍为 279。） |
 | O10 | 命令/结果/证据/未过修复文件和符号齐全；审查与取舍可读 | **pass** | 本文件；全分支独立审查结果见下节 |
 
 ### O09 的 9 个跳过（逐项原因）

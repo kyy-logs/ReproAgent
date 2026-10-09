@@ -5,28 +5,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReproAgent activity trace</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; padding: 1.5rem; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  h1 { font-size: 1.15rem; margin: 0 0 .25rem; }
-  h2 { font-size: .95rem; margin: 1.75rem 0 .5rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
-  table { border-collapse: collapse; width: 100%; }
-  th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid rgba(128,128,128,.3); vertical-align: top; }
-  th { font-weight: 600; opacity: .7; }
-  .meta { opacity: .7; }
-  .warn { border-left: 3px solid #b8860b; padding: .4rem .6rem; margin: .5rem 0; background: rgba(184,134,11,.12); }
-  .status-error, .status-cancelled { font-weight: 600; }
-  .status-error { color: #c0392b; }
-  .status-cancelled { color: #b8860b; }
-  .status-ok { opacity: .65; }
-  .kind-event { font-style: italic; }
-  .depth-1 { padding-left: 1.5rem; } .depth-2 { padding-left: 3rem; }
-  .depth-3 { padding-left: 4.5rem; } .depth-4 { padding-left: 6rem; }
-  .depth-5 { padding-left: 7.5rem; } .depth-6 { padding-left: 9rem; }
-  .attrs { opacity: .75; word-break: break-word; }
-  .unknown { font-style: italic; opacity: .7; }
+  :root {
+    color-scheme: light dark;
+    --ink: #1b1f24; --muted: #6b7280; --line: #d8dde3; --bg: #ffffff; --panel: #f7f8fa;
+    --ok: #1a7f4b; --warn: #9a6700; --bad: #b42318; --accent: #24487a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #e6e9ee; --muted: #9aa4b2; --line: #333a44; --bg: #14181d; --panel: #1b2027;
+            --ok: #57c68a; --warn: #d5a021; --bad: #f0736a; --accent: #8ab4f8; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2rem 1.25rem 4rem; background: var(--bg); color: var(--ink);
+         font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 .35rem; letter-spacing: -.01em; }
+  h2 { font-size: .8rem; margin: 2.25rem 0 .75rem; text-transform: uppercase;
+       letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+  h4 { font-size: .78rem; margin: 1rem 0 .35rem; color: var(--muted); font-weight: 600;
+       text-transform: uppercase; letter-spacing: .05em; }
+  a { color: var(--accent); }
+  .meta { color: var(--muted); margin: 0 0 .25rem; font-size: .88rem; }
+  .warnbox { border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent);
+             padding: .55rem .8rem; border-radius: 0 6px 6px 0; margin: .5rem 0; font-size: .88rem; }
+  .stats { display: flex; flex-wrap: wrap; gap: .5rem; margin: .75rem 0 0; padding: 0; list-style: none; }
+  .stats li { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+              padding: .5rem .8rem; min-width: 7.5rem; }
+  .stats .k { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .stats .v { display: block; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+  .unknown { color: var(--muted); font-style: italic; }
+  .pill { display: inline-block; border-radius: 999px; padding: .05rem .5rem; font-size: .74rem;
+          border: 1px solid currentColor; }
+  .status-ok, .status-passed, .status-success { color: var(--ok); }
+  .status-error, .status-failed, .status-fail { color: var(--bad); }
+  .status-cancelled, .status-blocked, .status-degraded { color: var(--warn); }
+  .status-incomplete, .status-unknown { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; font-size: .86rem; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: .72rem;
+       text-transform: uppercase; letter-spacing: .05em; padding: .35rem .5rem;
+       border-bottom: 1px solid var(--line); }
+  td { padding: .3rem .5rem; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+       vertical-align: top; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--muted); }
+  .span-name { font-weight: 500; }
+  .attrs { color: var(--muted); font-size: .78rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .depth-1 { padding-left: 1.25rem; } .depth-2 { padding-left: 2.5rem; } .depth-3 { padding-left: 3.75rem; }
+  .depth-4 { padding-left: 5rem; } .depth-5 { padding-left: 6.25rem; } .depth-6 { padding-left: 7.5rem; }
+  details { border: 1px solid var(--line); border-radius: 8px; margin: .5rem 0; background: var(--panel); }
+  details[open] { padding-bottom: .5rem; }
+  summary { cursor: pointer; padding: .55rem .8rem; font-size: .88rem; display: flex;
+            flex-wrap: wrap; gap: .5rem; align-items: baseline; }
+  summary::marker { color: var(--muted); }
+  summary .label { font-weight: 600; }
+  summary .bytes { margin-left: auto; color: var(--muted); font-size: .78rem;
+                   font-variant-numeric: tabular-nums; }
+  details > h4, details > pre, details > p { margin-left: .8rem; margin-right: .8rem; }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: .8rem; line-height: 1.5;
+        background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+        padding: .6rem .7rem; margin: .25rem 0 .5rem; max-height: 28rem; overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 </style>
 </head>
 <body>
+<main>
 <!--TRACE-CONTENT-->
+</main>
 </body>
 </html>

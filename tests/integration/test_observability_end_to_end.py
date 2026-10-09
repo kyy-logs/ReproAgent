@@ -69,7 +69,9 @@ def test_a_run_can_be_read_back_afterwards(tmp_path, projects, facts):
 
     # ...and the page carries all of it, including the result the task reached.
     page = render_trace(document)
-    for marker in ("wire_request", "sdk_tool_input", "sdk_tool_result", "provider_semantic_claims"):
+    # The page names these in words rather than in the recorder's own vocabulary.
+    for marker in ("request the model received", "tool arguments", "tool result",
+                   "provider_semantic_claims"):
         assert marker in page
     # The acceptance the program reached is on the page too.  The evidence level itself
     # is a domain result, not a trace field: the trace copies the task status.

@@ -31,6 +31,29 @@ from .observability import (
 #: The sections a reader moves between, in the order the plan asks for them.
 SECTIONS = ("overview", "calls", "decisions")
 
+#: Plain words for where a capture came from.  The stored name is the contract between
+#: the recorder and this page; it was never meant to be the thing a person reads.
+SOURCE_LABELS = {
+    "wire_request": "request the model received",
+    "provider_response": "what the model returned",
+    "provider_reasoning": "model reasoning (as returned)",
+    "sdk_tool_input": "tool arguments",
+    "sdk_tool_result": "tool result",
+    "program_artifact": "program artifact",
+    "invalid_response_preview": "unparsable response (preview)",
+}
+
+
+def _source_label(source: Any) -> str:
+    return SOURCE_LABELS.get(str(source), str(source))
+
+
+#: Who decided, in words.  This is the distinction the design insists on: a provider
+#: saying a result reproduces is a claim, and only the program's own checks turn that
+#: claim into an accepted result.
+WHO_LABELS = {"program_check": "the program", "provider_claim": "the model's claim",
+              "program": "the program", "provider": "the model"}
+
 
 def read_trace(task_dir: Path) -> dict:
     """Load the trace a task already stored, refusing anything out of bounds.
@@ -151,26 +174,31 @@ def _depths(spans) -> dict:
     return depths
 
 
-def _render_summary(summary: dict) -> str:
+def _render_stats(summary: dict) -> str:
+    """The headline figures, as figures rather than a table of rows."""
     usage = summary.get("usage") or {}
     cost = summary.get("cost") or {}
-    rows = [
-        ("logical model calls", _figure(summary.get("logical_calls"))),
+    stats = [
+        ("logical calls", _figure(summary.get("logical_calls"))),
         ("HTTP attempts", _figure(summary.get("http_attempts"))),
-        ("tool executions", _figure(summary.get("tool_executions"))),
+        ("tool calls", _figure(summary.get("tool_executions"))),
         ("input tokens", _figure(usage.get("input_tokens"))),
         ("output tokens", _figure(usage.get("output_tokens"))),
         ("cost", _figure(cost.get("amount"))),
     ]
+    items = "".join(f'<li><span class="k">{_esc(key)}</span><span class="v">{value}</span></li>'
+                    for key, value in stats)
+    notes = []
     if not usage.get("complete", False):
-        rows.append(("token accounting", '<span class="unknown">incomplete</span>'))
+        notes.append('<p class="meta">Token accounting is incomplete: an attempt reported no usage.</p>')
     if not cost.get("complete", False):
-        rows.append(("cost accounting", '<span class="unknown">incomplete</span>'))
+        notes.append('<p class="meta">No pricing is configured for this model, so cost is '
+                     "unknown rather than zero.</p>")
     learning = summary.get("learning")
     if isinstance(learning, dict):
-        rows.append(("learning", _esc(learning.get("code") or learning.get("status") or UNKNOWN_TEXT)))
-    body = "".join(f"<tr><th>{_esc(label)}</th><td>{value}</td></tr>" for label, value in rows)
-    return f"<h2>What it cost</h2><table>{body}</table>"
+        notes.append('<p class="meta">Learning ran on its own budget, after the result was '
+                     "sealed: included in the total duration, never in the main one.</p>")
+    return f'<ul class="stats">{items}</ul>' + "".join(notes)
 
 
 def _render_timeline(spans) -> str:
@@ -184,13 +212,12 @@ def _render_timeline(spans) -> str:
         rendered = " ".join(f"{_esc(key)}={_esc(value)}" for key, value in sorted(attributes.items()))
         depth = min(depths.get(entry.get("span_id"), 0), 6)
         rows.append(
-            f'<tr><td class="depth-{depth}">{_esc(entry.get("name"))}'
+            f'<tr><td class="depth-{depth}"><span class="span-name">{_esc(entry.get("name"))}</span>'
             f'<div class="attrs">{rendered}</div></td>'
-            f'<td class="kind-{_esc(entry.get("kind"))}">{_esc(entry.get("kind"))}</td>'
-            f'<td>{_seconds(entry.get("offset_seconds"))}</td>'
-            f'<td>{_seconds(entry.get("duration_seconds"))}</td>'
-            f'<td class="status-{_esc(status)}">{_esc(status)}</td></tr>')
-    head = "<tr><th>span</th><th>kind</th><th>offset</th><th>duration</th><th>status</th></tr>"
+            f'<td class="num">{_seconds(entry.get("offset_seconds"))}</td>'
+            f'<td class="num">{_seconds(entry.get("duration_seconds"))}</td>'
+            f'<td><span class="pill status-{_esc(status)}">{_esc(status)}</span></td></tr>')
+    head = "<tr><th>step</th><th>at</th><th>took</th><th>outcome</th></tr>"
     return f"<h2>Timeline</h2><table>{head}{''.join(rows)}</table>"
 
 
@@ -238,7 +265,7 @@ def _render_contents(document: dict) -> str:
         size = sum(len((records[ref].get("text") or "").encode("utf-8")) for ref in refs)
         # What is inside is named in the summary: a collapsed block labelled only with a
         # byte count reads as empty, and the request is the thing people look for.
-        holds = ", ".join(dict.fromkeys(str(records[ref].get("source")) for ref in refs))
+        holds = ", ".join(dict.fromkeys(_source_label(records[ref].get("source")) for ref in refs))
         label = _esc(entry.get("name"))
         if key:
             label += f' &middot; call {_esc(str(key)[:8])}'
@@ -252,7 +279,8 @@ def _render_contents(document: dict) -> str:
             record = records[ref]
             shown.add(ref)
             flags = ", ".join(name for name in ("truncated", "redacted") if record.get(name))
-            head = (f'<h4>{_esc(record.get("source"))} &middot; {_esc(record.get("availability"))}'
+            head = (f'<h4>{_esc(_source_label(record.get("source")))} &middot; '
+                    f'{_esc(record.get("availability"))}'
                     + (f' &middot; {_esc(flags)}' if flags else '') + "</h4>")
             text = record.get("text")
             parts.append(head + (f"<pre>{_esc(text)}</pre>" if text
@@ -262,7 +290,7 @@ def _render_contents(document: dict) -> str:
     orphans = [record for cid, record in records.items() if cid not in shown]
     for record in orphans:
         text = record.get("text")
-        parts.append(f'<details><summary>{_esc(record.get("source"))} '
+        parts.append(f'<details><summary>{_esc(_source_label(record.get("source")))} '
                      f'&middot; {_esc(record.get("availability"))}</summary>'
                      + (f"<pre>{_esc(text)}</pre>" if text else "") + "</details>")
     if not emitted and not orphans:
@@ -286,23 +314,26 @@ def _render_decisions(document: dict) -> str:
     rows = []
     for entry in decided:
         attributes = entry.get("attributes") or {}
+        result = str(attributes.get("result_code") or UNKNOWN_TEXT)
+        tint = "ok" if result in ("PASS", "REPRODUCED") else "error" if result in ("FAIL", "INVALID_CANDIDATE") else "unknown"
+        who = WHO_LABELS.get(str(attributes.get("check_source") or attributes.get("reason_origin")), UNKNOWN_TEXT)
         rows.append(f"<tr><td>{_esc(attributes.get('check') or entry.get('name'))}</td>"
-                    f"<td>{_esc(attributes.get('result_code'))}</td>"
-                    f"<td>{_esc(attributes.get('check_source') or attributes.get('reason_origin') or UNKNOWN_TEXT)}</td></tr>")
-    head = "<tr><th>what was decided</th><th>result</th><th>who decided it</th></tr>"
+                    f'<td><span class="pill status-{tint}">{_esc(result)}</span></td>'
+                    f"<td>{_esc(who)}</td></tr>")
+    head = "<tr><th>what was decided</th><th>result</th><th>decided by</th></tr>"
     return f"{parts[0]}<table>{head}{''.join(rows)}</table>"
 
 
 def _render_body(document: dict) -> str:
     parts = [
-        f'<section id="overview"><h1>ReproAgent activity trace</h1>',
-        f'<p class="meta">task {_esc(document.get("task_id") or UNKNOWN_TEXT)}'
-        f' &middot; status {_esc(document.get("status") or UNKNOWN_TEXT)}'
-        f' &middot; trace {_esc(document.get("trace_id") or UNKNOWN_TEXT)}'
-        f' &middot; capture {_esc(document.get("capture_mode") or UNKNOWN_TEXT)}</p>',
-        f'<p class="meta">main duration {_seconds(document.get("main_duration"))}'
-        f' &middot; total duration {_seconds(document.get("total_duration"))}'
-        " (includes export and learning)</p>",
+        '<section id="overview"><h1>ReproAgent activity trace</h1>',
+        f'<p class="meta"><span class="pill status-{_esc(document.get("status") or "unknown")}">'
+        f'{_esc(document.get("status") or UNKNOWN_TEXT)}</span>'
+        f' &nbsp;task {_esc(document.get("task_id") or UNKNOWN_TEXT)}'
+        f' &nbsp;&middot;&nbsp; {_seconds(document.get("total_duration"))} total,'
+        f' {_seconds(document.get("main_duration"))} for the task itself'
+        f' &nbsp;&middot;&nbsp; capture {_esc(document.get("capture_mode") or UNKNOWN_TEXT)}</p>',
+        f'<p class="meta">trace {_esc(document.get("trace_id") or UNKNOWN_TEXT)}</p>',
     ]
     if document.get("partial") or not document.get("metrics_complete", True):
         parts.append('<p class="warn">This trace is incomplete: some observations were dropped or failed. '
@@ -312,7 +343,7 @@ def _render_body(document: dict) -> str:
                      "each entry below says which, and why.</p>")
     for warning in document.get("warnings") or ():
         parts.append(f'<p class="warn">{_esc(warning)}</p>')
-    parts.append(_render_summary(document.get("summary") or {}))
+    parts.append(_render_stats(document.get("summary") or {}))
     parts.append(_render_timeline(document.get("spans") or ()))
     parts.append("</section>")
     parts.append(f'<section id="calls">{_render_contents(document)}</section>')
