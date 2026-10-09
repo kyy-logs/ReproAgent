@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import html
 import json
 import time
@@ -23,6 +24,8 @@ import uuid
 from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Iterable, Iterator
+
+from .observability_content import ContentStore
 
 SCHEMA_VERSION = 1
 
@@ -51,9 +54,15 @@ WARNING_TRACE_PATH_UNSAFE = "the trace destination is not a plain task-local dir
 #: redacted, so a new field cannot start leaking by accident.
 ALLOWED_ATTRIBUTES = frozenset({
     "purpose", "tool", "tool_call_key", "tool_set", "result_code", "execution_role",
-    "candidate_id", "run_id", "contract_id",
+    "candidate_id", "run_id", "contract_id", "check", "check_source", "permission_result",
     "attempt", "output_limit", "budget", "usage", "cost", "unknown",
 })
+
+#: The one capture mode this version has: metadata plus the content it can copy.
+CAPTURE_MODE = "content"
+
+#: The span a tool call belongs to, when no phase span is open for it.
+ROOT_SCOPE = "root"
 
 REDACTED = "<redacted>"
 
@@ -79,6 +88,9 @@ class _NoopHandle:
     def annotate(self, **_fields: Any) -> None:
         return None
 
+    def capture(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
 
 #: One handle is enough: it holds no state, and tracing off must not allocate per span.
 _NOOP_HANDLE = _NoopHandle()
@@ -96,6 +108,17 @@ class SpanHandle:
 
     def annotate(self, **fields: Any) -> None:
         self._recorder._annotate(self._entry, fields)
+
+    def capture(self, kind: str, value: Any, *, source: str,
+                availability: str = "captured") -> str | None:
+        """Copy one piece of content for this span.
+
+        Returns:
+            The content id, or None when nothing could be stored -- in which case the
+            span's content status says why rather than leaving the silence unexplained.
+        """
+        return self._recorder._capture(self._entry, kind, value, source=source,
+                                       availability=availability)
 
     def _finish(self, status: str) -> None:
         if self._finished:
@@ -117,8 +140,10 @@ class TraceRecorder:
         self._wall = wall_clock
         self._secrets = tuple(secret for secret in secrets if secret)
         self.trace_id = uuid.uuid4().hex
+        self._content = ContentStore(secrets=self._secrets)
         self._spans: list[dict] = []
         self._span_ids: set[str] = set()
+        self._open: list[tuple[str, str]] = []
         self._warnings: list[str] = []
         self._partial = False
         self._failed = False
@@ -126,11 +151,14 @@ class TraceRecorder:
         self._frozen = False
         self._started_clock: float | None = None
         self._started_wall: float | None = None
+        self._started_at: float | None = None
         self._token = None
 
     def __enter__(self) -> "TraceRecorder":
         self._started_clock = self._clock()
         self._started_wall = self._wall()
+        # The wall clock is kept for the header only: ordering and budgets stay monotonic.
+        self._started_at = time.time()
         self._token = _recorder.set(self)
         self._active = True
         return self
@@ -205,8 +233,14 @@ class TraceRecorder:
             "duration_seconds": None,
             "status": "ok" if kind == "event" else "incomplete",
             "attributes": {},
+            # None until a capture is attempted: "nothing was asked for" is not the same
+            # claim as any of the reasons a capture can be missing.
+            "content_refs": [],
+            "content_status": None,
         }
         self._span_ids.add(entry["span_id"])
+        if kind == "span":
+            self._open.append((entry["span_id"], name))
         try:
             if self._started_wall is not None:
                 entry["offset_seconds"] = max(0.0, self._wall() - self._started_wall)
@@ -241,18 +275,58 @@ class TraceRecorder:
         try:
             entry["duration_seconds"] = max(0.0, self._clock() - started_clock)
             entry["status"] = status
+            span_id = entry["span_id"]
+            self._open = [item for item in self._open if item[0] != span_id]
             self._append(entry)
         except Exception:  # noqa: BLE001 - observation never escapes
             self._fault()
 
-    def _note_event(self, name: str, attributes: dict | None) -> None:
+    # -- content and correlation ---------------------------------------------
+
+    def _capture(self, entry: dict, kind: str, value: Any, *, source: str,
+                 availability: str = "captured") -> str | None:
+        """Copy one piece of content, attributing it to the span that produced it."""
+        content_id = self._content.capture(owner_span_id=entry["span_id"], kind=kind, value=value,
+                                           source=source, availability=availability)
+        if content_id is not None:
+            entry["content_refs"].append(content_id)
+        else:
+            availability = "omitted_limit"
+        # The first capture decides the span's status: a later successful copy must not
+        # overwrite the record of something that was missing.
+        if entry["content_status"] is None:
+            entry["content_status"] = availability
+        elif availability in ("omitted_limit", "capture_error"):
+            entry["content_status"] = availability
+        return content_id
+
+    def _explore_scope(self) -> str:
+        for span_id, name in reversed(self._open):
+            if name == "explore":
+                return span_id
+        return self._spans[0]["span_id"] if self._spans else ROOT_SCOPE
+
+    def _tool_call_key(self, sdk_call_id: str, step_index: int) -> str:
+        """A stable key joining one call's permission with its execution.
+
+        Derived and one-way: a provider that reuses one call id across steps still gets
+        distinct keys, and the raw SDK id is not what is written down.
+        """
+        material = f"{self.trace_id}|{self._explore_scope()}|{step_index}|{sdk_call_id}"
+        return hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
+
+    def _note_event(self, name: str, attributes: dict | None) -> SpanHandle:
         try:
             entry = self._new_entry(name, "event")
             if attributes:
                 self._annotate(entry, attributes)
             self._append(entry)
+            handle = SpanHandle(self, entry, 0.0)
+            handle._finished = True      # a point event has no end to record later
+            return handle
         except Exception:  # noqa: BLE001 - observation never escapes
             self._fault()
+            return _NOOP_HANDLE
 
     # -- output --------------------------------------------------------------
 
@@ -277,12 +351,16 @@ class TraceRecorder:
             "trace_id": self.trace_id,
             "task_id": task_id,
             "status": status,
+            "capture_mode": CAPTURE_MODE,
+            "started_at": self._started_at,
             "main_duration": main_duration,
             "total_duration": total,
             "partial": self._partial,
             "metrics_complete": not (self._partial or self._failed),
+            "content_complete": self._content.complete and not self._failed,
             "warnings": list(self._warnings),
             "spans": list(self._spans),
+            "contents": self._content.records(),
             "summary": self._summarise(learning),
         }
 
@@ -339,7 +417,7 @@ def tracing_enabled() -> bool:
 
 
 @contextlib.contextmanager
-def trace_session(*, enabled: bool, secrets: Iterable[str] = ()) -> Iterator[TraceRecorder | None]:
+def trace_session(*, enabled: bool = True, secrets: Iterable[str] = ()) -> Iterator[TraceRecorder | None]:
     """Install a recorder for this task, or nothing at all when tracing is off."""
     if not enabled:
         yield None
@@ -390,12 +468,39 @@ def span(name: str, *, attributes: dict | None = None, expected: tuple = ()) -> 
             _current_span.set(previous)
 
 
-def mark(name: str, *, attributes: dict | None = None) -> None:
+def mark(name: str, *, attributes: dict | None = None) -> Any:
     """Record a point event -- something that happened, with no duration."""
     recorder = _recorder.get()
     if recorder is None or not recorder._active:
-        return
-    recorder._note_event(name, attributes)
+        return _NOOP_HANDLE
+    return recorder._note_event(name, attributes)
+
+
+def record_check(name: str, value: bool, *, source: str = "program_check") -> bool:
+    """Record one program check where it actually ran, and return it unchanged.
+
+    Returning the value is the whole point: the caller keeps its own ``and``/``or``
+    short-circuit, so this observes which checks were reached without ever deciding
+    that.  A check the program never got to leaves no record, which is the only way it
+    can avoid reading as one that passed.
+    """
+    recorder = _recorder.get()
+    if recorder is not None and recorder._active:
+        mark("check", attributes={"check": name, "check_source": source,
+                                  "result_code": "PASS" if value else "FAIL"})
+    return value
+
+
+def tool_call_key(*, sdk_call_id: str, step_index: int) -> str | None:
+    """The key joining one tool call's permission point with its execution.
+
+    None while tracing is off, so a caller can use the result to decide whether it has
+    anything to correlate at all.
+    """
+    recorder = _recorder.get()
+    if recorder is None or not recorder._active:
+        return None
+    return recorder._tool_call_key(sdk_call_id, step_index)
 
 
 def _encode_document(document: dict) -> bytes:

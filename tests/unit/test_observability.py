@@ -21,10 +21,16 @@ from reproagent.observability import (
     MAX_SPANS,
     TraceRecorder,
     mark,
+    record_check,
     span,
+    tool_call_key,
     trace_session,
     tracing_enabled,
 )
+
+
+def named(document, name):
+    return [entry for entry in document["spans"] if entry["name"] == name]
 
 
 class FakeClock:
@@ -342,6 +348,83 @@ def test_finishing_freezes_the_document_it_returns():
 
     assert [entry["name"] for entry in document["spans"]] == ["before-finish"]
     assert document["summary"]["span_count"] == len(document["spans"]) == 1
+
+
+def test_a_span_captures_redacted_content_and_refers_to_it():
+    with TraceRecorder(secrets=("sk-live-abcdef0123456789",)) as recorder:
+        with span("sdk.model_round") as handle:
+            content_id = handle.capture("wire_request", {"messages": [
+                {"role": "user", "content": "compare with sk-live-abcdef0123456789"}]},
+                source="wire_request")
+        with span("tool.Read") as other:
+            other.capture("sdk_tool_result", {"content": "ok"}, source="sdk_tool_result")
+
+    document = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
+
+    assert document["capture_mode"] == "content"
+    assert document["content_complete"] is True
+    entry = named(document, "sdk.model_round")[0]
+    assert entry["content_refs"] == [content_id]
+    assert entry["content_status"] == "captured"
+    stored = {record["content_id"]: record for record in document["contents"]}
+    assert "sk-live-abcdef0123456789" not in json.dumps(document)
+    assert stored[content_id]["owner_span_id"] == entry["span_id"]
+
+
+def test_a_span_that_captured_nothing_says_why():
+    with TraceRecorder() as recorder:
+        with span("model.logical") as handle:
+            ref = handle.capture("provider_reasoning", None, source="provider_reasoning",
+                                 availability="not_returned")
+
+    document = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
+    entry = named(document, "model.logical")[0]
+
+    # The absence is recorded and attributed to the span, rather than left as an empty
+    # list that reads like content nobody asked for.
+    assert ref is not None
+    assert entry["content_refs"] == [ref]
+    assert entry["content_status"] == "not_returned"
+    assert document["content_complete"] is False
+
+
+def test_record_check_returns_the_value_and_records_the_outcome():
+    with TraceRecorder() as recorder:
+        with span("verify"):
+            first = record_check("binding", True)
+            second = record_check("protection_ok", False)
+            # The caller keeps its own short-circuit: the second check failed, so the
+            # third is never reached.
+            third = record_check("framework_ok", True) if second else None
+
+    document = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
+
+    assert (first, second, third) == (True, False, None)
+    checks = {entry["attributes"]["check"]: entry["attributes"]["result_code"]
+              for entry in document["spans"] if "check" in entry["attributes"]}
+    assert checks == {"binding": "PASS", "protection_ok": "FAIL"}
+    # A check the program never reached leaves no record at all -- which is the only
+    # honest way to keep it from reading as one that passed.
+    assert "framework_ok" not in checks
+
+
+def test_tool_call_key_separates_reused_ids_and_repeats_deterministically():
+    with trace_session(enabled=True) as recorder:
+        first = tool_call_key(sdk_call_id="call_1", step_index=3)
+        again = tool_call_key(sdk_call_id="call_1", step_index=3)
+        later = tool_call_key(sdk_call_id="call_1", step_index=4)
+
+    # A provider that reuses one id across steps must still produce distinct keys...
+    assert first != later
+    # ...and the same call must always produce the same key.
+    assert first == again
+    assert len(first) == 32
+    # The raw SDK id is not what is stored.
+    assert "call_1" not in first
+
+
+def test_tool_call_key_is_none_while_tracing_is_off():
+    assert tool_call_key(sdk_call_id="call_1", step_index=0) is None
 
 
 def test_learning_is_reported_separately_from_the_main_run():
