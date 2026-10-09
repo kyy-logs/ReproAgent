@@ -276,4 +276,12 @@ write_trace_html(task_dir: Path, document: dict) -> Path
 - 来源/缺失/截断/信任等级明确，不能补写内部思考或新增模型请求；内容只在本地副本保存。
 - metadata/正文/总JSON/HTML上限一致；模型费用只从HTTP叶子统计；并发与短路/long-path/非致命失败均有具体验证。
 - 改动范围、公共接口、每task交付、矩阵失败定位完整；所有验收仍not_run。
-- 执行方式沿用当前会话逐项实现；本次仅重写计划，未改产品代码、未调用真实模型、未push。
+- 执行方式沿用当前会话逐项实现。
+
+**执行状态（2026-10-09）：Task 1–5 已实现并验证。** 实现落在 `feat/minimal-observability`（已 rebase 到
+main），逐项结果、命令、证据与失败定位见
+[双层可观测性验收回执](../../reviews/2026-10-09-dual-layer-observability-acceptance.md)。
+一次全分支独立审查报出 10 条并全部复现成立，其中两条为产品级缺陷（正文去重与 owner 校验互相矛盾导致
+`reproagent trace` 拒绝自产 trace；span 上限丢弃长寿父节点导致写出者产出读者拒绝的文档），已按 RED→GREEN
+修复。**未执行**：真实模型轮次（全部为 `MockTransport`）、官方 Docker harness；`REPROAGENT_RG_PATH`
+因本机无可执行 rg 而记为环境缺口。未 push。

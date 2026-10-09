@@ -217,10 +217,31 @@ def test_validate_trace_rejects_a_content_reference_that_does_not_resolve():
         validate_trace(trace_with({"content_refs": ["nope"]}))
 
 
-def test_validate_trace_rejects_content_owned_by_another_span():
-    # A reference that resolves to a record some other span owns is not a link.
+def test_validate_trace_accepts_content_shared_by_several_spans():
+    """Content is stored once and cited by every span that saw it.
+
+    Deduplication is the whole point of content ids, so a record legitimately has more
+    than one citing span.  `owner_span_id` names the first of them; requiring every
+    reference to be that one would reject the ordinary case of two model calls whose
+    provider returned no reasoning at all.
+    """
+    shared = stored(owner="0" * 16)
+    other = {"span_id": "1" * 16, "parent_span_id": "0" * 16, "name": "second", "kind": "span",
+             "offset_seconds": 1.0, "duration_seconds": 1.0, "status": "ok", "attributes": {},
+             "content_refs": ["c1"], "content_status": "not_returned"}
+    document_ = document(spans=[{"span_id": "0" * 16, "parent_span_id": None, "name": "task",
+                                 "kind": "span", "offset_seconds": 0.0, "duration_seconds": 2.0,
+                                 "status": "ok", "attributes": {},
+                                 "content_refs": ["c1"], "content_status": "not_returned"}, other],
+                         contents=[shared])
+
+    assert validate_trace(document_) is document_
+    assert other["content_refs"] == ["c1"]
+
+
+def test_validate_trace_still_rejects_a_reference_with_no_record():
     with pytest.raises(ValueError):
-        validate_trace(trace_with({"content_refs": ["c1"]}, [stored(owner="9" * 16)]))
+        validate_trace(trace_with({"content_refs": ["c1"]}, [stored(content_id="other")]))
 
 
 def test_validate_trace_rejects_a_parent_that_is_not_in_the_document():

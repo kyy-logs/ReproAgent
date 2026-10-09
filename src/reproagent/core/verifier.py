@@ -9,7 +9,7 @@ from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
 #: everything after the first short-circuit has no record at all, which is the only way
 #: it can avoid reading as a check that passed.
 VERIFIER_CHECKS = ("execution_evidence_present", "binding_and_integrity_ok",
-                   "no_non_origin_framework_errors", "framework_blocked",
+                   "no_non_origin_framework_errors", "framework_not_blocked",
                    "tests_executed_and_valid", "candidate_reproduced",
                    "expectation_is_grounded", "provider_semantic_claims",
                    "citations_cover_expectation_and_failure")
@@ -77,7 +77,7 @@ class Verifier:
         non_origin_errors = tuple(error for error in checks.invalid if 'origin' not in error and error != 'no collected tests')
         if not record_check('no_non_origin_framework_errors', not non_origin_errors):
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(non_origin_errors))
-        if record_check('framework_blocked', bool(checks.blocked)):
+        if not record_check('framework_not_blocked', not checks.blocked):
             if not run.observation.target_origins:
                 return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate import references an unavailable module before target execution')
             if 'ModuleNotFoundError' not in contract.reported_actual and 'import' not in contract.reported_actual.lower():

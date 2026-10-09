@@ -17,6 +17,7 @@ from reproagent.observability import TraceRecorder, record_check, span
     ("COMMAND_TIMEOUT", True, "failed"),
     ("CANCELLED", True, "blocked"),
     ("LOG_LIMIT", True, "blocked"),
+    ("EXHAUSTED", True, "blocked"),
     ("EXITED", False, "degraded"),
     ("COMMAND_TIMEOUT", False, "degraded"),
     ("SOMETHING_NEW", True, "unknown"),

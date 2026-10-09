@@ -22,7 +22,7 @@ from tests.integration.test_agentscope_backends import CANDIDATE, text_response,
 from tests.unit.test_controller import ScriptedModel, setup
 
 
-def run_sdk_task(tmp_path, projects, facts, *, trace=False, seed=True):
+def run_sdk_task(tmp_path, projects, facts, *, trace=False, seed=True, script=None):
     """One real SDK task with learning, optionally under a recorder.
 
     The handler is the one the experience lifecycle tests use: an exploration phase
@@ -32,7 +32,7 @@ def run_sdk_task(tmp_path, projects, facts, *, trace=False, seed=True):
     request, _, _, ctx = setup(tmp_path, projects, facts)
     path = tmp_path / "shared-experiences.json"
     request = replace(request, experience_file=path, learn_experience=True)
-    script = ScriptedModel()
+    script = script or ScriptedModel()
     seen, main_calls = [], []
     read = False
 

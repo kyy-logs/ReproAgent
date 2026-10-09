@@ -157,11 +157,14 @@ class AgentScopeRuntime:
         # The surface this phase really registered and what it had left to spend.  Without
         # both, a trace cannot say why a phase ended, and a six-tool task looks exactly
         # like a seven-tool one.
-        mark("exploration.tools", attributes={
-            "tool_set": list(self.allowed_tools),
-            "budget": {"steps_remaining": self._steps_remaining(),
-                       "seconds_remaining": round(max(0.0, self.context.budget.deadline
-                                                       - self.context.budget.clock()), 3)}})
+        if tracing_enabled():
+            # Guarded because the arguments are built either way: reading the clock and
+            # the budget on a run that asked for no capture is work nobody receives.
+            mark("exploration.tools", attributes={
+                "tool_set": list(self.allowed_tools),
+                "budget": {"steps_remaining": self._steps_remaining(),
+                           "seconds_remaining": round(max(0.0, self.context.budget.deadline
+                                                           - self.context.budget.clock()), 3)}})
         message = self._message(context)
         end_reason = ""
         for attempt in range(PROTOCOL_ATTEMPTS):

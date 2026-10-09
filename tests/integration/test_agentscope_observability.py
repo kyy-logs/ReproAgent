@@ -34,6 +34,7 @@ from reproagent.adapters.agentscope.observability import TraceMiddleware
 from reproagent.adapters.agentscope.runtime import AgentScopeRuntime
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend
 from reproagent.adapters.agentscope.tools import TOOL_NAMES, build_toolkit
+from reproagent.core.budget import BudgetStopped
 from reproagent.core.candidate_service import CandidateService
 from reproagent.core.models import (
     AgentContext,
@@ -521,6 +522,25 @@ def test_a_finished_phase_does_not_report_a_failed_model_round(tmp_path, project
     assert all(entry["status"] != "error" for entry in rounds), \
         [(entry["status"], entry["attributes"]) for entry in rounds]
     assert any(entry["attributes"].get("result_code") == "PHASE_ENDED" for entry in rounds)
+
+
+def test_a_budget_stop_is_not_a_failed_model_round(tmp_path, projects, facts):
+    """Running out of budget ends the phase; it is not a round that went wrong.
+
+    A task stopped by its own budget is a normal, expected ending, and the round that
+    was cut short must not be the one place that reads as a failure.
+    """
+    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1")],
+                limits=BudgetLimits(agent_steps=1)) as env:
+        env.answers[0] = read_reply(env.module, "call-1")
+        with pytest.raises(BudgetStopped):
+            explore(env)
+        doc = document(env, status="EXHAUSTED")
+
+    rounds = named(doc, "sdk.model_round")
+    assert rounds
+    assert all(entry["status"] != "error" for entry in rounds), \
+        [(entry["status"], entry["attributes"]) for entry in rounds]
 
 
 def test_cancelled_tool_is_not_reported_success(tmp_path, projects, facts):

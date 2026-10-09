@@ -21,6 +21,7 @@ from agentscope.tool import ToolResponse
 from .dependency import require_agentscope
 from .middleware import PhaseEnded
 from .tools import TOOL_NAMES
+from ...core.budget import BudgetStopped
 from ...observability import span, tool_call_key
 
 #: The span a whole SDK reply sits in: one model round, checked as a unit.
@@ -28,6 +29,8 @@ MODEL_ROUND_SPAN = "sdk.model_round"
 
 #: What a round that was turned away because the phase already has its result is called.
 PHASE_ENDED_CODE = "PHASE_ENDED"
+#: What a round cut short by the budget, with no reason of its own, is called.
+BUDGET_STOPPED_CODE = "BUDGET_STOPPED"
 
 #: Marks the controlled outcome a tool reported, so a refusal and an execution never
 #: look alike.  The values are the SDK's own ``ToolResultState`` names.
@@ -69,14 +72,16 @@ class TraceMiddleware(MiddlewareBase):
     async def on_model_call(self, agent, input_kwargs, next_handler):
         """Time one SDK model round and record how the whole reply was judged."""
         with span(MODEL_ROUND_SPAN, attributes={"purpose": "exploration"},
-                  expected=(PhaseEnded,)) as handle:
+                  expected=(PhaseEnded, BudgetStopped)) as handle:
             try:
                 response = await next_handler()
-            except PhaseEnded:
-                # The phase already has its result, so it refuses the next call.  That is
-                # how a finished phase ends -- most often right after it published -- and
-                # it must not make a clean ending read as a failed round.
-                handle.annotate(result_code=PHASE_ENDED_CODE)
+            except (PhaseEnded, BudgetStopped) as ended:
+                # Both are how a phase *ends* rather than how it fails: the phase either
+                # already has its result, or the task ran out of budget.  An EXHAUSTED
+                # task whose last round reads as a failure is exactly the mislabelling
+                # this handles.
+                handle.annotate(result_code=PHASE_ENDED_CODE if isinstance(ended, PhaseEnded)
+                                else str(getattr(ended, "reason", "") or BUDGET_STOPPED_CODE))
                 raise
             except BaseException as failure:
                 # A rejected reply is the fact worth keeping: the phase's own check
@@ -102,7 +107,9 @@ class TraceMiddleware(MiddlewareBase):
         attributes = {"tool": name}
         if key is not None:
             attributes["tool_call_key"] = key
-        with span(f"tool.{raw_name or 'unknown'}", attributes=attributes) as handle:
+        # Named from the sanitized name, not the raw one: a span name is written down
+        # like any other field, and the raw name is model-controlled text.
+        with span(f"tool.{name or 'unknown'}", attributes=attributes) as handle:
             terminal = None
             async for item in next_handler():
                 state = tool_state(item)

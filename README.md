@@ -79,7 +79,7 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 
 Optional progressive advice and automatic post-task learning are available. See [experience setup and frozen evaluation](docs/experience.md) and [task example](examples/task.experience.json). Disabled by default; real-model A/B benefit has not been measured.
 
-A local activity trace can show where a run spent its time, HTTP attempts, tokens and cost, and which layer failed. Disabled by default: pass `--trace` to `run`, then render it offline with `reproagent trace <task-dir>`. See [observability](docs/observability.md).
+Every run writes a local activity trace: what the model was sent and returned, what each tool was given and gave back, the program's checks behind an acceptance, and where the time, HTTP attempts and tokens went. It is **on by default** — `--no-trace` turns it off for one run — and never leaves the machine. See [observability](docs/observability.md).
 
 ## Known limitations
 

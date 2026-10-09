@@ -26,6 +26,7 @@ PROCESS_HEALTH = {
     "COMMAND_TIMEOUT": "failed",
     "CANCELLED": "blocked",
     "LOG_LIMIT": "blocked",
+    "EXHAUSTED": "blocked",         # the task's own budget stopped it
 }
 
 

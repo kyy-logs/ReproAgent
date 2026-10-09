@@ -48,9 +48,14 @@ def read_trace(task_dir: Path) -> dict:
     if source.stat().st_size > MAX_READ_BYTES:
         # Refused before it is loaded: the stored file is untrusted input.
         raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is too large to display")
+    from .core.serialization import parse_json
+
     try:
-        document = json.loads(source.read_text(encoding="utf-8"))
-    except (ValueError, UnicodeError, OSError):
+        # The repository's own hardened reader rather than the stdlib default.
+        document = parse_json(source.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeError, OSError, RecursionError):
+        # RecursionError is in the list because the file is untrusted: nesting is bounded
+        # only by the writer, and a hand-edited one can be far deeper.
         raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is not readable JSON") from None
     return validate_trace(document)
 
@@ -68,7 +73,13 @@ def validate_trace(document: dict) -> dict:
     spans, contents = document.get("spans", []), document.get("contents", [])
     if not isinstance(spans, list) or not isinstance(contents, list):
         raise ValueError("the trace is not shaped like a trace")
-    if not isinstance(document.get("summary", {}), dict):
+    summary = document.get("summary", {})
+    if not isinstance(summary, dict):
+        raise ValueError("the trace is not shaped like a trace")
+    # The page reads these as mappings; anything else would surface as a traceback.
+    # Absent is not the same as wrong: a run with no learning step legitimately has none.
+    if any(summary.get(key) is not None and not isinstance(summary[key], dict)
+           for key in ("usage", "cost", "learning")):
         raise ValueError("the trace is not shaped like a trace")
 
     by_id: dict = {}
@@ -82,22 +93,29 @@ def validate_trace(document: dict) -> dict:
             continue
         if parent not in by_id:
             raise ValueError("a span refers to a parent this trace does not contain")
-        # Walk up: a cycle would leave the reader looping for the same reason.
+        # Walk up: a cycle would leave the reader looping for the same reason, and a
+        # missing ancestor is a broken chain even when the direct parent is present.
         seen, walker = set(), parent
         while walker is not None:
             if walker in seen:
                 raise ValueError("the trace contains a parent cycle")
             seen.add(walker)
-            walker = by_id[walker].get("parent_span_id")
+            node = by_id.get(walker)
+            if node is None:
+                raise ValueError("a span refers to a parent this trace does not contain")
+            walker = node.get("parent_span_id")
 
-    stored = {record.get("content_id"): record for record in contents if isinstance(record, dict)}
+    for record in contents:
+        if not isinstance(record, dict):
+            raise ValueError("the trace is not shaped like a trace")
+    stored = {record.get("content_id") for record in contents}
     for entry in spans:
         for ref in entry.get("content_refs") or ():
-            record = stored.get(ref)
-            if record is None:
+            # Every reference has to resolve.  Which span owns the record is not checked:
+            # content is deduplicated by id and cited by every span that saw it, so a
+            # shared record legitimately has more than one citing span.
+            if ref not in stored:
                 raise ValueError("a span cites content this trace does not contain")
-            if record.get("owner_span_id") != entry.get("span_id"):
-                raise ValueError("a span cites content owned by another span")
     return document
 
 
@@ -196,6 +214,29 @@ def _render_contents(document: dict) -> str:
     return "\n".join(parts)
 
 
+def _render_decisions(document: dict) -> str:
+    """Why the run was accepted or refused, from the program's own points.
+
+    The check points and the verdict are the acceptance reasoning.  They are shown with
+    the source that produced them, so "the model said so" and "the program accepted it"
+    never read as the same statement.
+    """
+    decided = [entry for entry in (document.get("spans") or ())
+               if "check" in (entry.get("attributes") or {}) or entry.get("name") == "verdict"]
+    parts = ["<h2>Decisions</h2>"]
+    if not decided:
+        parts.append('<p class="unknown">This run recorded no acceptance decision.</p>')
+        return "\n".join(parts)
+    rows = []
+    for entry in decided:
+        attributes = entry.get("attributes") or {}
+        rows.append(f"<tr><td>{_esc(attributes.get('check') or entry.get('name'))}</td>"
+                    f"<td>{_esc(attributes.get('result_code'))}</td>"
+                    f"<td>{_esc(attributes.get('check_source') or attributes.get('reason_origin') or UNKNOWN_TEXT)}</td></tr>")
+    head = "<tr><th>what was decided</th><th>result</th><th>who decided it</th></tr>"
+    return f"{parts[0]}<table>{head}{''.join(rows)}</table>"
+
+
 def _render_body(document: dict) -> str:
     parts = [
         f'<section id="overview"><h1>ReproAgent activity trace</h1>',
@@ -219,6 +260,7 @@ def _render_body(document: dict) -> str:
     parts.append(_render_timeline(document.get("spans") or ()))
     parts.append("</section>")
     parts.append(f'<section id="calls">{_render_contents(document)}</section>')
+    parts.append(f'<section id="decisions">{_render_decisions(document)}</section>')
     return "\n".join(parts)
 
 

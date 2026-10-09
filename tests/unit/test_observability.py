@@ -330,6 +330,33 @@ def test_a_nested_session_does_not_inherit_a_foreign_parent():
     assert inner_span["span_id"] not in {entry["span_id"] for entry in outer_document["spans"]}
 
 
+def test_the_span_cap_never_orphans_a_kept_span(monkeypatch):
+    """A parent that closes after the cap is hit must still be written.
+
+    Children close before their parents, so the cap drops the long-lived spans first --
+    exactly the ones every remaining span points at.  The result was a document the
+    writer produced and its own reader refused.
+    """
+    monkeypatch.setattr(observability, "MAX_SPANS", 3)
+    with TraceRecorder() as recorder:
+        with span("task"):
+            for index in range(6):
+                with span(f"child-{index}"):
+                    pass
+
+    document = recorder.finish(task_id="task-1", status="DONE", main_duration=1.0)
+    kept = {entry["span_id"] for entry in document["spans"]}
+    parents = {entry["parent_span_id"] for entry in document["spans"] if entry["parent_span_id"]}
+
+    assert document["partial"] is True, "the cap was reached"
+    assert len(kept) < 7, "the cap still dropped what it could"
+    # The invariant that matters: every parent a kept span points at is itself kept.
+    assert parents <= kept, "a kept span points at a parent that was dropped"
+
+    from reproagent.trace_rendering import validate_trace
+    validate_trace(document)
+
+
 def test_finishing_freezes_the_document_it_returns():
     """A span that closes afterwards must not rewrite a document already handed out.
 

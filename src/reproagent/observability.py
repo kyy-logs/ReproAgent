@@ -32,12 +32,14 @@ SCHEMA_VERSION = 1
 #: be able to fail the task it describes.
 MAX_SPANS = 1024
 MAX_ATTRIBUTE_BYTES = 2048
-MAX_DOCUMENT_BYTES = 1 << 20
-MAX_HTML_BYTES = 4 << 20
-#: The viewer's own input bound.  The writer *targets* one megabyte and marks anything
-#: past it incomplete, but a stored trace is an untrusted file -- hand-editable, and
-#: convertible from another sink -- so it is refused by size before it is ever read.
-MAX_READ_BYTES = 8 << 20
+#: The whole stored file, metadata and captured content together -- the ceilings above
+#: bound the parts, this one bounds their sum, and it is what the usage guide states.
+MAX_DOCUMENT_BYTES = 6 << 20
+MAX_HTML_BYTES = 8 << 20
+#: The viewer's own input bound.  A stored trace is an untrusted file -- hand-editable,
+#: and convertible from another sink -- so it is refused by size before it is ever read.
+#: It matches what the writer will produce, so a file written here can be read back.
+MAX_READ_BYTES = 6 << 20
 
 #: Where a traced task keeps its trace, relative to the task's own output directory.
 TRACE_DIRECTORY = "observability"
@@ -253,16 +255,32 @@ class TraceRecorder:
             self._fault()
         return entry
 
+    def _parent_of_kept(self, span_id: str) -> bool:
+        """Whether a span that is already kept points at this one.
+
+        Children close before their parents, so the cap falls on the long-lived spans
+        first -- exactly the ones everything else points at.  Retaining a parent whose
+        child survived is what keeps the cap from producing a trace its own reader
+        refuses for pointing at a span that is not there.
+        """
+        return any(other["parent_span_id"] == span_id for other in self._spans)
+
     def _append(self, entry: dict) -> None:
         if self._frozen:
             # The document has been handed out; a span that closes afterwards must not
             # add a row its own summary never counted.
             return
-        if len(self._spans) >= MAX_SPANS:
+        if len(self._spans) >= MAX_SPANS and not self._parent_of_kept(entry["span_id"]):
             self._warn(WARNING_SPAN_CAP)
             self._partial = True
+            self._forget(entry["span_id"])
             return
         self._spans.append(entry)
+
+    def _forget(self, span_id: str) -> None:
+        """Release a span nothing kept, so the cap bounds memory and not just the file."""
+        self._entries.pop(span_id, None)
+        self._span_ids.discard(span_id)
 
     def _begin(self, name: str, attributes: dict | None) -> SpanHandle:
         entry = self._new_entry(name, "span")
@@ -587,8 +605,11 @@ def write_trace(task_dir: Path, document: dict) -> Path:
     target = _trace_destination(task_dir, TRACE_FILENAME)
     encoded = _encode_document(document)
     if len(encoded) > MAX_DOCUMENT_BYTES:
-        document = {**document, "partial": True, "metrics_complete": False,
-                    "warnings": [*document.get("warnings", ()), WARNING_DOCUMENT_TOO_LARGE]}
+        # Marked in place, not on a copy: the caller renders the same object to the page,
+        # and a page that claimed completeness while the JSON beside it said otherwise
+        # would make the two files disagree about the same run.
+        document.update(partial=True, metrics_complete=False,
+                        warnings=[*document.get("warnings", ()), WARNING_DOCUMENT_TOO_LARGE])
         encoded = _encode_document(document)
     atomic_write(target, encoded)
     return target

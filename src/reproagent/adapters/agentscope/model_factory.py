@@ -18,7 +18,7 @@ from ...core.budget import BudgetStopped
 from ...core.models import ModelRequest
 from ...core.protocol import ModelOutputError, attempt_payload, classify_output
 from ...core.serialization import parse_json
-from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, capture, span
+from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, capture, span, tracing_enabled
 
 #: The most of a rejected response body the trace will keep, so a preview cannot itself
 #: become the reason a run is unreadable.
@@ -124,7 +124,12 @@ class LimitedResponseStream(httpx.AsyncByteStream):
 
 
 def _response_hook(observation, context, purpose):
-    """Read the raw reply without keeping or logging any of it."""
+    """Read the reply into the observation, and into the trace as a redacted copy.
+
+    What is kept is the projection ``_capture_response`` selects, never the raw body:
+    the observation stays the accounting record, and the trace gets text that has
+    already been through redaction.
+    """
     async def observe(response):
         if response.headers.get('content-encoding', 'identity').strip().lower() != 'identity':
             # This client always asks for identity, so asking again changes nothing.
@@ -201,6 +206,10 @@ def _request_hook(purpose: str):
     change what is sent, and re-issuing the request would change what is paid for.
     """
     async def observe(request):
+        if not tracing_enabled():
+            # Building the projection first and discarding it would mean decoding and
+            # parsing every request body on a run that asked for no capture at all.
+            return
         try:
             body = request.content
             if len(body) > RESPONSE_LIMIT_BYTES:
