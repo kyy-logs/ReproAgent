@@ -10,6 +10,8 @@ from .app import LEGACY_BACKENDS, create_controller
 from .core.budget import Budget
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
+from .observability import trace_session, write_trace
+from .trace_rendering import read_trace, write_trace_html
 from .paths import display_path
 from .store import TaskStore
 
@@ -18,6 +20,32 @@ EXIT_CODES = {TaskState.DONE:0, TaskState.BLOCKED:1, TaskState.NEEDS_INFORMATION
 # own words, instead of leaving a silent DeprecationWarning to stand for it.
 BACKEND_DEPRECATION = ('--model-backend/--agent-backend are deprecated and no longer select a runtime: '
                        'ReproAgent runs on the AgentScope infrastructure only.')
+#: A trace is a local diagnostic. If it cannot be written that is worth saying once, and
+#: worth saying without touching the task's own JSON, its package or its exit code.
+TRACE_WRITE_WARNING = 'reproagent: could not write the activity trace; the task result is unchanged.'
+TRACE_PAGE_WARNING = 'reproagent: could not write the trace page; the trace itself is intact.'
+
+
+def _write_trace_or_warn(task_dir, document) -> bool:
+    """Write the trace, then the page built from the same document.
+
+    The page is not attempted unless the JSON landed: a page rendered from a JSON that
+    failed to write would be the only record of the run, and the next ``trace`` command
+    would have nothing to rebuild from.  Either failure is one warning, and neither
+    changes the task's own result.
+    """
+    try:
+        write_trace(task_dir, document)
+    except (OSError, ValueError, TypeError):
+        # TypeError is in the list because ``write_trace`` is public: a document it
+        # cannot encode is a failed observation, not a failed task.
+        print(TRACE_WRITE_WARNING, file=sys.stderr)
+        return False
+    try:
+        write_trace_html(task_dir, document)
+    except (OSError, ValueError, TypeError):
+        print(TRACE_PAGE_WARNING, file=sys.stderr)
+    return True
 
 
 def load_request(path):
@@ -52,7 +80,15 @@ def run_command(args):
     context = RunContext(Budget(request.limits))
     async def run():
         return await controller.run(request, context, fixed)
-    result = asyncio.run(run())
+    # The scope is opened around the whole run, so it covers what the task itself does
+    # after the phases -- sealing, export -- and the learning step that follows them.
+    trace_document = None
+    with trace_session(enabled=not args.no_trace, secrets=(os.environ.get(model.api_key_env, ''),)) as recorder:
+        result = asyncio.run(run())
+        if recorder is not None:
+            learning = asdict(controller.learning_result) if getattr(controller, 'learning_result', None) is not None else None
+            trace_document = recorder.finish(task_id=result.task_id, status=result.status.value,
+                                             main_duration=result.duration, learning=learning)
     summary = {'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
         'export_state':result.export_state, 'output_dir':display_path(output)}
     if getattr(controller, 'learning_result', None) is not None:
@@ -60,7 +96,24 @@ def run_command(args):
         if not controller.learning_result.event_recorded:
             print('Learning summary could not be saved; the sealed task result is unchanged.', file=sys.stderr)
     print(json.dumps(summary, ensure_ascii=False))
+    if trace_document is not None:
+        _write_trace_or_warn(output, trace_document)
     return EXIT_CODES[result.status]
+
+
+def trace_command(args):
+    """Rebuild the page from the trace a task already stored.
+
+    This is the offline path only: a normal run writes both files by itself.  It reads
+    the same stored document the automatic path renders, through the same checks.
+    """
+    root = Path(args.task_dir).resolve()
+    if not root.is_dir():
+        raise ValueError('task directory does not exist')
+    document = read_trace(root)
+    target = write_trace_html(root, document)
+    print(json.dumps({'trace': display_path(target)}, ensure_ascii=False))
+    return 0
 
 
 def main(argv=None):
@@ -72,9 +125,16 @@ def main(argv=None):
                      help='deprecated: both legacy values select the one AgentScope infrastructure')
     run.add_argument('--agent-backend', choices=LEGACY_BACKENDS,
                      help='deprecated: both legacy values select the one AgentScope infrastructure')
+    run.add_argument('--no-trace', action='store_true',
+                     help='do not capture or write the local activity trace for this run')
     inspect = sub.add_parser('inspect'); inspect.add_argument('task_dir')
+    # The trace viewer takes the task directory and nothing else: the two files it may
+    # touch are fixed, so it cannot be pointed at the sealed package or anywhere else.
+    trace = sub.add_parser('trace'); trace.add_argument('task_dir')
     try:
         args = parser.parse_args(argv)
+        if args.command == 'trace':
+            return trace_command(args)
         if args.command == 'inspect':
             root = Path(args.task_dir).resolve()
             if not root.is_dir(): raise ValueError('task directory does not exist')

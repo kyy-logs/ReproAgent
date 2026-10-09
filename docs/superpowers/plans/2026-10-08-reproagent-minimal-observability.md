@@ -12,7 +12,20 @@
 
 **UX decision (2026-10-09):** 用户要求默认采集、命令简单；普通run自动输出JSON和HTML，取消开启旗标，仅保留可选--no-trace。
 
-**Baseline:** 2026-10-09 核对本地 `76d4f95`；真实类为 `model_factory.py:_GuardedModel`，方法为 `__call__/_attempt/_account`，传输观察函数为 `_response_hook`。本次重写计划，未实现；执行前冻结最新基线、保留其他代理改动。
+**Baseline:** 2026-10-09 执行前核对 `278903f`；真实类为 `model_factory.py:_GuardedModel`，方法为 `__call__/_attempt/_account`，传输观察函数为 `_response_hook`。
+
+**已有实现（2026-10-09 已 rebase 到上述基线）：** `feat/minimal-observability` 已实现旧计划的全部四条任务并验证（离线 605 passed；真实 DeepSeek 端到端一次跑通）。本次不是从零开始，各 Task 以**扩展现有实现**为主：
+
+| 已实现且已验证 | 新计划落点 |
+| --- | --- |
+| `observability.py`：recorder/ContextVar/有界 span/白名单/脱敏/partial 与 metrics 分层 | Task 1（扩展） |
+| `adapters/agentscope/observability.py`：TraceMiddleware、`on_acting` 原样透传、权限三态 | Task 2（扩展） |
+| `model.logical`/`model.http_attempt`、仅 HTTP 叶节点计费 | Task 2（扩展） |
+| CLI 落盘、原子写、`write_trace`/`write_trace_html`、junction/目录联接拒绝 | Task 4（改签名与默认值） |
+| `resources/trace.html.template` + 渲染、转义、限额 | Task 4（迁到 `trace_rendering.py`） |
+| controller/runner/verifier/experience 的 scope 挂载 | Task 3（扩展） |
+
+另外，本 worktree 自建的 `.venv`（editable 指向本 worktree 的 `src`）是已验证前提：共享 venv 的 `.pth` 指向 main 的 `src`，没有它 worktree 内测试全是假绿。
 
 ## 设计合同
 
@@ -70,7 +83,7 @@ trace.json将正文按content_id存一次，各span通过content_refs关联；HT
 ### 内容采集与资源约束
 
 - 元数据部分：最多1024个span/点、每条完整UTF-8 JSON≤2048字节，metadata部分≤1MiB。此为文件内分区限额，不是独立CLI模式。
-- 默认正文采集：最多512条正文，每条**最终序列化JSON含信封**≤32768字节；contents部分合计≤4MiB，整个trace.json≤6MiB，HTML≤32MiB。metadata上限不变。
+- 默认正文采集：最多512条正文，每条**最终序列化JSON含信封**≤32768字节；contents部分合计≤4MiB，整个trace.json≤6MiB。HTML上限与JSON同源（展开后可能倍增），**第一版定为8MiB并在超出时拒绝生成**：32MiB 的静态页浏览器打不开，而截断的页面会被读成完整的。
 - 正文记录先按白名单选字段，在新对象/字符串副本上脱敏，然后计算实际UTF-8序列化大小；不能修改请求、Msg、ChatResponse、ToolChunk或ToolResponse。
 - 脱敏已知模型凭据及标准敏感键（Authorization/api_key/password/secret/cookie等），处理JSON转义形式；不采集header/URL查询/环境变量。正文默认采集且只本地保存、不自动上传；自由文本可能含其他秘密，不声称完整秘密扫描，使用说明明确可用--no-trace关闭。
 - 超限正文保留标注过的head/tail UTF-8摘录，记录original_bytes/captured_bytes/truncated/excerpt_mode；不把不完整JSON摘录当已解析完整工件。防止只取请求头部让最新工具消息永远不可见。
@@ -145,7 +158,7 @@ Modify:
 TraceRecorder(*, secrets=(), clock=time.monotonic, wall_clock=time.time)
 trace_session(*, enabled: bool = True, secrets=()) -> ContextManager[TraceRecorder | None]
 tracing_enabled() -> bool
-span(name: str, *, attributes: dict | None = None) -> ContextManager[SpanHandle]
+span(name: str, *, attributes: dict | None = None, expected: tuple = ()) -> ContextManager[SpanHandle]
 mark(name: str, *, attributes: dict | None = None) -> SpanHandle
 SpanHandle.annotate(**allowlisted_fields) -> None
 SpanHandle.capture(kind: str, value, *, source: str, availability='captured') -> str | None
@@ -159,6 +172,8 @@ write_trace_html(task_dir: Path, document: dict) -> Path
 ```
 
 启用的recorder始终采集元数据和可得正文；capture_mode固定content，不提供内部元数据专用模式。CLI传enabled=not args.no_trace。record_check原样返回bool；disabled no-op不读时钟/正文、不创建文件。观测方法内部错误捕获并降级，领域异常/BudgetStopped/CancelledError原样传播。所有采集内容是副本。
+
+`expected` 列出的是"这个区域**结束**的方式，而不是失败的方式"，它们仍原样抛出、只是不记为失败。`TraceMiddleware.on_model_call` 必须用它标出 `PhaseEnded`：阶段发布候选后守卫会拒绝下一次模型调用，那是阶段的正常收尾。已在本机真实 DeepSeek 轮次中观察到，不标则每个成功发布都会留下一个 `error` 的 `sdk.model_round`。
 
 ## Global Constraints
 
@@ -230,7 +245,7 @@ write_trace_html(task_dir: Path, document: dict) -> Path
 - [ ] Step 1: 写真实SDK+pytest端到端：默认采集/--no-trace两种模式同业务结果；默认运行能按key看参数/结果、实际模型输入/返回推理（mock有/无两case），契约/检查/verdict接受理由和主/学习资源关闭链路。默认采集的JSON与HTML包含预期正文marker，--no-trace不创建观测文件；采集不加调用/token。
 - [ ] Step 2: 跑RED并修到GREEN；包含误导模型自报、程序检查拒绝、健康blocked、内容超限、collector/persistence错误；预期负例正确拒绝也是该测试通过，不能靠trace存在就算验收。
 - [ ] Step 3: 用法说明普通run默认采集/自动生成两文件、唯一可选--no-trace与离线重建、来源与思考边界、本地敏感内容/限额、无额外token、日志与trace角色、硬杀限制和每种失败的排查位置。不自动上传、回放、提高模型思考额度。
-- [ ] Step 4: 冻结实现版本/环境，设置REPROAGENT_RG_PATH，跑 `python -m pytest tests/unit tests/integration -q -rs`、`python -m pip check`；读取真实输出并保存本地日志。一次全分支独立审查，Important/Critical按RED→GREEN修复后全套再验，保留初次失败。
+- [ ] Step 4: 冻结实现版本/环境，`REPROAGENT_RG_PATH` 指向**真实 rg 可执行文件**后跑 `python -m pytest tests/unit tests/integration -q -rs`、`python -m pip check`；读取真实输出并保存本地日志。若本机只有包装 shell 函数（如 `claude.exe` 的 `rg`）而无可执行文件，如实记为"环境缺口、rg 相关用例保持基线跳过"，不得声称已设置。一次全分支独立审查，Important/Critical按RED→GREEN修复后全套再验，保留初次失败。
 - [ ] Step 5: 逐项填写下方验收矩阵与修复定位，记录源码/依赖/命令/结果/证据/取舍。只在必选项有证据pass时宣称本地验收通过；提交 `docs: record dual-layer observability verification`。当前所有任务均未执行。
 
 ## 过程层：验收标准、检查表与失败定位
@@ -261,4 +276,12 @@ write_trace_html(task_dir: Path, document: dict) -> Path
 - 来源/缺失/截断/信任等级明确，不能补写内部思考或新增模型请求；内容只在本地副本保存。
 - metadata/正文/总JSON/HTML上限一致；模型费用只从HTTP叶子统计；并发与短路/long-path/非致命失败均有具体验证。
 - 改动范围、公共接口、每task交付、矩阵失败定位完整；所有验收仍not_run。
-- 执行方式沿用当前会话逐项实现；本次仅重写计划，未改产品代码、未调用真实模型、未push。
+- 执行方式沿用当前会话逐项实现。
+
+**执行状态（2026-10-09）：Task 1–5 已实现并验证。** 实现落在 `feat/minimal-observability`（已 rebase 到
+main），逐项结果、命令、证据与失败定位见
+[双层可观测性验收回执](../../reviews/2026-10-09-dual-layer-observability-acceptance.md)。
+一次全分支独立审查报出 10 条并全部复现成立，其中两条为产品级缺陷（正文去重与 owner 校验互相矛盾导致
+`reproagent trace` 拒绝自产 trace；span 上限丢弃长寿父节点导致写出者产出读者拒绝的文档），已按 RED→GREEN
+修复。**未执行**：真实模型轮次（全部为 `MockTransport`）、官方 Docker harness；`REPROAGENT_RG_PATH`
+因本机无可执行 rg 而记为环境缺口。未 push。

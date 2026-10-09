@@ -22,6 +22,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field, replace
 
+from ..observability import span
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
@@ -400,6 +401,17 @@ class Controller:
     # =======================================================================
 
     async def run(self, request, context, fixed=None):
+        """Run one task under a single trace root.
+
+        The root is opened here rather than around any one stage so that everything the
+        task does belongs to it: the resource close, the export and the learning step all
+        run inside this call, and a trace that stopped at the phase would quietly omit
+        the part of the run the user is most likely asking about.
+        """
+        with span("task"):
+            return await self._run(request, context, fixed)
+
+    async def _run(self, request, context, fixed=None):
         started = time.monotonic()
         result = TaskResult(request.task_id or 'task-' + uuid.uuid4().hex, TaskState.PREPARING)
         if (self.store.root / 'request.json').exists():
@@ -410,8 +422,9 @@ class Controller:
         try:
             if self.experience_service is not None:
                 self.experience_service.prepare(fixed, context)
-            snapshot = self.workspace.freeze(request, context)
-            environment = await self.runner.prepare(request, snapshot, context)
+            with span("prepare"):
+                snapshot = self.workspace.freeze(request, context)
+                environment = await self.runner.prepare(request, snapshot, context)
             context.budget.check()
             result = self.state(result, TaskState.ANALYZING)
             issue_bytes = request.issue_file.read_bytes()
@@ -426,8 +439,9 @@ class Controller:
             if self.experience_service is not None and self.experience_service.view is not None:
                 explorer_options["experience_view"] = self.experience_service.view
             self.explorer = self.explorer_factory(self.gateway, context, request.language.candidate_parent, **explorer_options)
-            contract = await self.explorer.analyze(IssueDescription(issue_text, issue_hash),
-                                                   EvidenceContext((source,), (issue_text,)))
+            with span("analyze"):
+                contract = await self.explorer.analyze(IssueDescription(issue_text, issue_hash),
+                                                       EvidenceContext((source,), (issue_text,)))
             for evidence in contract.sources:
                 self.verifier.resolve(evidence)
             self.store.save_contract(contract)
@@ -440,8 +454,12 @@ class Controller:
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
                 result = self.state(result, TaskState.GENERATING)
                 try:
-                    phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
-                        issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries))
+                    # The contract this phase worked from: without it a reader cannot tell
+                    # which version of the task the phase's decisions were made against.
+                    with span("explore", attributes={"contract_id": contract.contract_id,
+                                                     "contract_version": contract.version}):
+                        phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
+                            issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:
@@ -519,7 +537,8 @@ class Controller:
             # phase, tool call or SDK reply outlives the run however the run ended.
             await self.close_explorer()
         try:
-            manifest = self.exporter.export(result, self.store, context)
+            with span("export"):
+                manifest = self.exporter.export(result, self.store, context)
             self.store.append_event('export.completed', ('artifacts/' + manifest.package_kind + '/manifest.json',), {'manifest_hash':manifest.manifest_hash})
             final_status = TaskState.DONE if result.status == TaskState.EXPORTING else result.status
             if final_status == TaskState.DONE:

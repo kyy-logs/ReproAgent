@@ -35,6 +35,7 @@ from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
+from ...observability import mark, tool_call_key
 
 #: The phase these events belong to; one runtime runs the exploration phases of one task.
 PHASE = "EXPLORATION"
@@ -194,6 +195,16 @@ class ExplorationMiddleware(MiddlewareBase):
             decision = PermissionDecision(
                 behavior=PermissionBehavior.DENY, decision_reason="outside the phase tool set",
                 message=f"{name or 'this tool'} is not part of the exploration phase")
+        # The decision is projected, never asked again: a second permission check would
+        # be a second decision.  The arguments are captured once, here, whichever way
+        # the decision went -- a refused call is exactly the one worth looking at.
+        call_key = tool_call_key(sdk_call_id=getattr(input_kwargs.get("tool_call"), "id", ""),
+                                 step_index=self.context.budget.steps_used)
+        attributes = {"tool": name if name in self.allowed_tools else "", "result_code": code}
+        if call_key is not None:
+            attributes["tool_call_key"] = call_key
+        mark("permission", attributes=attributes).capture(
+            "sdk_tool_input", input_kwargs.get("tool_input"), source="sdk_tool_input")
         self.record("exploration.action", action=name if name in self.allowed_tools else "", result_code=code,
                     arguments_hash=self._arguments_hash(input_kwargs.get("tool_input")))
         return decision

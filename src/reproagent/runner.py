@@ -5,6 +5,7 @@ from pathlib import Path
 from .adapters.languages.python_pytest.adapter import PythonPytestAdapter
 from .adapters.runtimes.local import LocalBackend
 from .core.models import ExecutionResult, ProbeResults, ProjectView, ProtectionCheck
+from .observability import span
 from .paths import directory_path, is_within, relative_name, workspace_path
 from .store import atomic_write
 from .core.serialization import bytes_hash, canonical_bytes
@@ -21,6 +22,10 @@ class Runner:
         return replace(ref, path=relative_name(path, self.store.root))
 
     async def prepare(self, request, snapshot, context):
+        with span('runner.prepare'):
+            return await self._prepare(request, snapshot, context)
+
+    async def _prepare(self, request, snapshot, context):
         context.budget.check()
         inspection = self.adapter.inspect(ProjectView(snapshot), request.language)
         root = workspace_path(self.store.root / 'probes' / uuid.uuid4().hex)
@@ -44,6 +49,14 @@ class Runner:
         return environment
 
     async def execute(self, candidate, snapshot, environment, context, execution_role='original'):
+        with span('runner.execute', attributes={'execution_role': execution_role}) as handle:
+            result = await self._execute(candidate, snapshot, environment, context, execution_role)
+            # Which candidate ran, and under which role: an original run and a fixed-version
+            # run are different claims and must not look alike in the trace.
+            handle.annotate(run_id=result.run_id, candidate_id=result.candidate_id)
+            return result
+
+    async def _execute(self, candidate, snapshot, environment, context, execution_role='original'):
         if execution_role not in ('original', 'fixed'):
             raise ValueError('unknown execution role')
         if execution_role == 'original' and snapshot.snapshot_id != candidate.snapshot_id:
