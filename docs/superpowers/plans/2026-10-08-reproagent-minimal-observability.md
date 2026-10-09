@@ -4,11 +4,13 @@
 
 **Goal:** 既能审查 Agent 实际收到什么、返回什么、调用工具得到什么，也能审查系统执行过程及接受变更的依据；所有观测均从已有调用/工件采集，不额外请求模型。
 
-**Architecture:** AgentScope 原生 middleware hooks + 现有模型工厂 HTTP 边界 + 领域程序边界，使用任务级 ContextVar 和有界内存 recorder。元数据与可选正文分开限额，结束后写同一 trace.json，离线 HTML 展开查看。已有契约/候选/verdict/report继续承担复现验收；开发过程以计划、验收矩阵和实测回执交付。
+**Architecture:** AgentScope 原生 middleware hooks + 现有模型工厂 HTTP 边界 + 领域程序边界，使用任务级 ContextVar 和有界内存 recorder。元数据与默认采集的正文分开限额，主任务及学习结束后自动写 trace.json 和 trace.html，本地 HTML 展开查看。已有契约/候选/verdict/report继续承担复现验收；开发过程以计划、验收矩阵和实测回执交付。
 
 **Tech Stack:** Python 3.11+ 标准库、当前 AgentScope 2.0.9、pytest、httpx.MockTransport。无新增模型、服务或依赖。
 
 **Spec:** 本文件“设计合同”是本次规格；业务与证据边界沿用 `docs/superpowers/specs/2026-10-05-reproagent-architecture-design.md`，学习时序沿用 `docs/superpowers/specs/2026-10-06-reproagent-experience-evolution-design.md`。
+
+**UX decision (2026-10-09):** 用户要求默认采集、命令简单；普通run自动输出JSON和HTML，取消开启旗标，仅保留可选--no-trace。
 
 **Baseline:** 2026-10-09 核对本地 `76d4f95`；真实类为 `model_factory.py:_GuardedModel`，方法为 `__call__/_attempt/_account`，传输观察函数为 `_response_hook`。本次重写计划，未实现；执行前冻结最新基线、保留其他代理改动。
 
@@ -18,7 +20,7 @@
 
 | 层 | 要回答 | 第一版交付 |
 | --- | --- | --- |
-| 运行时可观测性 | 系统与Agent实际做了什么，在哪一步失败 | 已有日志 + trace层级/耗时/预算 + 可选模型/工具内容 + 现有进程/健康信号 |
+| 运行时可观测性 | 系统与Agent实际做了什么，在哪一步失败 | 已有日志 + trace层级/耗时/预算 + 默认模型/工具内容 + 现有进程/健康信号 |
 | 过程可观测性 | 按什么计划/标准行动，为什么接受或拒绝结果/变更 | 复现契约版本、候选与验收决定的可见关联；开发范围合同、检查矩阵、实测/审查回执 |
 
 运行时采集与生成JSON/HTML不额外消耗模型token；过程文档由实现代理依据实际检查填写，不新增“评分Agent”。
@@ -26,17 +28,17 @@
 ### 使用方式与输出
 
 ```text
-# 只有元数据
-reproagent run --config task.json --model-config model.json --trace
+# 正常运行：默认采集脱敏内容，并自动生成JSON和HTML
+reproagent run --config task.json --model-config model.json
 
-# 同时保留脱敏内容，供优化时审查
-reproagent run --config task.json --model-config model.json --trace --trace-content
+# 可选：本次完全关闭观测
+reproagent run --config task.json --model-config model.json --no-trace
 
-# 离线生成查看页面
+# 可选：已有trace.json时，离线重新生成HTML
 reproagent trace path/to/task-output
 ```
 
-两种观测模式都属于本次必须实现的功能。`--trace-content` 未配 `--trace` 时返回配置错误2，创建任务/发模型请求之前拒绝。默认关闭所有trace；只有--trace时不采集正文。
+默认启用元数据和正文采集，普通run结束后自动生成两个文件，无需第二条命令。第一版只提供一个可选关闭参数 `--no-trace`，不提供 `--trace`、`--trace-content` 或元数据专用模式；关闭时不读正文/时钟、不创建观测文件。离线trace子命令仅用于重新生成HTML，不是正常使用的必需步骤。
 
 每次Bug任务仍只增加两个观测文件：
 ```text
@@ -67,10 +69,10 @@ trace.json将正文按content_id存一次，各span通过content_refs关联；HT
 
 ### 内容采集与资源约束
 
-- metadata默认模式：最多1024个span/点、每条完整UTF-8 JSON≤2048字节，metadata部分≤1MiB，整个trace.json≤1MiB。
-- content模式：最多512条正文，每条**最终序列化JSON含信封**≤32768字节；contents部分合计≤4MiB，整个trace.json≤6MiB。metadata上限不变。HTML metadata模式≤4MiB，content模式≤32MiB。
+- 元数据部分：最多1024个span/点、每条完整UTF-8 JSON≤2048字节，metadata部分≤1MiB。此为文件内分区限额，不是独立CLI模式。
+- 默认正文采集：最多512条正文，每条**最终序列化JSON含信封**≤32768字节；contents部分合计≤4MiB，整个trace.json≤6MiB，HTML≤32MiB。metadata上限不变。
 - 正文记录先按白名单选字段，在新对象/字符串副本上脱敏，然后计算实际UTF-8序列化大小；不能修改请求、Msg、ChatResponse、ToolChunk或ToolResponse。
-- 脱敏已知模型凭据及标准敏感键（Authorization/api_key/password/secret/cookie等），处理JSON转义形式；不采集header/URL查询/环境变量。自由文本可能含其他秘密，因此正文须显式开启、只本地保存、不自动上传，不声称完整秘密扫描。
+- 脱敏已知模型凭据及标准敏感键（Authorization/api_key/password/secret/cookie等），处理JSON转义形式；不采集header/URL查询/环境变量。正文默认采集且只本地保存、不自动上传；自由文本可能含其他秘密，不声称完整秘密扫描，使用说明明确可用--no-trace关闭。
 - 超限正文保留标注过的head/tail UTF-8摘录，记录original_bytes/captured_bytes/truncated/excerpt_mode；不把不完整JSON摘录当已解析完整工件。防止只取请求头部让最新工具消息永远不可见。
 - original_bytes指所投影正文在脱敏/截断前的UTF-8长度，captured_bytes指脱敏摘录的UTF-8长度；最终信封序列化另外测量，不能用字数代替字节。
 - 内容预算耗尽时不创建超限content记录，仍在span.content_status登记omitted_limit；元数据也缺失时root保持partial，不能把缺引用解释为未返回。
@@ -101,7 +103,7 @@ trace.json将正文按content_id存一次，各span通过content_refs关联；HT
 - Verifier在原本的实际检查点记录program.check点（检查名、pass/fail/not_evaluated），保持原短路次序、只做一次原检查；未走到的检查不能标pass。不得为观测重复candidate_hash/resolve/check_framework或追加模型验收。
 - Verdict理由在原返回点标reason_origin=program/provider/unknown，不靠字符串猜来源；不修改Verdict DTO。
 - 语义布尔expected_assertion/target_triggered/failure_matches_issue标source=provider_claim；程序实际绑定/保护/清理/probe/引用与重复检查标program_check。最终Verdict/TaskResult标program_artifact，不能把模型自报成功当程序已接受。
-- 内容模式可展开既有contract与verdict理由/不确定项；metadata模式只给ID、分类和受控检查状态。评分标准沿用现有硬检查+语义核验+重复/可选差分，没有新增任意百分制。
+- 默认可展开既有contract与verdict理由/不确定项；正文缺失或超限时仍显示已保留的ID、分类和受控检查状态，并注明正文可用性。评分标准沿用现有硬检查+语义核验+重复/可选差分，没有新增任意百分制。
 - trace及正文不成为EvidenceLedger引用，不送回Agent/Verifier/学习，不改变候选、契约、证据等级或已发布包。不自动回放模型请求或工具。
 
 ### 输出结构及界面
@@ -110,7 +112,7 @@ trace.json将正文按content_id存一次，各span通过content_refs关联；HT
 
 span：span_id/parent_span_id/name/kind/offset_seconds/duration_seconds/status/attributes/content_refs/content_status。offset与duration都使用任务单调时钟；wall_clock仅作根开始时间展示，不参与排序或预算。点事件duration=null；属性严格白名单，包括purpose、角色、控制码、工具集、tool_call_key、permission_result、预算、usage/费用、现有工件ID/引用。
 
-content：content_id/owner_span_id/kind/source/availability/text/original_bytes/captured_bytes/truncated/redacted/excerpt_mode。仅已开启内容模式保存text；来源固定wire_request/provider_response/provider_reasoning/sdk_tool_input/sdk_tool_result/program_artifact/invalid_response_preview，不存原始HTTP包。
+content：content_id/owner_span_id/kind/source/availability/text/original_bytes/captured_bytes/truncated/redacted/excerpt_mode。默认启用时保存脱敏text；来源固定wire_request/provider_response/provider_reasoning/sdk_tool_input/sdk_tool_result/program_artifact/invalid_response_preview，不存原始HTTP包。
 
 summary分列logical_calls/http_attempts/usage/known_cost_subtotal/unknown_cost_attempts、权限三态、tool_executions、main/learning，以及每种/角色有界health聚合。缺usage时总token为null、分列已知小计/未知attempt数；缺计价时总费用为null、保留已知小计。partial时明确“已保留部分”，不伪造精确总数。
 
@@ -133,15 +135,15 @@ Create:
 Modify:
 - `src/reproagent/adapters/agentscope/runtime.py`、`middleware.py`、`model_factory.py`：注册顺序、permission投影、_GuardedModel边界、已缓冲wire采集。
 - `src/reproagent/core/controller.py`、`core/verifier.py`、`runner.py`、`adapters/runtimes/local.py`、`experience.py`：只包现有scope、投影现有检查/工件；保留短路、次数与顺序。
-- `src/reproagent/cli.py`：两旗标和离线命令，非致命观测写失败；`tools.py`只同步六/七工具docstring。
+- `src/reproagent/cli.py`：默认采集并自动生成两文件、可选--no-trace和离线重建命令，非致命观测写失败；`tools.py`只同步六/七工具docstring。
 - `README.md`及本计划状态记录。
 
 不改：模型配置/temperature/thinking/output限额、system prompt、工具注册/输入输出、权限与最后三步预留、业务状态推进、预算、EvidenceLedger规则、TaskStore领域事件格式、Verifier接受标准、学习来源与时序、manifest/replay、官方评分、目标项目或依赖。超范围变更先记录原因并更新合同，不混入观测提交。
 
 共享接口：
 ```text
-TraceRecorder(*, capture_content=False, secrets=(), clock=time.monotonic, wall_clock=time.time)
-trace_session(*, enabled: bool, capture_content=False, secrets=()) -> ContextManager[TraceRecorder | None]
+TraceRecorder(*, secrets=(), clock=time.monotonic, wall_clock=time.time)
+trace_session(*, enabled: bool = True, secrets=()) -> ContextManager[TraceRecorder | None]
 tracing_enabled() -> bool
 span(name: str, *, attributes: dict | None = None) -> ContextManager[SpanHandle]
 mark(name: str, *, attributes: dict | None = None) -> SpanHandle
@@ -153,16 +155,16 @@ TraceRecorder.finish(*, task_id: str, status: str, main_duration: float, learnin
 write_trace(task_dir: Path, document: dict) -> Path
 validate_trace(document: dict) -> dict
 render_trace(document: dict) -> str
-write_trace_html(task_dir: Path) -> Path
+write_trace_html(task_dir: Path, document: dict) -> Path
 ```
 
-record_check原样返回bool；disabled no-op不读时钟/正文、不创建文件。观测方法内部错误捕获并降级，领域异常/BudgetStopped/CancelledError原样传播。所有采集内容是副本。
+启用的recorder始终采集元数据和可得正文；capture_mode固定content，不提供内部元数据专用模式。CLI传enabled=not args.no_trace。record_check原样返回bool；disabled no-op不读时钟/正文、不创建文件。观测方法内部错误捕获并降级，领域异常/BudgetStopped/CancelledError原样传播。所有采集内容是副本。
 
 ## Global Constraints
 
 - 不多调用模型/工具/formatter，不新增健康检查，不改输出额度或请求thinking；真实HTTP、预算/费用原规则保持。
 - 作用域任务隔离，覆盖主资源close、封存与独立学习；主duration与包含学习的trace总时长分开。
-- 主Controller返回且资源关闭后CLI写trace；写失败stderr固定警告，主JSON/退出码不变。原TaskStore错误仍按原流程，不被观测掩盖。
+- 主Controller返回、主结果封存且学习资源关闭后，CLI先写JSON，再从同一份完成脱敏的document自动渲染并写HTML，不重读调用正文或增加模型请求。JSON写失败不继续写HTML；HTML写失败保留JSON。每文件独立原子写，不承诺两文件事务；任一观测失败仅stderr固定警告，主JSON/退出码不变。原TaskStore错误仍按原流程，不被观测掩盖。
 - 统一paths.workspace_path入口；建目录directory_path，写文件既有store.atomic_write/shared_path_form；位置检查is_within/identity_key。拒绝观测目录/文件链接重定向，不写artifacts，不接受任意--output。
 - 所有元数据/正文/HTML的完整序列化限额与可用性标签是必须检查项，截断不能伪称完整。
 - 调用内容是待审查数据，不执行、不送回模型、不作为证据、不自动上传。第一版不接远程平台/队列/自动评分/跨任务检索/自动请求回放。
@@ -181,10 +183,10 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 **Files:** Create `src/reproagent/observability.py`, `src/reproagent/observability_content.py`, `tests/unit/test_observability.py`, `tests/unit/test_observability_content.py`。
 **Interfaces:** Produces recorder/scope/SpanHandle/mark/check/tool_call_key/finish；持久化与render由后续任务完成。
 
-- [ ] Step 1: 写 disabled no-op、嵌套时钟、并发任务/跨步重用ID、短路bool返回、正文模式、已知凭据与JSON转义脱敏、复制不改原对象、UTF-8精确限额/head-tail、1/4/6MiB/1024/512边界和capture_error测试。
+- [ ] Step 1: 写 disabled no-op、嵌套时钟、并发任务/跨步重用ID、短路bool返回、默认正文采集、已知凭据与JSON转义脱敏、复制不改原对象、UTF-8精确限额/head-tail、1/4/6MiB/1024/512边界和capture_error测试。
 - [ ] Step 2: 跑新增两单测RED，确认缺新行为；用可控时钟/真实序列化字节，不能测试镜像实现。
 - [ ] Step 3: 实现共享接口、白名单/有界副本、availability、partial/metrics/content完整性分开、HTTP叶子统计。所有不可得内容明确标注，无自动解释补写。
-- [ ] Step 4: GREEN，新增单测全过，disabled不读取正文/时钟，元数据模式无正文，任何观测异常不改变原异常或bool值。
+- [ ] Step 4: GREEN，新增单测全过，默认启用且可采集正文，显式disabled不读取正文/时钟，任何观测异常不改变原异常或bool值。
 - [ ] Step 5: 提交 `feat: add bounded trace and content recorder`。
 
 ## Task 2: 原生Hooks与真实Wire输入输出
@@ -193,8 +195,8 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 **Interfaces:** Consumes Task 1；TraceMiddleware(context: CallContext, *, allowed_tools: tuple[str,...])；Produces model/logical/HTTP、permission/tool关联与content_refs，覆盖四purpose。
 
 - [ ] Step 1: 真实SDK+MockTransport写输入采用实际wire（含前轮工具结果和相关输出/temperature等配置）、输出content/tool_calls、reasoning有/无/空、参数/最终结果、协议拒绝内容、丢响应/坏JSON/大请求/未缓冲流可用性、raw对象不变与无额外read/request测试。
-- [ ] Step 2: 跑RED；三HTTP/一logical、同一固定输入的off/metadata/content模式实际请求体字节与formatter次数一致（测试固定随机ID/时钟，或在一次发送前后核对不变）；正常chunk对象/顺序一次转发，ToolResponse.ERROR与发布后取消区分。
-- [ ] Step 3: 注册外层hooks。_GuardedModel逻辑/尝试scope与_account原记账同源；启用内容时request callback只读已缓冲body，_response_hook复用原安全读取的数据，在协议拒绝前捕获已取得字段。不能扩大响应限制、二次读取或变更异常。
+- [ ] Step 2: 跑RED；三HTTP/一logical、同一固定输入的默认采集/--no-trace两种模式实际请求体字节与formatter次数一致（测试固定随机ID/时钟，或在一次发送前后核对不变）；正常chunk对象/顺序一次转发，ToolResponse.ERROR与发布后取消区分。
+- [ ] Step 3: 注册外层hooks。_GuardedModel逻辑/尝试scope与_account原记账同源；默认启用时request callback只读已缓冲body，_response_hook复用原安全读取的数据，在协议拒绝前捕获已取得字段。不能扩大响应限制、二次读取或变更异常。
 - [ ] Step 4: permission记录三态与一次参数；on_acting记录实际tool span和最终结果，当前step/phase/key一致。测4→3步预留、SDK deny、默认6/经验7、同SDK ID跨步、两个关联节点只计一次执行；未知工具整份拒绝不伪造执行。
 - [ ] Step 5: 跑新增及test_agentscope_runtime/domain_tools/model_factory/gateway/experience。绿色后提交 `feat: capture AgentScope calls and tool results through native hooks`。
 
@@ -204,7 +206,7 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 **Interfaces:** Consumes scopes/check/content；Produces既有contract/candidate/verdict关系、program检查、process/health，与封存后learn scope。
 
 - [ ] Step 1: 写 contract版本/修订决定、候选/run/verdict来源关联、reason/unmet/uncertainty可见、硬检查短路（不多hash/resolve）、provider_claim与program_check分开、无说明不补写、原版/修复版健康及进程退出1语义测试。
-- [ ] Step 2: 跑RED；真实pytest对比trace off/metadata/content三种模式状态、证据、候选、HTTP、steps/资源close；不比较真实浮点耗时完全相同。
+- [ ] Step 2: 跑RED；真实pytest对比默认采集/--no-trace两种模式状态、证据、候选、HTTP、steps/资源close；不比较真实浮点耗时完全相同。
 - [ ] Step 3: 在现有程序实际边界包scope，投影已取得工件，不为观测新增读文件。Verifier每个实际条件通过record_check包一次，保持or/and短路；未执行检查标not_evaluated，不凭默认unmet_checks为空当通过。
 - [ ] Step 4: LocalBackend投影已有spawn/退出/终止与cleanup；Runner复用probe，分别标not_run/unknown/blocked/passed。保留超时/取消、execution_role枚举与学习30秒+收尾1秒。验证内容/trace不进入Agent/Verifier证据/学习材料/manifest。
 - [ ] Step 5: 跑新文件及test_controller、test_runner、test_local_backend、test_experience_lifecycle与Verifier相关单测。绿色后提交 `feat: expose reproduction decisions and runtime health without changing acceptance`。
@@ -212,11 +214,11 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 ## Task 4: CLI落盘与内容时间线
 
 **Files:** Create `src/reproagent/trace_rendering.py`, `src/reproagent/resources/trace.html.template`, `tests/unit/test_trace_rendering.py`；Modify `src/reproagent/observability.py`, `src/reproagent/cli.py`；Extend `tests/integration/test_cli.py`, `test_windows_long_paths.py`。
-**Interfaces:** Consumes schema1、两模式；Produces write_trace/validate_trace/render_trace/write_trace_html 和两旗标/离线trace子命令。
+**Interfaces:** Consumes schema1、默认采集/显式关闭；Produces write_trace/validate_trace/render_trace/write_trace_html、自动双文件输出、--no-trace与可选离线重建子命令。
 
-- [ ] Step 1: 写参数错误先拒绝、主结果封存且学习资源close后落盘、JSON写失败原退出码保留、旧任务无trace、1/6MiB读取上限、未知schema/深层JSON、内容引用缺失/owner不匹配/父节点环、HTML注入/超限及long-path tests。
-- [ ] Step 2: 跑RED；确认只改observability目录，不复制候选/原日志，不覆盖task.json/artifacts；正文未开启/不可得/截断在页面不同显示。
-- [ ] Step 3: 实现CLI新trace_session；全部读写走workspace_path/directory_path/atomic_write/is_within/identity_key，拒绝目录/文件链接到artifacts或外部。JSON加载有界、验证contents与refs，bad输入返回2而不影响既有领域文件。
+- [ ] Step 1: 写普通run无需新参数就采集正文并生成双文件、--no-trace不生成观测文件、主结果封存且学习资源close后落盘、JSON写失败原退出码保留且不写HTML、HTML写失败保留JSON及主退出码、旧任务无trace、6MiB读取上限、未知schema/深层JSON、内容引用缺失/owner不匹配/父节点环、HTML注入/超限及long-path tests。
+- [ ] Step 2: 跑RED；确认只改observability目录，不复制候选/原日志，不覆盖task.json/artifacts；正文不可得/截断/采集失败在页面不同显示；显式关闭时不生成页面。
+- [ ] Step 3: 实现默认启用的CLI trace_session及自动JSON→HTML输出；离线子命令读取JSON后调用同一validate/render/write接口重建HTML。全部读写走workspace_path/directory_path/atomic_write/is_within/identity_key，拒绝目录/文件链接到artifacts或外部。JSON加载有界、验证contents与refs，bad输入返回2而不影响既有领域文件。
 - [ ] Step 4: 静态HTML三个区域，正文纯文本展开，每content一次，显示原始来源/脱敏/截断与可用性。Windows覆盖observability目录248–259窗口、目标>260、仅临时名跨界，CLI保持短cwd。
 - [ ] Step 5: 跑新render、CLI、Windows与exporter回归；模板独立wheel安装验证包含且可渲染。提交 `feat: add local trace content inspection and safe persistence`。
 
@@ -225,9 +227,9 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 **Files:** Create `docs/observability.md`, `docs/reviews/2026-10-09-dual-layer-observability-acceptance.md`, `tests/integration/test_observability_end_to_end.py`；Modify `README.md`及本计划状态。
 **Interfaces:** Consumes前四项完整流程；Produces开发验收回执/使用说明，非新的模型评分接口。
 
-- [ ] Step 1: 写真实SDK+pytest端到端：三种模式同业务结果；内容模式能按key看参数/结果、实际模型输入/返回推理（mock有/无两case），契约/检查/verdict接受理由和主/学习资源关闭链路。无正文模式不包含唯一正文marker，采集不加调用/token。
+- [ ] Step 1: 写真实SDK+pytest端到端：默认采集/--no-trace两种模式同业务结果；默认运行能按key看参数/结果、实际模型输入/返回推理（mock有/无两case），契约/检查/verdict接受理由和主/学习资源关闭链路。默认采集的JSON与HTML包含预期正文marker，--no-trace不创建观测文件；采集不加调用/token。
 - [ ] Step 2: 跑RED并修到GREEN；包含误导模型自报、程序检查拒绝、健康blocked、内容超限、collector/persistence错误；预期负例正确拒绝也是该测试通过，不能靠trace存在就算验收。
-- [ ] Step 3: 用法说明两flags、两文件、来源与思考边界、本地敏感内容/限额、无额外token、日志与trace角色、硬杀限制和每种失败的排查位置。不自动上传、回放、提高模型思考额度。
+- [ ] Step 3: 用法说明普通run默认采集/自动生成两文件、唯一可选--no-trace与离线重建、来源与思考边界、本地敏感内容/限额、无额外token、日志与trace角色、硬杀限制和每种失败的排查位置。不自动上传、回放、提高模型思考额度。
 - [ ] Step 4: 冻结实现版本/环境，设置REPROAGENT_RG_PATH，跑 `python -m pytest tests/unit tests/integration -q -rs`、`python -m pip check`；读取真实输出并保存本地日志。一次全分支独立审查，Important/Critical按RED→GREEN修复后全套再验，保留初次失败。
 - [ ] Step 5: 逐项填写下方验收矩阵与修复定位，记录源码/依赖/命令/结果/证据/取舍。只在必选项有证据pass时宣称本地验收通过；提交 `docs: record dual-layer observability verification`。当前所有任务均未执行。
 
@@ -237,14 +239,14 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 
 | ID | 必须检查的功能/测试/边界 | 当前 | 未过时改哪里 |
 | --- | --- | --- | --- |
-| O01 范围/默认 | diff在清单内；默认off不读正文/增文件/改调用 | not_run | 计划、cli.py、runtime.py |
+| O01 范围/默认 | diff在清单内；普通run默认采集正文并自动生成两文件，--no-trace不读正文/增文件；两者不改调用 | not_run | 计划、cli.py、runtime.py |
 | O02 实际内容 | wire输入/输出、工具参数与最终结果可审查；坏输出、缺思考、截断诚实；不猜理由 | not_run | content模块、model_factory.py:_response_hook、SDK观测hooks |
 | O03 关联/计数 | HTTP重试不双计；权限三态分列；检查与执行同key；真实六/七条件 | not_run | model_factory.py、middleware.py、recorder与viewer |
 | O04 决策/验收 | 契约版本/候选/verdict关联；检查短路不变、未走到不标pass；模型声明与程序接受分开 | not_run | controller.py、core/verifier.py、决策呈现 |
-| O05 业务/预算 | 三模式状态/证据/候选/调用/预算等价，学习在封存后且预算独立 | not_run | scope集成、cli.py、experience.py |
+| O05 业务/预算 | 默认采集/--no-trace两种模式状态/证据/候选/调用/预算等价，学习在封存后且预算独立 | not_run | scope集成、cli.py、experience.py |
 | O06 进程/健康 | 只复用真实probe/运行/清理；超时取消可见，候选退出1不伪报环境坏 | not_run | runner.py、adapters/runtimes/local.py |
 | O07 有界/隔离 | UTF-8序列化大小、copies/脱敏、partial分层；错误不影响主结果；不进入模型/证据/学习 | not_run | observability.py、content模块、hooks |
-| O08 输出/平台 | 仅两观测文件；HTML纯文本、refs可核对；长路径/临时名/链接/读限额/模板wheel通过 | not_run | rendering、CLI、paths/atomic_write调用 |
+| O08 输出/平台 | 普通run自动生成且仅增加两观测文件；HTML失败保留JSON/主结果；HTML纯文本、refs可核对；长路径/临时名/链接/读限额/模板wheel通过 | not_run | rendering、CLI、paths/atomic_write调用 |
 | O09 回归 | 当前完整unit/integration及pip check有实测日志，跳过/平台缺口单列，不借旧数 | not_run | 根据首个失败test定位，不降断言 |
 | O10 接受依据 | O01–O09命令/结果/证据/未过修复文件和符号齐全；审查/修复/取舍可读 | not_run | 开发验收回执 |
 
@@ -254,7 +256,7 @@ record_check原样返回bool；disabled no-op不读时钟/正文、不创建文�
 
 ## 计划自检与当前状态
 
-- 替换旧“正文以后再做”范围；第一版必须支持可选真实输入输出/工具内容/返回推理与决策工件。
+- 替换旧“正文以后再做”范围；第一版默认采集真实输入输出/工具内容/返回推理与决策工件，自动生成JSON和HTML，仅--no-trace可关闭。
 - 已核对_GuardedModel/_response_hook、hooks顺序、ToolResponse最终态、条件六/七与三态预留。
 - 来源/缺失/截断/信任等级明确，不能补写内部思考或新增模型请求；内容只在本地副本保存。
 - metadata/正文/总JSON/HTML上限一致；模型费用只从HTTP叶子统计；并发与短路/long-path/非致命失败均有具体验证。
