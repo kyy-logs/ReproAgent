@@ -35,6 +35,7 @@ from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
+from ...observability import mark
 
 #: The phase these events belong to; one runtime runs the exploration phases of one task.
 PHASE = "EXPLORATION"
@@ -274,6 +275,12 @@ class ExplorationMiddleware(MiddlewareBase):
         components actually running.  A refused response admits no arguments, so its hash
         is empty; no event carries provider text.
         """
+        if kind == "exploration.action":
+            # The permission decision is projected, never asked again: this event already
+            # holds the controlled codes, and a second check would be a second decision.
+            # A code of ALLOWED still says nothing about whether the tool ever ran.
+            mark("permission", attributes={"tool": fields.get("action", ""),
+                                           "result_code": fields.get("result_code", "")})
         if self.store is None:
             return
         self.store.append_event(kind, (), {

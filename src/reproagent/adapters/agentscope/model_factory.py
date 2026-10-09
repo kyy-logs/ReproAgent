@@ -18,6 +18,7 @@ from ...core.budget import BudgetStopped
 from ...core.models import ModelRequest
 from ...core.protocol import ModelOutputError, attempt_payload, classify_output
 from ...core.serialization import parse_json
+from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, span
 
 PURPOSES = frozenset({'exploration', 'contract', 'verdict', 'learning'})
 # A logical request may cost at most this many real HTTP attempts; transient failures
@@ -77,6 +78,23 @@ class ObservedAttempt:
 def _failed(observation, error):
     observation.error, observation.outcome = error, error.code
     return error
+
+
+def effective_output_limit(config, kwargs) -> int:
+    """The ceiling this request really carried, resolved the same way the wire did."""
+    limit = kwargs.get(config.output_limit_field)
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
+        limit = config.max_output_tokens
+    return limit
+
+
+def usage_totals(usage: dict) -> dict:
+    """The provider's usage, in the trace's own two-token vocabulary.
+
+    A figure the provider did not report stays absent, so the summary can call it
+    unknown instead of counting it as a confident zero.
+    """
+    return {'input_tokens': usage.get('prompt_tokens'), 'output_tokens': usage.get('completion_tokens')}
 
 
 class LimitedResponseStream(httpx.AsyncByteStream):
@@ -187,45 +205,54 @@ class _GuardedModel:
         if self.guard is not None:
             self.guard()
         self.attempts, self.cost_kind, self.cost_value = 0, 'unknown', None
-        for attempt in range(HTTP_ATTEMPTS):
-            self.attempts = attempt + 1
-            reply = await self._attempt(messages, tools, tool_choice, kwargs, attempt)
-            if reply is not _RETRY:
-                return reply
-            await bounded(asyncio.sleep(RETRY_DELAY_SECONDS * self.attempts), self.context)
-        raise RuntimeError('provider produced no response')
+        # One logical call, however many attempts it takes: the retries below belong to
+        # this span, so a trace shows a retried request as one request that struggled.
+        with span(LOGICAL_SPAN, attributes={'purpose': self.purpose}):
+            for attempt in range(HTTP_ATTEMPTS):
+                self.attempts = attempt + 1
+                reply = await self._attempt(messages, tools, tool_choice, kwargs, attempt)
+                if reply is not _RETRY:
+                    return reply
+                await bounded(asyncio.sleep(RETRY_DELAY_SECONDS * self.attempts), self.context)
+            raise RuntimeError('provider produced no response')
 
     async def _attempt(self, messages, tools, tool_choice, kwargs, attempt):
-        self.observation.reset()
-        reservation = self.context.budget.reserve_cost(None)
-        try:
-            reply = await bounded(super().__call__(messages, tools=tools, tool_choice=tool_choice, **kwargs),
-                                  self.context)
-            self.context.budget.check()
-            if self.context.cancel_event.is_set() or str(reply.finished_reason) == 'interrupted':
-                raise BudgetStopped('CANCELLED')
-            if self.observation.error is not None:
-                raise self.observation.error
-            failure = self._validate_reply(reply)
-            if failure is not None:
-                self.observation.outcome = failure.code
-                raise failure
-            if attempt == 0:
-                # A retried call cannot claim a known cost: the failed attempt's
-                # tokens are unknown, so the record stays honest.
-                self.cost_value = self._cost()
-                self.cost_kind = 'estimated' if self.cost_value is not None else 'unknown'
-            return reply
-        except (asyncio.CancelledError, BudgetStopped):
-            raise
-        except ModelOutputError as failure:
-            if self.observation.error is None:
-                self.observation.outcome = failure.code
-            raise
-        except Exception as failure:
-            return self._retry_or_raise(failure, attempt)
-        finally:
-            self._account(reservation, kwargs)
+        # The only place HTTP, token and cost are attributed: the leaves of the trace.
+        with span(HTTP_ATTEMPT_SPAN, attributes={'attempt': attempt + 1}) as http:
+            self.observation.reset()
+            reservation = self.context.budget.reserve_cost(None)
+            try:
+                reply = await bounded(super().__call__(messages, tools=tools, tool_choice=tool_choice, **kwargs),
+                                      self.context)
+                self.context.budget.check()
+                if self.context.cancel_event.is_set() or str(reply.finished_reason) == 'interrupted':
+                    raise BudgetStopped('CANCELLED')
+                if self.observation.error is not None:
+                    raise self.observation.error
+                failure = self._validate_reply(reply)
+                if failure is not None:
+                    self.observation.outcome = failure.code
+                    raise failure
+                if attempt == 0:
+                    # A retried call cannot claim a known cost: the failed attempt's
+                    # tokens are unknown, so the record stays honest.
+                    self.cost_value = self._cost()
+                    self.cost_kind = 'estimated' if self.cost_value is not None else 'unknown'
+                return reply
+            except (asyncio.CancelledError, BudgetStopped):
+                raise
+            except ModelOutputError as failure:
+                if self.observation.error is None:
+                    self.observation.outcome = failure.code
+                raise
+            except Exception as failure:
+                return self._retry_or_raise(failure, attempt)
+            finally:
+                self._account(reservation, kwargs)
+                http.annotate(result_code=self.observation.outcome,
+                              output_limit=effective_output_limit(self.config, kwargs),
+                              usage=usage_totals(self.observation.usage),
+                              cost=self._cost())
 
     def _validate_reply(self, reply):
         """A structured request is only usable as complete text; other purposes decide.
@@ -273,9 +300,7 @@ class _GuardedModel:
         self.context.budget.settle_cost(reservation, cost)
         if self.store is None:
             return
-        limit = kwargs.get(self.config.output_limit_field)
-        if isinstance(limit, bool) or not isinstance(limit, int) or limit <= 0:
-            limit = self.config.max_output_tokens
+        limit = effective_output_limit(self.config, kwargs)
         self.store.append_event('model.attempt', (), attempt_payload(
             self.attempts, self.observation.usage, 'estimated' if cost is not None else 'unknown', cost,
             response_kind=self.purpose, effective_output_limit=limit, outcome=self.observation.outcome,

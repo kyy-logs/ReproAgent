@@ -25,11 +25,13 @@ from agentscope.state import AgentState
 
 from .dependency import require_agentscope
 from .middleware import PROTOCOL_ATTEMPTS, ExplorationMiddleware, PhaseEnded, PhaseProtocolError
+from .observability import TraceMiddleware
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import bytes_hash, canonical_bytes
+from ...observability import tracing_enabled
 
 #: The SDK agent's name; it is the name of every message the SDK writes for this task.
 AGENT_NAME = "reproagent-exploration"
@@ -87,9 +89,14 @@ class AgentScopeRuntime:
             raise ValueError("unexpected exploration toolkit")
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools)
         self._task: asyncio.Task | None = None
+        # The trace is registered in front of the phase's own middleware, and only when
+        # this task is traced: the phase answers ``on_model_call`` itself instead of
+        # delegating, so a middleware behind it would never see a model call at all --
+        # including the rejected ones a trace exists to explain.
+        middlewares = [TraceMiddleware()] if tracing_enabled() else []
         self._agent = Agent(
             name=AGENT_NAME, system_prompt=system_prompt, model=model, toolkit=toolkit,
-            middlewares=[self.middleware],
+            middlewares=middlewares + [self.middleware],
             # One agent, one state, one task: the history of this task lives here.
             state=AgentState(permission_context=PermissionContext(mode=PermissionMode.DONT_ASK)),
             # A phase retries nothing on its own; the factory's bounded HTTP loop and the

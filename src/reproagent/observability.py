@@ -249,6 +249,8 @@ class TraceRecorder:
             "span_count": len(self._spans),
             "logical_calls": sum(1 for entry in self._spans if entry["name"] == LOGICAL_SPAN),
             "http_attempts": len(leaves),
+            "tool_executions": sum(1 for entry in self._spans
+                                   if entry["kind"] == "span" and entry["name"].startswith("tool.")),
             "usage": _sum_tokens(leaves),
             "cost": _sum_cost(leaves),
             "learning": learning,
@@ -315,7 +317,15 @@ def span(name: str, *, attributes: dict | None = None) -> Iterator[Any]:
     try:
         yield handle
     except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised unchanged
-        handle._finish("cancelled" if isinstance(exc, asyncio.CancelledError) else "error")
+        if isinstance(exc, asyncio.CancelledError):
+            handle._finish("cancelled")
+        elif isinstance(exc, GeneratorExit):
+            # A generator closed by whoever was iterating it is an end, not a failure.
+            # The span's own result code, recorded before the final item was handed on,
+            # is what says how the observed work actually turned out.
+            handle._finish("ok")
+        else:
+            handle._finish("error")
         raise
     else:
         handle._finish("ok")
