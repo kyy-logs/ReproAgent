@@ -213,6 +213,31 @@ import pkg_resources →  ModuleNotFoundError
    把准备时间人为加 0.2 秒即可逐字复现（同一测试、同一行、同一断言）。预算从 0.15 秒提到 5 秒——仍然远
    小于那个挂死的处理器，掐断的依旧是"已发出的请求"这一支。
 
+5. **探针的帧追踪在 Python 3.9 上终结收集**（修复提交 `dc47acb`）。这是本轮最有价值的一条，因为它推翻了
+   一个我先前给出的判断。`pytest-dev__pytest-8365` 在验证轮里连发 3 次 `write_candidate`，3 次都是
+   `INVALID_CANDIDATE`，我一度记成"候选质量不够"。逐份读裁决才发现，三次的原因都是
+   **`no collected tests`**，而 run 的 stdout 显示崩溃在**产品自己的探针插件**里：
+
+   ```text
+   src\_pytest\fixtures.py:1335: in fixture
+   <attrs generated init _pytest.fixtures.FixtureFunctionMarker>:1: in __init__
+   probe/reproagent_pytest_probe.py:36: in profile
+       _origins[name] = str(Path(frame.f_code.co_filename).resolve())
+   E   OSError: [WinError 123] …: '<attrs generated init _pytest.fixtures.FixtureFunctionMarker>'
+   ```
+
+   追踪器把每一帧的 `co_filename` 当路径去 `resolve()`。**attrs 生成的函数没有文件**，编译器给那一帧的
+   名字是 `'<attrs generated init …>'`，而 **Python 3.9——数据集给每个实例钉的版本——在 Windows 上对含
+   尖括号的名字直接抛 OSError**。异常终结了收集 → `no collected tests` → 候选被判无效，**在测试跑起来
+   之前**。任何定义 fixture 的用例都会中招；其他 pytest 用例从没发布过候选，所以它一直没露面。
+
+   修法是"没有文件就没有出处可记"：出处不再记录，调用照常计数。用那一轮**原样保存的 argv** 在 Python 3.9
+   下重放验证：修之前一个节点都收集不到，修之后 **3 个节点全部收集并运行**，另有 60 个 target origin 被
+   正常记录。注意它不是"让候选变好"——那三个测试现在会在 setup 阶段以真实原因报错——而是**让反馈回到模型
+   手里**，此前模型收到的是一个它无能为力的基础设施崩溃。
+
+   校验：全量离线门槛 **564 passed、0 failed**。
+
 另有一处**未定性**的问题必须披露：CI 运行 `37759702346`（提交 `a2aae15`）的
 `offline (windows-latest, 3.11, pytest>=8,<9)` 这一个 job 失败，用例
 `test_the_fixed_version_never_reaches_the_exploration` 报 `TaskState.FAILED` 而不是 `DONE`，同时 SDK
@@ -341,8 +366,8 @@ import pkg_resources →  ModuleNotFoundError
 变量之间拆开**——要拆开需要一轮"温度 0 + 旧预留"的对照，而旧预留已经不存在于代码里了。
 
 **顺带暴露出的下一条缺陷**：`pytest-dev__pytest-8365` 在预留窗口里连发了 **3 次 `write_candidate`，三次
-都是 `INVALID_CANDIDATE`**。循环现在会终止了，所以"候选质量不够"这个问题才第一次看得见——它此前被
-"阶段根本不结束"盖住了。
+都是 `INVALID_CANDIDATE`**。我在这里先写成"候选质量不够"——**那个判断是错的**，查下去是产品自己的探针在
+收集阶段崩了（第 7 节第 5 条）。修改它的是提交 `dc47acb`，不是模型。
 
 **官方判分**：这一轮的 10 例同样送进了独立 harness（第五节的第三列）。结果是 1 例 resolved——正是
 `sphinx-doc__sphinx-11445`，也就是本地判为 DIFFERENTIAL_VALIDATED 的同一例；`8627` 的补丁因为容器缺陷
