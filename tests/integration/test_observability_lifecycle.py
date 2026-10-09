@@ -141,6 +141,32 @@ def test_main_and_learning_have_separate_budget_metrics(tmp_path, projects, fact
     assert document['summary']['learning']['event_recorded'] is True
 
 
+def test_a_real_run_shows_which_checks_ran_and_the_process_health(tmp_path, projects, facts):
+    traced = run_sdk_task(tmp_path, projects, facts, trace=True)
+    request, controller, result, recorder = traced[0], traced[1], traced[2], traced[3]
+    document = document_for(request, controller, result, recorder)
+
+    declared = named(document, 'verify')[0]['attributes']['checks']
+    recorded = {entry['attributes']['check']: entry['attributes']['check_source']
+                for entry in document['spans'] if 'check' in entry['attributes']}
+
+    # The span declares the full ordered list up front, so a reader can tell which
+    # checks the program never reached from the ones it recorded.
+    assert 'execution_evidence_present' in declared
+    # Every recorded check is one the program really declared...
+    assert set(recorded) <= set(declared)
+    # ...the candidate's own claims stay labelled as claims...
+    assert recorded['provider_semantic_claims'] == 'provider_claim'
+    assert recorded['binding_and_integrity_ok'] == 'program_check'
+    # ...and the run reached the checks a reproducing candidate needs.
+    assert recorded['candidate_reproduced'] == 'program_check'
+
+    processes = named(document, 'process')
+    assert processes
+    # Exit code 1 on the candidate is the reproduction, so every process still passed.
+    assert {entry['attributes']['health'] for entry in processes} == {'passed'}
+
+
 def test_trace_not_in_manifest_or_learning_material(tmp_path, projects, facts):
     traced = run_sdk_task(tmp_path, projects, facts, trace=True)
     request, controller, result, recorder, seen = traced[0], traced[1], traced[2], traced[3], traced[4]

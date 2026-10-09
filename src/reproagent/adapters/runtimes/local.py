@@ -9,14 +9,44 @@ from pathlib import Path
 from ...core.budget import BudgetStopped
 from ...core.models import EvidenceRef, ProbeArtifacts, RawExecution
 from ...core.serialization import bytes_hash
+from ...observability import span
 from ...paths import directory_path, workspace_path
 from .process_tree import ManagedProcess
 
 SYSTEM_ENV = {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "TEMP", "TMP", "HOME", "USERPROFILE", "LANG"}
 
+#: What a run's own signals say about the process, and nothing more.
+#:
+#: A candidate whose tests fail is a *successful* process: exit code 1 is the
+#: reproduction being observed, not a fault, so the exit code deliberately does not
+#: appear in this judgement.  Anything the signals do not cover stays unknown rather
+#: than being reported as healthy.
+PROCESS_HEALTH = {
+    "EXITED": "passed",             # it started, ended by itself, and was reaped
+    "COMMAND_TIMEOUT": "failed",
+    "CANCELLED": "blocked",
+    "LOG_LIMIT": "blocked",
+}
+
+
+def process_health(stop_reason, cleanup_ok) -> str:
+    """Reuse the signals the run already produced; never invent one."""
+    if not cleanup_ok:
+        # Whatever ended it, a process tree that did not come down is degraded.
+        return "degraded"
+    return PROCESS_HEALTH.get(stop_reason, "unknown")
+
 
 class LocalBackend:
     async def execute(self, spec, context):
+        with span("process") as handle:
+            result = await self._execute(spec, context)
+            handle.annotate(result_code=result.stop_reason, stop_reason=result.stop_reason,
+                            exit_code=result.exit_code, cleanup_ok=result.cleanup_ok,
+                            health=process_health(result.stop_reason, result.cleanup_ok))
+            return result
+
+    async def _execute(self, spec, context):
         context.budget.check()
         if context.cancel_event.is_set():
             raise BudgetStopped("CANCELLED")

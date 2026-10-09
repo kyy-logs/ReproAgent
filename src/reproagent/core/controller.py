@@ -454,7 +454,10 @@ class Controller:
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
                 result = self.state(result, TaskState.GENERATING)
                 try:
-                    with span("explore"):
+                    # The contract this phase worked from: without it a reader cannot tell
+                    # which version of the task the phase's decisions were made against.
+                    with span("explore", attributes={"contract_id": contract.contract_id,
+                                                     "contract_version": contract.version}):
                         phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
                             issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries))
                 except BudgetStopped:
