@@ -75,7 +75,11 @@ class TraceMiddleware(MiddlewareBase):
         """Forward the tool's stream unchanged, timing it and recording its outcome."""
         tool_call = input_kwargs.get("tool_call")
         name = getattr(tool_call, "name", "")
-        with span(f"tool.{name}", attributes={"tool": name}) as handle:
+        # The SDK's own call id: the only thing that pairs this execution with the
+        # permission decision that admitted it.  A tool name cannot -- the same tool is
+        # called many times in one phase.
+        key = getattr(tool_call, "id", "")
+        with span(f"tool.{name}", attributes={"tool": name, "tool_call_key": key}) as handle:
             terminal = None
             async for item in next_handler():
                 state = tool_state(item)

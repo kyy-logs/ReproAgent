@@ -32,6 +32,10 @@ MAX_SPANS = 1024
 MAX_ATTRIBUTE_BYTES = 2048
 MAX_DOCUMENT_BYTES = 1 << 20
 MAX_HTML_BYTES = 4 << 20
+#: The viewer's own input bound.  The writer *targets* one megabyte and marks anything
+#: past it incomplete, but a stored trace is an untrusted file -- hand-editable, and
+#: convertible from another sink -- so it is refused by size before it is ever read.
+MAX_READ_BYTES = 8 << 20
 
 #: Where a traced task keeps its trace, relative to the task's own output directory.
 TRACE_DIRECTORY = "observability"
@@ -46,7 +50,7 @@ WARNING_TRACE_PATH_UNSAFE = "the trace destination is not a plain task-local dir
 #: The only attribute keys a span may carry.  Anything else is dropped rather than
 #: redacted, so a new field cannot start leaking by accident.
 ALLOWED_ATTRIBUTES = frozenset({
-    "purpose", "tool", "result_code", "execution_role",
+    "purpose", "tool", "tool_call_key", "tool_set", "result_code", "execution_role",
     "candidate_id", "run_id", "contract_id",
     "attempt", "output_limit", "budget", "usage", "cost", "unknown",
 })
@@ -74,6 +78,10 @@ class _NoopHandle:
 
     def annotate(self, **_fields: Any) -> None:
         return None
+
+
+#: One handle is enough: it holds no state, and tracing off must not allocate per span.
+_NOOP_HANDLE = _NoopHandle()
 
 
 class SpanHandle:
@@ -110,6 +118,7 @@ class TraceRecorder:
         self._secrets = tuple(secret for secret in secrets if secret)
         self.trace_id = uuid.uuid4().hex
         self._spans: list[dict] = []
+        self._span_ids: set[str] = set()
         self._warnings: list[str] = []
         self._partial = False
         self._failed = False
@@ -174,10 +183,19 @@ class TraceRecorder:
         except Exception:  # noqa: BLE001 - observation never escapes
             self._fault()
 
+    def _owns(self, span_id: str) -> bool:
+        """Whether this recorder wrote that span, so it can be cited as a parent."""
+        return span_id in self._span_ids
+
     def _new_entry(self, name: str, kind: str) -> dict:
+        parent = _current_span.get()
+        if parent is not None and not self._owns(parent):
+            # A span left open by another recorder would be a parent this document does
+            # not contain: a dangling edge no reader could resolve.
+            parent = None
         entry = {
             "span_id": uuid.uuid4().hex[:16],
-            "parent_span_id": _current_span.get(),
+            "parent_span_id": parent,
             "name": name,
             "kind": kind,
             "offset_seconds": None,
@@ -185,6 +203,7 @@ class TraceRecorder:
             "status": "ok" if kind == "event" else "incomplete",
             "attributes": {},
         }
+        self._span_ids.add(entry["span_id"])
         try:
             if self._started_wall is not None:
                 entry["offset_seconds"] = max(0.0, self._wall() - self._started_wall)
@@ -330,9 +349,10 @@ def span(name: str, *, attributes: dict | None = None, expected: tuple = ()) -> 
     """
     recorder = _recorder.get()
     if recorder is None or not recorder._active:
-        yield _NoopHandle()
+        yield _NOOP_HANDLE
         return
     handle = recorder._begin(name, attributes)
+    previous = _current_span.get()
     token = _current_span.set(handle.span_id)
     try:
         yield handle
@@ -351,7 +371,13 @@ def span(name: str, *, attributes: dict | None = None, expected: tuple = ()) -> 
     else:
         handle._finish("ok")
     finally:
-        _current_span.reset(token)
+        try:
+            _current_span.reset(token)
+        except ValueError:
+            # A span inside an async generator can be finalized by the event loop from a
+            # different context than the one that opened it.  The token cannot be reset
+            # there, and that must never replace what is travelling through the span.
+            _current_span.set(previous)
 
 
 def mark(name: str, *, attributes: dict | None = None) -> None:
@@ -367,8 +393,45 @@ def _encode_document(document: dict) -> bytes:
 
 
 def _plain_destination(path: Path) -> bool:
-    """Whether this path is a real file or directory rather than a link to elsewhere."""
-    return not path.is_symlink()
+    """Whether this path is a real file or directory rather than a link to elsewhere.
+
+    ``is_symlink`` alone is not enough: on Windows a *directory junction* is not a
+    symlink, needs no elevation to create, and would quietly move "the task directory"
+    somewhere else -- including into the delivered artifacts tree.
+    """
+    if path.is_symlink():
+        return False
+    try:
+        stats = path.lstat()
+    except OSError:
+        # A name that does not exist yet cannot be a link; the writer creates it.
+        return True
+    return not getattr(stats, "st_reparse_tag", 0)
+
+
+def _trace_destination(task_dir: Path, filename: str) -> Path:
+    """The one path a task's trace may occupy, or the reason it may not.
+
+    Both names are fixed, and both are checked: the directory the trace lives in and
+    the file itself may be neither a link nor a location outside the task, and the
+    trace never joins the delivered package.
+
+    Raises:
+        ValueError: the destination is a link, is outside the task, or is under artifacts.
+    """
+    from .paths import is_within, workspace_path
+
+    root = workspace_path(Path(task_dir))
+    directory = workspace_path(root / TRACE_DIRECTORY)
+    target = workspace_path(directory / filename)
+    artifacts = workspace_path(root / "artifacts")
+    if not _plain_destination(directory) or not _plain_destination(target):
+        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    if not is_within(directory, root) or not is_within(target, root):
+        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    if is_within(target, artifacts):
+        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    return target
 
 
 def write_trace(task_dir: Path, document: dict) -> Path:
@@ -383,15 +446,9 @@ def write_trace(task_dir: Path, document: dict) -> Path:
         ValueError: the destination is not inside the task directory, or is a link.
         OSError: the task directory could not be written.
     """
-    from .paths import is_within, workspace_path
     from .store import atomic_write
 
-    root = workspace_path(Path(task_dir))
-    target = workspace_path(root / TRACE_DIRECTORY / TRACE_FILENAME)
-    if not is_within(target, root) or not is_within(target.parent, root):
-        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
-    if not _plain_destination(target.parent) or not _plain_destination(target):
-        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    target = _trace_destination(task_dir, TRACE_FILENAME)
     encoded = _encode_document(document)
     if len(encoded) > MAX_DOCUMENT_BYTES:
         document = {**document, "partial": True, "metrics_complete": False,
@@ -409,13 +466,33 @@ def _read_trace(task_dir: Path) -> tuple[Path, dict]:
     source = workspace_path(root / TRACE_DIRECTORY / TRACE_FILENAME)
     if not source.is_file():
         raise FileNotFoundError(f"this task has no {TRACE_FILENAME}: it was not run with tracing enabled")
+    if source.stat().st_size > MAX_READ_BYTES:
+        # Refused before it is loaded: the stored file is untrusted input.
+        raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is too large to display")
     try:
         document = json.loads(source.read_text(encoding="utf-8"))
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, OSError):
         raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is not readable JSON") from None
     if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("the trace is not a document this viewer understands")
+    if not _shaped_like_a_trace(document):
+        # Checked up front: the renderer walks these by shape, and a wrong one would
+        # otherwise surface as a traceback and the wrong exit code.
+        raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is not shaped like a trace")
     return root, document
+
+
+def _shaped_like_a_trace(document: dict) -> bool:
+    """Whether the parts the viewer walks have the shapes it walks them as."""
+    spans = document.get("spans", [])
+    summary = document.get("summary", {})
+    if not isinstance(spans, list) or any(
+            not isinstance(entry, dict) or not isinstance(entry.get("attributes", {}), dict)
+            for entry in spans):
+        return False
+    if not isinstance(summary, dict):
+        return False
+    return all(not isinstance(summary.get(key, {}), list) for key in ("usage", "cost"))
 
 
 def _esc(value: Any) -> str:
@@ -531,12 +608,9 @@ def render_trace(document: dict) -> str:
 
 def write_trace_html(task_dir: Path) -> Path:
     """Render the trace this task already stored; nothing else is read or written."""
-    from .paths import workspace_path
     from .store import atomic_write
 
-    root, document = _read_trace(task_dir)
-    target = workspace_path(root / TRACE_DIRECTORY / TRACE_HTML_FILENAME)
-    if not _plain_destination(target.parent) or not _plain_destination(target):
-        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    _, document = _read_trace(task_dir)
+    target = _trace_destination(task_dir, TRACE_HTML_FILENAME)
     atomic_write(target, render_trace(document).encode("utf-8"))
     return target

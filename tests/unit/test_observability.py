@@ -280,6 +280,50 @@ def test_unknown_usage_and_cost_stay_unknown():
     assert summary["cost"]["complete"] is False
 
 
+def test_a_span_closed_from_another_context_still_propagates():
+    """The event loop finalizes an abandoned stream from its own context.
+
+    Resetting the span's context variable there would raise "created in a different
+    Context" and replace whatever was travelling through the span -- the exact promise
+    that a domain exception reaches the caller unchanged.
+    """
+    async def main():
+        async def stream():
+            with span("tool.Read"):
+                yield 1
+                yield 2
+
+        with trace_session(enabled=True) as recorder:
+            generator = stream()
+
+            async def consume_first():
+                return await generator.__anext__()
+
+            await asyncio.create_task(consume_first())
+            await generator.aclose()
+            return recorder
+
+    document = asyncio.run(main()).finish(task_id="task-1", status="DONE", main_duration=1.0)
+    assert [entry["name"] for entry in document["spans"]] == ["tool.Read"]
+
+
+def test_a_nested_session_does_not_inherit_a_foreign_parent():
+    """A parent id must come from the recorder writing the document, never another task's."""
+    with trace_session(enabled=True) as outer:
+        with span("outer-work"):
+            with trace_session(enabled=True) as inner:
+                with span("inner-work"):
+                    pass
+            inner_document = inner.finish(task_id="inner", status="DONE", main_duration=1.0)
+        outer_document = outer.finish(task_id="outer", status="DONE", main_duration=1.0)
+
+    inner_span = inner_document["spans"][0]
+    assert inner_span["name"] == "inner-work"
+    # The outer span is still open here, but it belongs to another document.
+    assert inner_span["parent_span_id"] is None
+    assert inner_span["span_id"] not in {entry["span_id"] for entry in outer_document["spans"]}
+
+
 def test_learning_is_reported_separately_from_the_main_run():
     with TraceRecorder() as recorder:
         with span("learn"):

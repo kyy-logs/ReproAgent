@@ -5,13 +5,17 @@ honest about what it does not know, it has to survive metadata that came from
 somewhere untrusted, and it has to work with no network at all.  It also must not be
 able to write anywhere except its own two files.
 """
+import contextlib
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from reproagent import cli
 from reproagent.observability import (
+    MAX_READ_BYTES,
     TRACE_DIRECTORY,
     TRACE_FILENAME,
     render_trace,
@@ -137,6 +141,55 @@ def test_missing_or_corrupt_trace_is_rejected(tmp_path):
     assert cli.main(["trace", str(tmp_path / "absent")]) == 2
 
 
+@pytest.mark.skipif(os.name != "nt", reason="NTFS junctions are Windows-only")
+def test_a_junction_at_the_trace_directory_is_refused(tmp_path):
+    """A junction moves "the task directory" somewhere else, and needs no elevation.
+
+    ``is_symlink`` reports False for a junction, so a check built on it alone would let
+    the trace be written into the delivered artifacts tree, or straight out of the task.
+    """
+    task = tmp_path / "task"
+    (task / "artifacts").mkdir(parents=True)
+    made = subprocess.run(["cmd", "/c", "mklink", "/J", str(task / "observability"), str(task / "artifacts")],
+                          capture_output=True)
+    if made.returncode != 0:
+        pytest.skip("junction creation unavailable on this host")
+
+    with pytest.raises(ValueError):
+        write_trace(task, document())
+    assert not (task / "artifacts" / "trace.json").exists()
+
+    # The viewer must refuse the same redirect rather than write through it.
+    (task / "artifacts" / "trace.json").write_text(json.dumps(document()), encoding="utf-8")
+    with pytest.raises(ValueError):
+        write_trace_html(task)
+    assert not (task / "artifacts" / "trace.html").exists()
+
+
+@contextlib.contextmanager
+def _junction(target, link):
+    made = subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(target)], capture_output=True)
+    if made.returncode != 0:
+        pytest.skip("junction creation unavailable on this host")
+    yield
+
+
+@pytest.mark.skipif(os.name != "nt", reason="NTFS junctions are Windows-only")
+def test_a_junction_out_of_the_task_is_refused(tmp_path):
+    task = tmp_path / "task"
+    task.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / TRACE_FILENAME).write_text(json.dumps(document()), encoding="utf-8")
+
+    with _junction(outside, task / TRACE_DIRECTORY):
+        with pytest.raises(ValueError):
+            write_trace(task, document())
+        with pytest.raises(ValueError):
+            write_trace_html(task)
+    assert not (outside / "trace.html").exists()
+
+
 def test_an_oversized_page_is_refused():
     """The page has a ceiling too, and a document past it is refused rather than cut."""
     oversized = document(spans=[span(f"{index:016x}", "tool.Read", tool="x" * 400)
@@ -144,6 +197,38 @@ def test_an_oversized_page_is_refused():
 
     with pytest.raises(ValueError):
         render_trace(oversized)
+
+
+@pytest.mark.parametrize("payload", [
+    {"schema_version": 1, "spans": [1], "summary": {}},
+    {"schema_version": 1, "spans": [None], "summary": {}},
+    {"schema_version": 1, "spans": [], "summary": [1, 2]},
+    {"schema_version": 1, "spans": "not a list", "summary": {}},
+])
+def test_a_schema_valid_but_malformed_trace_is_rejected(tmp_path, payload):
+    """The stored file is hand-editable, so its shape is untrusted too.
+
+    Only its version was checked before, so a structurally wrong document reached the
+    renderer and died with a traceback and exit 1 instead of the fixed diagnostic.
+    """
+    task = tmp_path / "task" / TRACE_DIRECTORY
+    task.mkdir(parents=True)
+    (task / TRACE_FILENAME).write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        write_trace_html(task.parent)
+    assert cli.main(["trace", str(task.parent)]) == 2
+
+
+def test_an_oversized_stored_trace_is_refused_before_it_is_read(tmp_path):
+    """The viewer bounds its input rather than loading whatever it is handed."""
+    task = tmp_path / "task" / TRACE_DIRECTORY
+    task.mkdir(parents=True)
+    (task / TRACE_FILENAME).write_bytes(b"x" * (MAX_READ_BYTES + 1))
+
+    with pytest.raises(ValueError):
+        write_trace_html(task.parent)
+    assert cli.main(["trace", str(task.parent)]) == 2
 
 
 def test_observability_output_cannot_redirect_to_artifacts(tmp_path):

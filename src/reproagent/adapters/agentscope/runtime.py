@@ -31,7 +31,7 @@ from ...core.budget import BudgetStopped
 from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import bytes_hash, canonical_bytes
-from ...observability import tracing_enabled
+from ...observability import mark, tracing_enabled
 
 #: The SDK agent's name; it is the name of every message the SDK writes for this task.
 AGENT_NAME = "reproagent-exploration"
@@ -153,6 +153,14 @@ class AgentScopeRuntime:
         self._agent.react_config.max_iters = max(1, self._steps_remaining())
         self.middleware.record("exploration.phase", action="", result_code="BEGIN",
                                contract_id=context.contract.contract_id, contract_version=context.contract.version)
+        # The surface this phase really registered and what it had left to spend.  Without
+        # both, a trace cannot say why a phase ended, and a six-tool task looks exactly
+        # like a seven-tool one.
+        mark("exploration.tools", attributes={
+            "tool_set": list(self.allowed_tools),
+            "budget": {"steps_remaining": self._steps_remaining(),
+                       "seconds_remaining": round(max(0.0, self.context.budget.deadline
+                                                       - self.context.budget.clock()), 3)}})
         message = self._message(context)
         end_reason = ""
         for attempt in range(PROTOCOL_ATTEMPTS):

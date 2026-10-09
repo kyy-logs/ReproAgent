@@ -250,8 +250,13 @@ def test_a_refused_permission_is_a_point_and_runs_nothing(tmp_path, projects, fa
 
 
 def test_permission_and_execution_are_joined_by_call(tmp_path, projects, facts):
-    with traced(tmp_path, projects, facts,
-                answers=[read_reply(None, "call-1"), text_reply()]) as env:
+    """The two points are joined by the SDK's own call id, not by name or by adjacency.
+
+    Six reads of the same file produce six identical-looking permission points and six
+    identical-looking tool spans; only the call key says which decision admitted which
+    execution, which is the whole question when one of them was refused.
+    """
+    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1"), text_reply()]) as env:
         env.answers[0] = read_reply(env.module, "call-1")
         explore(env)
         doc = document(env)
@@ -264,6 +269,43 @@ def test_permission_and_execution_are_joined_by_call(tmp_path, projects, facts):
     assert len(allowed) == 1 and len(executions) == 1
     assert doc["summary"]["tool_executions"] == 1
     assert allowed[0]["attributes"]["tool"] == "Read"
+    # ...and the two are the same call, by identity.
+    key = allowed[0]["attributes"]["tool_call_key"]
+    assert key and key == executions[0]["attributes"]["tool_call_key"]
+
+
+def test_the_trace_records_the_budget_and_the_registered_tool_set(tmp_path, projects, facts):
+    """"Why did it end" needs the budget it ended on, and the surface it could have used."""
+    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1"), text_reply()]) as env:
+        env.answers[0] = read_reply(env.module, "call-1")
+        explore(env)
+        doc = document(env)
+
+    registered = [entry for entry in by_kind(doc, "event") if entry["name"] == "exploration.tools"]
+    assert registered, "the phase records the surface it actually registered"
+    attributes = registered[0]["attributes"]
+    # The real toolkit, not the six the docstring happens to mention.
+    assert set(attributes["tool_set"]) == set(TOOL_NAMES)
+    # ...and what it had left, which is what says why it later had to stop.
+    assert attributes["budget"]["steps_remaining"] > 0
+    assert attributes["budget"]["seconds_remaining"] > 0
+
+
+def test_repeated_reads_are_told_apart_by_their_call_key(tmp_path, projects, facts):
+    answers = [read_reply(None, f"call-{index}") for index in range(3)] + [text_reply()]
+    with traced(tmp_path, projects, facts, answers=answers) as env:
+        for index in range(3):
+            env.answers[index] = read_reply(env.module, f"call-{index + 1}")
+        explore(env)
+        doc = document(env)
+
+    executions = named(doc, "tool.Read")
+    keys = [entry["attributes"]["tool_call_key"] for entry in executions]
+
+    # Same tool, same file, three different calls -- three different keys, so a renderer
+    # can never pair a refusal with the wrong execution.
+    assert len(executions) == 3
+    assert len(set(keys)) == 3 and all(keys)
 
 
 def test_reserved_denial_is_distinct_from_plain_denial(tmp_path, projects, facts):

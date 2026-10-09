@@ -57,8 +57,13 @@ task                       # 整个 Controller.run，含导出与学习
 ## 记录边界
 
 - **不记录正文**：源码、Issue 原文、prompt/response、思维链、工具参数与结果、异常原文都不进入 trace。
-- 属性使用白名单：`purpose`、工具名、受控结果码、`execution_role`、candidate/run/contract ID、
-  `attempt`、`output_limit`、`budget`、`usage`、`cost`、`unknown` 标记。白名单之外的键直接丢弃。
+- 属性使用白名单：`purpose`、工具名、`tool_call_key`、`tool_set`、受控结果码、`execution_role`、
+  candidate/run/contract ID、`attempt`、`output_limit`、`budget`、`usage`、`cost`、`unknown` 标记。
+  白名单之外的键直接丢弃。
+- **`tool_call_key` 是权限点与执行点的关联键**（SDK 自己的 call id）。同一工具在一轮里会被调用很多次，
+  仅凭工具名或时间相邻无法判断哪次决策放行了哪次执行——尤其是其中一次被拒时。
+- 每个阶段开始时记录一条 `exploration.tools`：真实注册的工具集与当时的剩余步数/时间。
+  没有它，trace 说不清阶段为什么结束，六工具与七工具的任务也分不出来。
 - 已知凭据在投影前脱敏；这不等于能扫描所有秘密。
 
 ## 容量与失效
@@ -68,7 +73,8 @@ task                       # 整个 Controller.run，含导出与学习
 | span/点事件 | 1024 | 保留已有记录，标 `partial`，不中断主任务 |
 | 单条属性 JSON | 2048 字节 | 整条丢弃（不截断，避免残缺事实被当成完整） |
 | trace.json | 1 MiB | 写入时标 `partial` 并置 `metrics_complete=false` |
-| HTML | 4 MiB | 同上，渲染阶段拒绝超大输入 |
+| HTML | 4 MiB | 渲染阶段**拒绝**超大页面（截断的半张时间线会被读成完整的） |
+| 查看器读取 | 8 MiB | 按文件大小在读取前拒绝：被读的文件是不可信输入 |
 
 采集只在内存进行，过程中不写 `events.jsonl`、不访问网络。观测自身出错时按固定诊断失效关闭，
 **领域异常、`BudgetStopped`、`CancelledError` 原样传播**；写 trace 失败只打印一条固定 stderr

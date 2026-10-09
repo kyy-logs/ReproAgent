@@ -248,11 +248,13 @@ class _GuardedModel:
             except Exception as failure:
                 return self._retry_or_raise(failure, attempt)
             finally:
-                self._account(reservation, kwargs)
+                # The cost is computed once and shared with the attempt record: tracing
+                # must not make the untraced path do the work twice.
+                cost = self._account(reservation, kwargs)
                 http.annotate(result_code=self.observation.outcome,
                               output_limit=effective_output_limit(self.config, kwargs),
                               usage=usage_totals(self.observation.usage),
-                              cost=self._cost())
+                              cost=cost)
 
     def _validate_reply(self, reply):
         """A structured request is only usable as complete text; other purposes decide.
@@ -299,13 +301,14 @@ class _GuardedModel:
         cost = self._cost()
         self.context.budget.settle_cost(reservation, cost)
         if self.store is None:
-            return
+            return cost
         limit = effective_output_limit(self.config, kwargs)
         self.store.append_event('model.attempt', (), attempt_payload(
             self.attempts, self.observation.usage, 'estimated' if cost is not None else 'unknown', cost,
             response_kind=self.purpose, effective_output_limit=limit, outcome=self.observation.outcome,
             finish_reason=self.observation.finish_reason, content_bytes=self.observation.content_bytes,
             backend='agentscope'))
+        return cost
 
 
 def _sdk_classes():

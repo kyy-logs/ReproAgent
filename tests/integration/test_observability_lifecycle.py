@@ -158,27 +158,51 @@ def test_trace_not_in_manifest_or_learning_material(tmp_path, projects, facts):
     assert document['trace_id'] not in json.dumps(seen)
 
 
-def test_trace_write_failure_keeps_original_exit_code(tmp_path, projects, facts, monkeypatch):
-    """A trace that cannot be written is a warning, never a rewritten task result."""
+def test_trace_write_failure_keeps_original_exit_code(tmp_path, monkeypatch, capsys):
+    """A trace that cannot be written is a warning, never a rewritten task result.
+
+    This drives the real command: asserting the code against the table it was read from
+    would pass whatever the write did, including re-raising.
+    """
     import reproagent.cli as cli
+    from reproagent.core.models import TaskRequest, TaskResult
 
-    request, _, _, ctx = setup(tmp_path, projects, facts)
-    result = asyncio.run(_finished_result(request, ctx))
+    repo = tmp_path / 'repo'
+    repo.mkdir()
+    (repo / 'issue.md').write_text('parse([]) must return an empty list.\n', encoding='utf-8')
+    request = TaskRequest(repo, tmp_path / 'output', repo / 'issue.md')
+    model_config = tmp_path / 'model.json'
+    model_config.write_text(json.dumps({'base_url': 'https://offline.example/v1', 'model': 'offline',
+                                        'api_key_env': 'REPROAGENT_TRACE_TEST_KEY'}), encoding='utf-8')
 
-    def explode(*_args, **_kwargs):
+    class Adapter:
+        def inspect(self, project, language):
+            pass
+
+    class Controller:
+        runner = type('Runner', (), {'adapter': Adapter()})()
+        learning_result = None
+
+        async def run(self, request, context, fixed=None):
+            return TaskResult('task', TaskState.DONE, duration=1.0)
+
+    monkeypatch.setattr(cli, 'load_request', lambda path: request)
+    monkeypatch.setattr(cli, 'create_controller', lambda *args, **kwargs: Controller())
+    monkeypatch.setenv('REPROAGENT_TRACE_TEST_KEY', 'placeholder')
+
+    attempted = []
+    def unavailable(task_dir, document):
+        attempted.append(task_dir)
         raise OSError('trace destination unavailable')
 
-    monkeypatch.setattr(cli, 'write_trace', explode, raising=False)
-    code = cli.EXIT_CODES[result.status]
+    monkeypatch.setattr(cli, 'write_trace', unavailable)
 
-    written = cli._write_trace_or_warn(request.output_dir, {'schema_version': 1})
-    assert written is False
-    assert code == cli.EXIT_CODES[TaskState.DONE]
+    code = cli.main(['run', '--config', str(model_config), '--model-config', str(model_config), '--trace'])
+    captured = capsys.readouterr()
 
-
-async def _finished_result(request, ctx):
-    from reproagent.core.models import TaskResult
-    return TaskResult(request.task_id or 'task-x', TaskState.DONE, duration=1.0)
+    assert attempted, 'the trace was actually attempted'
+    assert code == cli.EXIT_CODES[TaskState.DONE], 'the task result still decides the exit code'
+    assert cli.TRACE_WRITE_WARNING in captured.err
 
 
 def test_cancelled_task_closes_trace(tmp_path, projects, facts):
