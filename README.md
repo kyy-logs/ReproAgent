@@ -79,6 +79,8 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 
 Optional progressive advice and automatic post-task learning are available. See [experience setup and frozen evaluation](docs/experience.md) and [task example](examples/task.experience.json). Disabled by default; real-model A/B benefit has not been measured.
 
+A local activity trace can show where a run spent its time, HTTP attempts, tokens and cost, and which layer failed. Disabled by default: pass `--trace` to `run`, then render it offline with `reproagent trace <task-dir>`. See [observability](docs/observability.md).
+
 ## Known limitations
 
 - 文件副本隔离不是安全沙箱。目标代码、pytest 插件与生成的测试拥有当前用户的系统与网络权限；只在可信项目和可丢弃环境使用。

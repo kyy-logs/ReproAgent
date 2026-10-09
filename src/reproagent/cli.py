@@ -10,7 +10,7 @@ from .app import LEGACY_BACKENDS, create_controller
 from .core.budget import Budget
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
-from .observability import trace_session, write_trace
+from .observability import trace_session, write_trace, write_trace_html
 from .paths import display_path
 from .store import TaskStore
 
@@ -86,6 +86,16 @@ def run_command(args):
     return EXIT_CODES[result.status]
 
 
+def trace_command(args):
+    """Render the trace a task already stored, or say why there is none to show."""
+    root = Path(args.task_dir).resolve()
+    if not root.is_dir():
+        raise ValueError('task directory does not exist')
+    target = write_trace_html(root)
+    print(json.dumps({'trace': display_path(target)}, ensure_ascii=False))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='reproagent')
     sub = parser.add_subparsers(dest='command', required=True)
@@ -98,8 +108,13 @@ def main(argv=None):
     run.add_argument('--trace', action='store_true',
                      help='write a local activity trace to the task output directory')
     inspect = sub.add_parser('inspect'); inspect.add_argument('task_dir')
+    # The trace viewer takes the task directory and nothing else: the two files it may
+    # touch are fixed, so it cannot be pointed at the sealed package or anywhere else.
+    trace = sub.add_parser('trace'); trace.add_argument('task_dir')
     try:
         args = parser.parse_args(argv)
+        if args.command == 'trace':
+            return trace_command(args)
         if args.command == 'inspect':
             root = Path(args.task_dir).resolve()
             if not root.is_dir(): raise ValueError('task directory does not exist')

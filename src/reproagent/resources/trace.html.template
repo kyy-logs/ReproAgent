@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReproAgent activity trace</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 1.5rem; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  h1 { font-size: 1.15rem; margin: 0 0 .25rem; }
+  h2 { font-size: .95rem; margin: 1.75rem 0 .5rem; text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: .3rem .5rem; border-bottom: 1px solid rgba(128,128,128,.3); vertical-align: top; }
+  th { font-weight: 600; opacity: .7; }
+  .meta { opacity: .7; }
+  .warn { border-left: 3px solid #b8860b; padding: .4rem .6rem; margin: .5rem 0; background: rgba(184,134,11,.12); }
+  .status-error, .status-cancelled { font-weight: 600; }
+  .status-error { color: #c0392b; }
+  .status-cancelled { color: #b8860b; }
+  .status-ok { opacity: .65; }
+  .kind-event { font-style: italic; }
+  .depth-1 { padding-left: 1.5rem; } .depth-2 { padding-left: 3rem; }
+  .depth-3 { padding-left: 4.5rem; } .depth-4 { padding-left: 6rem; }
+  .depth-5 { padding-left: 7.5rem; } .depth-6 { padding-left: 9rem; }
+  .attrs { opacity: .75; word-break: break-word; }
+  .unknown { font-style: italic; opacity: .7; }
+</style>
+</head>
+<body>
+<!--TRACE-CONTENT-->
+</body>
+</html>
