@@ -28,12 +28,34 @@ def emit(event, payload):
     _seq += 1
 
 
+def origin(filename):
+    """The resolved path of a frame's source file, or '' when it has no path at all.
+
+    A tracer is handed frames the compiler named rather than wrote: attrs generates
+    ``_pytest.fixtures.FixtureFunctionMarker.__init__`` and names that frame
+    ``'<attrs generated init ...>'``, and ``'<string>'`` and ``'<frozen ...>'`` arrive the
+    same way.  There is no file to vouch for, and on Python 3.9 ``Path.resolve()`` raises
+    OSError for such a name -- Windows rejects the angle brackets -- which ended collection
+    and cost the whole run, so a candidate that defined a fixture was ruled invalid before
+    its test ever ran.  The call is still counted; only the origin is withheld, because
+    provenance is exactly what a label cannot establish.
+    """
+    if not filename or filename.startswith('<'):
+        return ''
+    try:
+        return str(Path(filename).resolve())
+    except OSError:
+        return ''
+
+
 def profile(frame, event, arg):
     if event != 'call':
         return
     name = frame.f_globals.get('__name__', '')
     if any(name == target or name.startswith(target + '.') for target in _targets):
-        _origins[name] = str(Path(frame.f_code.co_filename).resolve())
+        source = origin(frame.f_code.co_filename)
+        if source:
+            _origins[name] = source
         _calls[name] = _calls.get(name, 0) + 1
 
 
