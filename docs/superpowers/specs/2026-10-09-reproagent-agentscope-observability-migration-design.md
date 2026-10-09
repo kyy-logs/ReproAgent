@@ -1,6 +1,6 @@
 # ReproAgent AgentScope 原生观测迁移设计
 
-日期：2026-10-09。状态：迁移实现中，验收结果另见回执。
+日期：2026-10-09。状态：2026-10-10本地迁移验收完成，结果及平台缺口另见回执。
 基线：main `cd309c685a1591820330fef78893eb4641a68bd9`。
 已读本地 AgentScope 2.0.9 与 OpenTelemetry API/SDK 1.45.0 源码。
 
@@ -110,3 +110,5 @@ summary仍只汇总model.http_attempt的usage/费用、model.logical的逻辑次
 原生middleware确实创建Agent/model/tool span；一条统一trace包含程序和SDK节点；正常/拒绝/预留/重试/取消/学习均可解释。默认与--no-trace业务请求字节、次数、工具输出、预算、结论保持等价。schema1/2、页面、脱敏、限额、Windows长路径和安装包验证通过。
 
 实现步骤及逐项验收见 `../plans/2026-10-09-reproagent-agentscope-observability-migration.md`。本设计不承载测试结果；不得引用旧验收数字作为本次迁移通过证据。
+
+验收回执：`../../reviews/2026-10-09-agentscope-observability-migration-acceptance.md`；最终704pass5skip、pip check通过。产品代码在独立分支，未合并或推送。

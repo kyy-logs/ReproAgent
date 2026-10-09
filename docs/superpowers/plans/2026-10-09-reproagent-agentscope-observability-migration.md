@@ -1,6 +1,6 @@
 # ReproAgent AgentScope Observability Migration Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task in the current session. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task in the current session. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 将现有自建通用追踪迁移到AgentScope原生TracingMiddleware与OpenTelemetry，保留默认本地采集、可读页面及ReproAgent业务验收信息。
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python≥3.11、AgentScope==2.0.9、opentelemetry-api==1.45.0、opentelemetry-sdk==1.45.0、httpx.MockTransport、pytest。第一版不增加OTLP exporter/后端服务。
 
-**Spec:** `docs/superpowers/specs/2026-10-09-reproagent-agentscope-observability-migration-design.md`。用户直接要求写迁移计划，本次交付设计与计划，不执行产品迁移。
+**Spec:** `docs/superpowers/specs/2026-10-09-reproagent-agentscope-observability-migration-design.md`。用户已批准执行；2026-10-10完成迁移实现与本地离线验收。
 
 **Baseline:** main `cd309c685a1591820330fef78893eb4641a68bd9`；实施前重新核对HEAD和并发改动。旧计划及其已完成验收记录保留，不能把旧结果改成新迁移通过。
 
@@ -84,73 +84,73 @@ schema2保留schema1的spans/contents/summary与展示字段，增加root_span_i
 **Files:** Create otel_backend.py/otel_projection.py 与两unit测试；Modify observability_content.py、pyproject.toml。
 **Interfaces:** Produces ProviderActivation、TaskTraceSink、TaskSpanProcessor、SessionSampler、open_task_trace、project_native_span。
 
-- [ ] Step 1: 写 `test_provider_reused_without_global_reset`、`test_foreign_provider_disables_local_trace_without_touching_host`（独立子进程）、`test_parallel_sessions_route_end_by_trace_id`、`test_disabled_after_enabled_is_not_sampled`；断言同任务32/16位hex、不同任务不同trace、迟到结束不写下次sink、无网络exporter/后台线程。
-- [ ] Step 2: 写 `test_native_projection_redacts_names_status_and_exception_events`、`test_native_content_sources_and_limits`、`test_dropped_sdk_attributes_mark_partial`；用已知秘密/JSON转义秘密、原始call ID/未知工具名、SDK resource、超限中文正文断言无泄露，既有1024/512/字节边界不变。
-- [ ] Step 3: 跑 `.venv/Scripts/python.exe -m pytest tests/unit/test_otel_backend.py tests/unit/test_otel_projection.py -q` 确认RED指向未实现合同，而非fixture坏掉。
-- [ ] Step 4: 实现上述接口；owned全局provider只装一次，同步processor安全投影、monotonic记时、异常隔离；加两个固定OTel依赖。不引入SDK私有patch或Batch队列。
-- [ ] Step 5: 同命令GREEN，运行pip check核对固定版本兼容；提交 `feat: add task-scoped OpenTelemetry tracing backend`，只stage本任务文件。
+- [x] Step 1: 写 `test_provider_reused_without_global_reset`、`test_foreign_provider_disables_local_trace_without_touching_host`（独立子进程）、`test_parallel_sessions_route_end_by_trace_id`、`test_disabled_after_enabled_is_not_sampled`；断言同任务32/16位hex、不同任务不同trace、迟到结束不写下次sink、无网络exporter/后台线程。
+- [x] Step 2: 写 `test_native_projection_redacts_names_status_and_exception_events`、`test_native_content_sources_and_limits`、`test_dropped_sdk_attributes_mark_partial`；用已知秘密/JSON转义秘密、原始call ID/未知工具名、SDK resource、超限中文正文断言无泄露，既有1024/512/字节边界不变。
+- [x] Step 3: 跑 `.venv/Scripts/python.exe -m pytest tests/unit/test_otel_backend.py tests/unit/test_otel_projection.py -q` 确认RED指向未实现合同，而非fixture坏掉。
+- [x] Step 4: 实现上述接口；owned全局provider只装一次，同步processor安全投影、monotonic记时、异常隔离；加两个固定OTel依赖。不引入SDK私有patch或Batch队列。
+- [x] Step 5: 同命令GREEN，运行pip check核对固定版本兼容；提交 `feat: add task-scoped OpenTelemetry tracing backend`，只stage本任务文件。
 
 ## Task 2: 门面切换及原生AgentScope调用树
 
 **Files:** Modify observability.py、adapters/agentscope/observability.py、runtime.py、middleware.py；Create test_agentscope_native_tracing.py；Update test_observability.py/test_agentscope_observability.py。
 **Interfaces:** Consumes Task 1；Produces兼容门面与ReproTraceMiddleware，原生model/tool节点、补充reasoning周期。
 
-- [ ] Step 1: 写 `test_native_agent_model_tool_spans_are_real_sdk_spans`：使用真实SDK+MockTransport，断言instrumentation_scope=agentscope的reply/model/tool来自原生类，trace_id等于任务根；reasoning每次on_reasoning一次。测试不得用fake middleware冒充native。
-- [ ] Step 2: 写 `test_permissions_correlate_without_duplicate_tool_spans`：ALLOWED/DENIED/RESERVED_FOR_PUBLISHING与实际native tool同key、permission不计执行，6/经验7条件不变；被整份模型回复拒绝时没有假工具节点。
-- [ ] Step 3: 写 `test_publish_generator_close_preserves_terminal_result`、`test_cancelled_stream_has_no_context_leak`、`test_native_observer_failure_never_replays_handler`：流对象原样一次yield、取消/GeneratorExit不替换业务异常、下次trace不串树。必须实测SDK序列化故障；若原生序列化异常会改变业务结果且公开扩展点无法隔离，标阻塞并改设计，不能关闭相关断言或重跑handler掩盖。
-- [ ] Step 4: 跑相关新增和既有middleware/runtime测试RED。
-- [ ] Step 5: 门面改OTel-backed，删旧ID/parent engine；原生TracingMiddleware外层，ReproTraceMiddleware只补reasoning/业务关联/终态，关闭时不注册。将通用节点投影命名规范化，原始SDK名另保留脱敏展示，终态依据仅来自既有程序结果。
-- [ ] Step 6: 上述测试GREEN；保留全套旧内容/流/权限断言，新增原生证据；提交 `refactor: use native AgentScope tracing for agent calls`。
+- [x] Step 1: 写 `test_native_agent_model_tool_spans_are_real_sdk_spans`：使用真实SDK+MockTransport，断言instrumentation_scope=agentscope的reply/model/tool来自原生类，trace_id等于任务根；reasoning每次on_reasoning一次。测试不得用fake middleware冒充native。
+- [x] Step 2: 写 `test_permissions_correlate_without_duplicate_tool_spans`：ALLOWED/DENIED/RESERVED_FOR_PUBLISHING与实际native tool同key、permission不计执行，6/经验7条件不变；被整份模型回复拒绝时没有假工具节点。
+- [x] Step 3: 写 `test_publish_generator_close_preserves_terminal_result`、`test_cancelled_stream_has_no_context_leak`、`test_native_observer_failure_never_replays_handler`：流对象原样一次yield、取消/GeneratorExit不替换业务异常、下次trace不串树。必须实测SDK序列化故障；若原生序列化异常会改变业务结果且公开扩展点无法隔离，标阻塞并改设计，不能关闭相关断言或重跑handler掩盖。
+- [x] Step 4: 跑相关新增和既有middleware/runtime测试RED。
+- [x] Step 5: 门面改OTel-backed，删旧ID/parent engine；原生TracingMiddleware外层，ReproTraceMiddleware只补reasoning/业务关联/终态，关闭时不注册。将通用节点投影命名规范化，原始SDK名另保留脱敏展示，终态依据仅来自既有程序结果。
+- [x] Step 6: 上述测试GREEN；保留全套旧内容/流/权限断言，新增原生证据；提交 `refactor: use native AgentScope tracing for agent calls`。
 
 ## Task 3: 业务链路、异常与单次记账
 
 **Files:** Modify model_factory.py（门面适配）、otel_projection.py/observability.py；Create test_otel_observability_lifecycle.py；Update test_observability_lifecycle.py/test_observability_decisions.py。
 **Interfaces:** Consumes统一当前OTel span；Produces四purpose、HTTP leaves、程序event与异常分类；不修改Verdict格式。
 
-- [ ] Step 1: 写 `test_all_purposes_and_learning_share_one_trace`：contract/exploration/verdict/learning实际节点共享根，学习在seal后且预算独立，root状态等于TaskResult，不由learning异常覆盖。
-- [ ] Step 2: 写 `test_retry_usage_is_charged_only_at_http_leaves`：一logical三HTTP时原生model token只展示不累加；丢失usage/价格时unknown及已知小计保持；协议拒绝前provider_response仍可见，wire实际messages/tools保持不变。
-- [ ] Step 3: 写 `test_error_categories_preserve_native_and_domain_status`：400/401/429/503/transport/protocol/进程timeout/取消/unknown；otel_status保留，正常PhaseEnded/预算终止有受控display status；缺因果来源不猜client/server责任。
-- [ ] Step 4: 写 `test_program_checks_keep_short_circuit_and_evidence_isolation`：check事件数量等于实际执行，bool原样返回、重复hash/resolve为零，provider_claim与程序验收分开；trace正文不进入Agent/Verifier/学习/manifest。preflight错误仍无任务trace且CLI错误行为不变。
-- [ ] Step 5: 运行新增及controller/runner/local/verifier/experience/model_factory回归RED；按现有调用点最小适配、投影受控reason_origin/错误来源，不增检查；运行同组GREEN。
-- [ ] Step 6: 提交 `refactor: correlate domain decisions and HTTP attempts with native traces`。
+- [x] Step 1: 写 `test_all_purposes_and_learning_share_one_trace`：contract/exploration/verdict/learning实际节点共享根，学习在seal后且预算独立，root状态等于TaskResult，不由learning异常覆盖。
+- [x] Step 2: 写 `test_retry_usage_is_charged_only_at_http_leaves`：一logical三HTTP时原生model token只展示不累加；丢失usage/价格时unknown及已知小计保持；协议拒绝前provider_response仍可见，wire实际messages/tools保持不变。
+- [x] Step 3: 写 `test_error_categories_preserve_native_and_domain_status`：400/401/429/503/transport/protocol/进程timeout/取消/unknown；otel_status保留，正常PhaseEnded/预算终止有受控display status；缺因果来源不猜client/server责任。
+- [x] Step 4: 写 `test_program_checks_keep_short_circuit_and_evidence_isolation`：check事件数量等于实际执行，bool原样返回、重复hash/resolve为零，provider_claim与程序验收分开；trace正文不进入Agent/Verifier/学习/manifest。preflight错误仍无任务trace且CLI错误行为不变。
+- [x] Step 5: 运行新增及controller/runner/local/verifier/experience/model_factory回归RED；按现有调用点最小适配、投影受控reason_origin/错误来源，不增检查；运行同组GREEN。
+- [x] Step 6: 提交 `refactor: correlate domain decisions and HTTP attempts with native traces`。
 
 ## Task 4: 双版本文件、页面与自动输出
 
 **Files:** Modify cli.py/trace_rendering.py/observability.py；Update test_trace_rendering.py/test_cli.py/test_windows_long_paths.py。
 **Interfaces:** Consumes schema2；Produces schema1/2双读、新写schema2、保持write_trace_html(task_dir, document)。
 
-- [ ] Step 1: 写 `test_schema1_page_rebuild_remains_compatible`、`test_schema2_displays_native_domain_and_reasoning_links`：旧fixtures能读/重建、原始JSON不覆写；工具内容按调用分组、两状态/来源可见、point ID不冒充span ID。
-- [ ] Step 2: 写 `test_missing_parent_and_late_span_are_explicitly_partial`：限额省略父节点/SDK截断诚实显示；root关闭在finish前、重复close无重复记录，active丢失节点不伪造完成。
-- [ ] Step 3: 写 `test_default_run_writes_both_files_without_flags`、`test_disabled_run_does_not_initialize_tracing`、`test_html_failure_keeps_json_and_task_exit`；保留6MiB读限、8MiBHTML拒绝、注入、链接重定向、长路径临时文件、JSON写失败不生成HTML断言。
-- [ ] Step 4: 运行render/CLI/Windows相关组RED；实现schema分派、纯文本显示、close→finish→JSON→HTML时序。无自启动浏览器/网络资源，不让错误内容变成链接。
-- [ ] Step 5: 同组GREEN，独立wheel安装验证OTel显式依赖及template可用；提交 `feat: preserve local trace inspection across the OpenTelemetry migration`。
+- [x] Step 1: 写 `test_schema1_page_rebuild_remains_compatible`、`test_schema2_displays_native_domain_and_reasoning_links`：旧fixtures能读/重建、原始JSON不覆写；工具内容按调用分组、两状态/来源可见、point ID不冒充span ID。
+- [x] Step 2: 写 `test_missing_parent_and_late_span_are_explicitly_partial`：限额省略父节点/SDK截断诚实显示；root关闭在finish前、重复close无重复记录，active丢失节点不伪造完成。
+- [x] Step 3: 写 `test_default_run_writes_both_files_without_flags`、`test_disabled_run_does_not_initialize_tracing`、`test_html_failure_keeps_json_and_task_exit`；保留6MiB读限、8MiBHTML拒绝、注入、链接重定向、长路径临时文件、JSON写失败不生成HTML断言。
+- [x] Step 4: 运行render/CLI/Windows相关组RED；实现schema分派、纯文本显示、close→finish→JSON→HTML时序。无自启动浏览器/网络资源，不让错误内容变成链接。
+- [x] Step 5: 同组GREEN，独立wheel安装验证OTel显式依赖及template可用；提交 `feat: preserve local trace inspection across the OpenTelemetry migration`。
 
 ## Task 5: 等价回归、使用说明与验收回执
 
 **Files:** Update test_observability_end_to_end.py、README.md、docs/observability.md、本计划状态；Create docs/reviews/2026-10-09-agentscope-observability-migration-acceptance.md。
 **Interfaces:** Consumes完整迁移；Produces实测回执，非模型评分/第二套任务报告。
 
-- [ ] Step 1: 写 `test_native_trace_and_disabled_run_are_behaviorally_equivalent`：真实SDK+pytest，固定随机ID/时钟输入后比较HTTP字节/次数、工具输出、预算、候选/证据/结论；运行包括拒绝/预留/重试/缺推理/collector失败的场景。无额外token与请求，正常run双文件、关闭无文件。
-- [ ] Step 2: 跑端到端RED→GREEN，记录旧行为对照来源与允许变化（schema版本/节点ID/树层级/增加native视图），不要求非固定真实耗时相同。
-- [ ] Step 3: 使用文档说明原生与业务分工、返回推理边界、默认命令、原生瞬时序列化限制、foreign provider降级、schema1/2兼容、未覆盖preflight/硬杀/远程平台。双层观测继续采用计划/检查表/实测回执。
-- [ ] Step 4: 冻结当前版本/依赖，设置REPROAGENT_RG_PATH后跑 `.venv/Scripts/python.exe -m pytest tests/unit tests/integration -q -rs` 和 `.venv/Scripts/python.exe -m pip check`；保存实际输出到 `.local/agentscope-observability-migration-verification/`。用新结果，不能引用旧通过数字。
-- [ ] Step 5: 按requesting-code-review技能做一次全分支独立审查，修复Important/Critical再跑必要全套；回执保留首轮失败及修复。review不代替运行测试。
-- [ ] Step 6: 填下面矩阵并提交 `docs: verify native AgentScope observability migration`。无证据/skip必选关键断言只能not_run，未验证CI/平台/真实模型性能另列。
+- [x] Step 1: 写 `test_native_trace_and_disabled_run_are_behaviorally_equivalent`：真实SDK+pytest，固定随机ID/时钟输入后比较HTTP字节/次数、工具输出、预算、候选/证据/结论；运行包括拒绝/预留/重试/缺推理/collector失败的场景。无额外token与请求，正常run双文件、关闭无文件。
+- [x] Step 2: 跑端到端RED→GREEN，记录旧行为对照来源与允许变化（schema版本/节点ID/树层级/增加native视图），不要求非固定真实耗时相同。
+- [x] Step 3: 使用文档说明原生与业务分工、返回推理边界、默认命令、原生瞬时序列化限制、foreign provider降级、schema1/2兼容、未覆盖preflight/硬杀/远程平台。双层观测继续采用计划/检查表/实测回执。
+- [x] Step 4: 冻结当前版本/依赖，设置REPROAGENT_RG_PATH后跑 `.venv/Scripts/python.exe -m pytest tests/unit tests/integration -q -rs` 和 `.venv/Scripts/python.exe -m pip check`；保存实际输出到 `.local/agentscope-observability-migration-verification/`。用新结果，不能引用旧通过数字。
+- [x] Step 5: 按requesting-code-review技能做一次全分支独立审查，修复Important/Critical再跑必要全套；回执保留首轮失败及修复。review不代替运行测试。
+- [x] Step 6: 填下面矩阵并提交 `docs: verify native AgentScope observability migration`。无证据/skip必选关键断言只能not_run，未验证CI/平台/真实模型性能另列。
 
 ## 验收矩阵与修复定位
 
 | ID | 必须满足 | 当前 | 未过时改哪里 |
 | --- | --- | --- | --- |
-| M01 底座真实 | native AgentScope spans、OTel唯一trace、无旧自建parent引擎 | not_run | runtime.py/observability.py/otel_backend.py |
-| M02 上下文 | 根/并发/迟到/关闭任务隔离；foreign provider不触碰 | not_run | provider/sampler/processor/session |
-| M03 内容 | wire+SDK视图/工具结果/返回推理来源诚实，所有落盘字段脱敏有界 | not_run | otel_projection.py/ContentStore/model_factory.py |
-| M04 周期决定 | reasoning周期、工具选择/中间结果及程序判定可关联，无补写思考 | not_run | ReproTraceMiddleware/renderer |
-| M05 异常 | SDK原状态与业务结果并列，分类有来源，生成器与observer异常不改变主任务 | not_run | native集成/门面/projection |
-| M06 计数预算 | HTTP重试叶子一次记账；权限三态/工具执行无双计，6/7条件保持 | not_run | summary/model_factory.py/permission投影 |
-| M07 验收学习 | 短路/证据/封存/学习/独立预算不变，trace不反馈模型 | not_run | 门面/生命周期集成 |
-| M08 输出兼容 | 默认双文件、--no-trace、schema1/2、父节点缺失、长路径/wheel/失败降级 | not_run | CLI/rendering/paths调用/依赖 |
-| M09 行为回归 | 两模式请求/工具/pytest/预算/结果等价；本版全测试及pip check实际通过 | not_run | 按首个失败test定位 |
-| M10 接受依据 | 改/不改范围、命令/结果/证据/失败定位/重测及review齐全 | not_run | 验收回执 |
+| M01 底座真实 | native AgentScope spans、OTel唯一trace、无旧自建parent引擎 | pass | runtime.py/observability.py/otel_backend.py |
+| M02 上下文 | 根/并发/迟到/关闭任务隔离；foreign provider不触碰 | pass | provider/sampler/processor/session |
+| M03 内容 | wire+SDK视图/工具结果/返回推理来源诚实，所有落盘字段脱敏有界 | pass | otel_projection.py/ContentStore/model_factory.py |
+| M04 周期决定 | reasoning周期、工具选择/中间结果及程序判定可关联，无补写思考 | pass | ReproTraceMiddleware/renderer |
+| M05 异常 | SDK原状态与业务结果并列，分类有来源，生成器与observer异常不改变主任务 | pass | native集成/门面/projection |
+| M06 计数预算 | HTTP重试叶子一次记账；权限三态/工具执行无双计，6/7条件保持 | pass | summary/model_factory.py/permission投影 |
+| M07 验收学习 | 短路/证据/封存/学习/独立预算不变，trace不反馈模型 | pass | 门面/生命周期集成 |
+| M08 输出兼容 | 默认双文件、--no-trace、schema1/2、父节点缺失、长路径/wheel/失败降级；实际Windows链接条件缺口见回执 | pass with platform gaps | CLI/rendering/paths调用/依赖 |
+| M09 行为回归 | 两模式请求/工具/pytest/预算/结果等价；本版全测试及pip check实际通过 | pass | 按首个失败test定位 |
+| M10 接受依据 | 改/不改范围、命令/结果/证据/失败定位/重测及review齐全 | pass | 验收回执 |
 
 每项回执字段：expected/status/command/observed/evidence_ref/fix_location/recheck_command。迁移不以“trace文件存在”或测试数量作为通过标准。只有M01–M10必选检查有实测证据才宣称本地验收完成。
 
@@ -158,4 +158,14 @@ schema2保留schema1的spans/contents/summary与展示字段，增加root_span_i
 
 已检查设计覆盖、接口名称、schema与原生ID、两类状态、原生生命周期全局约束、现有8MiBHTML限额；五个Review Focus都有指定测试。新依赖与原生序列化故障需实施时实测，不提前声明兼容或测试通过。
 
-当前全任务未执行，产品代码未修改。执行方式沿用用户此前选择的当前会话逐项执行；先审阅本文及设计，再开始迁移。不默认push。
+全部任务已执行；真实SDK专项、独立安装及完整unit/integration最终704pass5skip，pip check通过。重要审查问题由新增测试RED→GREEN修复；详见 `docs/reviews/2026-10-09-agentscope-observability-migration-acceptance.md`。执行方式为当前会话逐项实现、一次独立全分支审查。尚未合并main或push。
+
+
+### 实施修订
+
+- 实际注册SafeTracingMiddleware（原生TracingMiddleware公开hook子类），隔离观测自身错误并跟踪已执行handler；不重跑、不patch SDK。
+- Task2/3共享门面和错误分类一起验证；新root/point断言按实际OTel父链更新。
+- 全部源文件显式UTF-8；技能Bash步骤在Windows以等价台账/测试日志执行。
+- 专用工作区venv以.pth复用已有依赖；不设置环境PYTHONPATH、不改共享安装，安装包和独立target replay已通过。
+- 保留foreign provider/嵌套关闭/初始化降级、whole metadata限额、生成器及时关闭、内部SDK工具标识脱敏、实际blob/uri排除的RED/GREEN证据。
+- 不声称原生峰值内存/真实模型性能/其他OS/CI/远程OTLP已验证；Windows链接skip单列，不以总体数量代替对应实测。
