@@ -18,10 +18,9 @@ from reproagent.observability import (
     MAX_READ_BYTES,
     TRACE_DIRECTORY,
     TRACE_FILENAME,
-    render_trace,
     write_trace,
-    write_trace_html,
 )
+from reproagent.trace_rendering import read_trace, render_trace, validate_trace, write_trace_html
 
 
 def span(span_id, name, *, parent=None, kind="span", offset=0.0, duration=1.0, status="ok", **attributes):
@@ -128,13 +127,13 @@ def test_missing_or_corrupt_trace_is_rejected(tmp_path):
     empty = tmp_path / "empty-task"
     empty.mkdir()
     with pytest.raises(FileNotFoundError):
-        write_trace_html(empty)
+        read_trace(empty)
 
     broken = tmp_path / "broken-task" / TRACE_DIRECTORY
     broken.mkdir(parents=True)
     (broken / TRACE_FILENAME).write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError):
-        write_trace_html(broken.parent)
+        read_trace(broken.parent)
 
     assert cli.main(["trace", str(empty)]) == 2
     assert cli.main(["trace", str(broken.parent)]) == 2
@@ -162,7 +161,7 @@ def test_a_junction_at_the_trace_directory_is_refused(tmp_path):
     # The viewer must refuse the same redirect rather than write through it.
     (task / "artifacts" / "trace.json").write_text(json.dumps(document()), encoding="utf-8")
     with pytest.raises(ValueError):
-        write_trace_html(task)
+        write_trace_html(task, document())
     assert not (task / "artifacts" / "trace.html").exists()
 
 
@@ -186,8 +185,86 @@ def test_a_junction_out_of_the_task_is_refused(tmp_path):
         with pytest.raises(ValueError):
             write_trace(task, document())
         with pytest.raises(ValueError):
-            write_trace_html(task)
+            write_trace_html(task, document())
     assert not (outside / "trace.html").exists()
+
+
+def trace_with(root_extra=None, contents=()):
+    """A one-span trace whose root carries the given link fields."""
+    entry = {"span_id": "0" * 16, "parent_span_id": None, "name": "task", "kind": "span",
+             "offset_seconds": 0.0, "duration_seconds": 1.0, "status": "ok", "attributes": {},
+             "content_refs": [], "content_status": None}
+    entry.update(root_extra or {})
+    return document(spans=[entry], contents=list(contents))
+
+
+def stored(content_id="c1", owner="0" * 16, **overrides):
+    record = {"content_id": content_id, "owner_span_id": owner, "kind": "wire_request",
+              "source": "wire_request", "availability": "captured", "text": '{"a": 1}',
+              "original_bytes": 8, "captured_bytes": 8, "truncated": False, "redacted": False,
+              "excerpt_mode": None}
+    record.update(overrides)
+    return record
+
+
+def test_validate_trace_accepts_a_consistent_document():
+    document_ = trace_with({"content_refs": ["c1"], "content_status": "captured"}, [stored()])
+    assert validate_trace(document_) is document_
+
+
+def test_validate_trace_rejects_a_content_reference_that_does_not_resolve():
+    with pytest.raises(ValueError):
+        validate_trace(trace_with({"content_refs": ["nope"]}))
+
+
+def test_validate_trace_rejects_content_owned_by_another_span():
+    # A reference that resolves to a record some other span owns is not a link.
+    with pytest.raises(ValueError):
+        validate_trace(trace_with({"content_refs": ["c1"]}, [stored(owner="9" * 16)]))
+
+
+def test_validate_trace_rejects_a_parent_that_is_not_in_the_document():
+    entry = {"span_id": "1" * 16, "parent_span_id": "9" * 16, "name": "tool.Read", "kind": "span",
+             "offset_seconds": 0.0, "duration_seconds": 1.0, "status": "ok", "attributes": {}}
+    with pytest.raises(ValueError):
+        validate_trace(document(spans=[entry]))
+
+
+def test_validate_trace_rejects_a_parent_cycle():
+    first = {"span_id": "1" * 16, "parent_span_id": "2" * 16, "name": "a", "kind": "span",
+             "offset_seconds": 0.0, "duration_seconds": 1.0, "status": "ok", "attributes": {}}
+    second = {"span_id": "2" * 16, "parent_span_id": "1" * 16, "name": "b", "kind": "span",
+              "offset_seconds": 0.0, "duration_seconds": 1.0, "status": "ok", "attributes": {}}
+    with pytest.raises(ValueError):
+        validate_trace(document(spans=[first, second]))
+
+
+def test_captured_content_is_shown_once_as_text():
+    hostile = "<script>alert('x')</script>"
+    record = stored(text=json.dumps({"content": hostile}), captured_bytes=len(hostile))
+
+    page = render_trace(trace_with({"content_refs": ["c1"]}, [record]))
+
+    # Captured content is data to look at, never markup to run.
+    assert "<script>alert" not in page
+    assert "&lt;script&gt;" in page
+    assert page.count("&lt;script&gt;") == 1, "each content id is rendered once"
+
+
+def test_a_missing_capture_is_shown_with_its_reason():
+    record = stored(availability="not_returned", text=None, captured_bytes=0)
+
+    page = render_trace(trace_with({"content_refs": ["c1"], "content_status": "not_returned"}, [record]))
+
+    assert "not_returned" in page
+    # Not drawn as content that happened to be blank: the reason is what is shown.
+    assert "<pre></pre>" not in page
+    assert "not_returned</span></pre>" in page
+
+
+def test_the_page_marks_an_incomplete_content_set():
+    page = render_trace(document(content_complete=False, contents=[]))
+    assert "missing or was cut short" in page
 
 
 def test_an_oversized_page_is_refused():
@@ -216,7 +293,7 @@ def test_a_schema_valid_but_malformed_trace_is_rejected(tmp_path, payload):
     (task / TRACE_FILENAME).write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ValueError):
-        write_trace_html(task.parent)
+        read_trace(task.parent)
     assert cli.main(["trace", str(task.parent)]) == 2
 
 
@@ -227,7 +304,7 @@ def test_an_oversized_stored_trace_is_refused_before_it_is_read(tmp_path):
     (task / TRACE_FILENAME).write_bytes(b"x" * (MAX_READ_BYTES + 1))
 
     with pytest.raises(ValueError):
-        write_trace_html(task.parent)
+        read_trace(task.parent)
     assert cli.main(["trace", str(task.parent)]) == 2
 
 
@@ -249,7 +326,7 @@ def test_observability_output_cannot_redirect_to_artifacts(tmp_path):
     with pytest.raises(SystemExit):
         cli.main(["trace", str(task), "--output", str(task / "artifacts/trace.html")])
 
-    path = write_trace_html(task)
+    path = write_trace_html(task, document())
     assert path == task / TRACE_DIRECTORY / "trace.html"
     assert not (task / "artifacts" / "trace.html").exists()
 

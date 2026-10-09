@@ -1,0 +1,256 @@
+"""Reading a stored trace, checking its links, and rendering it as one page.
+
+A stored trace is untrusted input: it is hand-editable, it is documented as
+convertible from another sink, and it is the one artefact a person opens directly.
+So it is bounded before it is read, its internal links are checked before it is
+walked, and everything on the page is escaped as text -- captured content is data
+to look at, never markup to run.
+"""
+
+from __future__ import annotations
+
+import html
+import json
+from pathlib import Path
+from typing import Any
+
+from .observability import (
+    MAX_HTML_BYTES,
+    MAX_READ_BYTES,
+    SCHEMA_VERSION,
+    TEMPLATE_MARKER,
+    TRACE_DIRECTORY,
+    TRACE_FILENAME,
+    TRACE_HTML_FILENAME,
+    UNKNOWN_TEXT,
+    WARNING_PAGE_TOO_LARGE,
+    WARNING_TRACE_PATH_UNSAFE,
+    _trace_destination,
+)
+
+#: The sections a reader moves between, in the order the plan asks for them.
+SECTIONS = ("overview", "calls", "decisions")
+
+
+def read_trace(task_dir: Path) -> dict:
+    """Load the trace a task already stored, refusing anything out of bounds.
+
+    Raises:
+        FileNotFoundError: the task was not run with tracing on.
+        ValueError: the file is too large, unreadable, or not shaped like a trace.
+    """
+    from .paths import workspace_path
+
+    root = workspace_path(Path(task_dir))
+    source = workspace_path(root / TRACE_DIRECTORY / TRACE_FILENAME)
+    if not source.is_file():
+        raise FileNotFoundError(f"this task has no {TRACE_FILENAME}: it was not run with tracing enabled")
+    if source.stat().st_size > MAX_READ_BYTES:
+        # Refused before it is loaded: the stored file is untrusted input.
+        raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is too large to display")
+    try:
+        document = json.loads(source.read_text(encoding="utf-8"))
+    except (ValueError, UnicodeError, OSError):
+        raise ValueError(f"the trace at {TRACE_DIRECTORY}/{TRACE_FILENAME} is not readable JSON") from None
+    return validate_trace(document)
+
+
+def validate_trace(document: dict) -> dict:
+    """Check the trace is the shape this viewer walks, and that its links resolve.
+
+    Raises:
+        ValueError: the version is unknown, a part has the wrong shape, a span points
+            at a parent the trace does not contain (or at itself, in a cycle), or a
+            span cites content that is missing or belongs to another span.
+    """
+    if not isinstance(document, dict) or document.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError("the trace is not a document this viewer understands")
+    spans, contents = document.get("spans", []), document.get("contents", [])
+    if not isinstance(spans, list) or not isinstance(contents, list):
+        raise ValueError("the trace is not shaped like a trace")
+    if not isinstance(document.get("summary", {}), dict):
+        raise ValueError("the trace is not shaped like a trace")
+
+    by_id: dict = {}
+    for entry in spans:
+        if not isinstance(entry, dict) or not isinstance(entry.get("attributes", {}), dict):
+            raise ValueError("the trace is not shaped like a trace")
+        by_id[entry.get("span_id")] = entry
+    for entry in spans:
+        parent = entry.get("parent_span_id")
+        if parent is None:
+            continue
+        if parent not in by_id:
+            raise ValueError("a span refers to a parent this trace does not contain")
+        # Walk up: a cycle would leave the reader looping for the same reason.
+        seen, walker = set(), parent
+        while walker is not None:
+            if walker in seen:
+                raise ValueError("the trace contains a parent cycle")
+            seen.add(walker)
+            walker = by_id[walker].get("parent_span_id")
+
+    stored = {record.get("content_id"): record for record in contents if isinstance(record, dict)}
+    for entry in spans:
+        for ref in entry.get("content_refs") or ():
+            record = stored.get(ref)
+            if record is None:
+                raise ValueError("a span cites content this trace does not contain")
+            if record.get("owner_span_id") != entry.get("span_id"):
+                raise ValueError("a span cites content owned by another span")
+    return document
+
+
+def _esc(value: Any) -> str:
+    """Every value on the page is untrusted text, whoever wrote the trace."""
+    return html.escape(str(value), quote=True)
+
+
+def _seconds(value: Any) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return UNKNOWN_TEXT
+    return f"{float(value):.3f}s"
+
+
+def _figure(value: Any) -> str:
+    """A number, or a plain admission that nobody reported one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return f'<span class="unknown">{UNKNOWN_TEXT}</span>'
+    return _esc(f"{value:g}")
+
+
+def _depths(spans) -> dict:
+    """How far each span sits below the root, so the timeline reads as a shape."""
+    by_id = {entry.get("span_id"): entry for entry in spans}
+    depths: dict = {}
+    for entry in spans:
+        depth, parent, seen = 0, entry.get("parent_span_id"), set()
+        while parent and parent in by_id and parent not in seen:
+            seen.add(parent)
+            depth += 1
+            parent = by_id[parent].get("parent_span_id")
+        depths[entry.get("span_id")] = depth
+    return depths
+
+
+def _render_summary(summary: dict) -> str:
+    usage = summary.get("usage") or {}
+    cost = summary.get("cost") or {}
+    rows = [
+        ("logical model calls", _figure(summary.get("logical_calls"))),
+        ("HTTP attempts", _figure(summary.get("http_attempts"))),
+        ("tool executions", _figure(summary.get("tool_executions"))),
+        ("input tokens", _figure(usage.get("input_tokens"))),
+        ("output tokens", _figure(usage.get("output_tokens"))),
+        ("cost", _figure(cost.get("amount"))),
+    ]
+    if not usage.get("complete", False):
+        rows.append(("token accounting", '<span class="unknown">incomplete</span>'))
+    if not cost.get("complete", False):
+        rows.append(("cost accounting", '<span class="unknown">incomplete</span>'))
+    learning = summary.get("learning")
+    if isinstance(learning, dict):
+        rows.append(("learning", _esc(learning.get("code") or learning.get("status") or UNKNOWN_TEXT)))
+    body = "".join(f"<tr><th>{_esc(label)}</th><td>{value}</td></tr>" for label, value in rows)
+    return f"<h2>What it cost</h2><table>{body}</table>"
+
+
+def _render_timeline(spans) -> str:
+    depths = _depths(spans)
+    ordered = sorted(spans, key=lambda entry: (entry.get("offset_seconds") is None,
+                                               entry.get("offset_seconds") or 0.0))
+    rows = []
+    for entry in ordered:
+        status = str(entry.get("status") or UNKNOWN_TEXT)
+        attributes = entry.get("attributes") or {}
+        rendered = " ".join(f"{_esc(key)}={_esc(value)}" for key, value in sorted(attributes.items()))
+        depth = min(depths.get(entry.get("span_id"), 0), 6)
+        rows.append(
+            f'<tr><td class="depth-{depth}">{_esc(entry.get("name"))}'
+            f'<div class="attrs">{rendered}</div></td>'
+            f'<td class="kind-{_esc(entry.get("kind"))}">{_esc(entry.get("kind"))}</td>'
+            f'<td>{_seconds(entry.get("offset_seconds"))}</td>'
+            f'<td>{_seconds(entry.get("duration_seconds"))}</td>'
+            f'<td class="status-{_esc(status)}">{_esc(status)}</td></tr>')
+    head = "<tr><th>span</th><th>kind</th><th>offset</th><th>duration</th><th>status</th></tr>"
+    return f"<h2>Timeline</h2><table>{head}{''.join(rows)}</table>"
+
+
+def _render_contents(document: dict) -> str:
+    """The captured calls, each shown once, with how it was obtained."""
+    records = document.get("contents") or []
+    parts = ["<h2>Calls and content</h2>"]
+    if not records:
+        parts.append('<p class="unknown">No content was captured for this run.</p>')
+        return "\n".join(parts)
+    for record in records:
+        flags = [name for name in ("truncated", "redacted", "excerpt_mode")
+                 if record.get(name)]
+        label = " &middot; ".join(
+            [_esc(record.get("content_id")), _esc(record.get("source")),
+             _esc(record.get("availability")), _esc(record.get("kind"))]
+            + [_esc(record.get(name)) for name in flags])
+        text = record.get("text")
+        body = _esc(text) if text else f'<span class="unknown">{_esc(record.get("availability"))}</span>'
+        parts.append(f"<details><summary>{label}</summary><pre>{body}</pre></details>")
+    return "\n".join(parts)
+
+
+def _render_body(document: dict) -> str:
+    parts = [
+        f'<section id="overview"><h1>ReproAgent activity trace</h1>',
+        f'<p class="meta">task {_esc(document.get("task_id") or UNKNOWN_TEXT)}'
+        f' &middot; status {_esc(document.get("status") or UNKNOWN_TEXT)}'
+        f' &middot; trace {_esc(document.get("trace_id") or UNKNOWN_TEXT)}'
+        f' &middot; capture {_esc(document.get("capture_mode") or UNKNOWN_TEXT)}</p>',
+        f'<p class="meta">main duration {_seconds(document.get("main_duration"))}'
+        f' &middot; total duration {_seconds(document.get("total_duration"))}'
+        " (includes export and learning)</p>",
+    ]
+    if document.get("partial") or not document.get("metrics_complete", True):
+        parts.append('<p class="warn">This trace is incomplete: some observations were dropped or failed. '
+                     "Every figure below covers only what was recorded.</p>")
+    if not document.get("content_complete", True):
+        parts.append('<p class="warn">Some captured content is missing or was cut short; '
+                     "each entry below says which, and why.</p>")
+    for warning in document.get("warnings") or ():
+        parts.append(f'<p class="warn">{_esc(warning)}</p>')
+    parts.append(_render_summary(document.get("summary") or {}))
+    parts.append(_render_timeline(document.get("spans") or ()))
+    parts.append("</section>")
+    parts.append(f'<section id="calls">{_render_contents(document)}</section>')
+    return "\n".join(parts)
+
+
+def render_trace(document: dict) -> str:
+    """Render one trace document as a single, self-contained page.
+
+    Nested spans overlap in time, so the page shows each span's own duration and never
+    a sum of them: adding them up would describe a wall-clock time that never happened.
+    """
+    from importlib.resources import files
+
+    template = files("reproagent").joinpath("resources/trace.html.template").read_text(encoding="utf-8")
+    page = template.replace(TEMPLATE_MARKER, _render_body(document))
+    if len(page.encode("utf-8")) > MAX_HTML_BYTES:
+        # Refused rather than cut: half a timeline reads as a whole one.
+        raise ValueError(WARNING_PAGE_TOO_LARGE)
+    return page
+
+
+def write_trace_html(task_dir: Path, document: dict) -> Path:
+    """Render one document beside its task; nothing else is read or written.
+
+    The document is passed in so the automatic path renders the very object it just
+    wrote, instead of reading back a file it already holds.
+    """
+    from .store import atomic_write
+
+    target = _trace_destination(task_dir, TRACE_HTML_FILENAME)
+    if not isinstance(document, dict):
+        raise ValueError(WARNING_TRACE_PATH_UNSAFE)
+    atomic_write(target, render_trace(document).encode("utf-8"))
+    return target
+
+
+__all__ = ["SECTIONS", "read_trace", "render_trace", "validate_trace", "write_trace_html"]

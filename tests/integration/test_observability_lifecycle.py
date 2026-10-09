@@ -17,7 +17,7 @@ import pytest
 
 from reproagent.app import create_controller
 from reproagent.core.models import ModelConfig, ModelRequest, TaskState
-from reproagent.observability import trace_session, write_trace
+from reproagent.observability import TRACE_DIRECTORY, TRACE_FILENAME, trace_session, write_trace
 from tests.integration.test_agentscope_backends import CANDIDATE, text_response, tool_response
 from tests.unit.test_controller import ScriptedModel, setup
 
@@ -184,17 +184,13 @@ def test_trace_not_in_manifest_or_learning_material(tmp_path, projects, facts):
     assert document['trace_id'] not in json.dumps(seen)
 
 
-def test_trace_write_failure_keeps_original_exit_code(tmp_path, monkeypatch, capsys):
-    """A trace that cannot be written is a warning, never a rewritten task result.
-
-    This drives the real command: asserting the code against the table it was read from
-    would pass whatever the write did, including re-raising.
-    """
+def stub_cli(tmp_path, monkeypatch, *extra_args):
+    """Drive the real command with the request and the controller both stubbed out."""
     import reproagent.cli as cli
     from reproagent.core.models import TaskRequest, TaskResult
 
     repo = tmp_path / 'repo'
-    repo.mkdir()
+    repo.mkdir(exist_ok=True)
     (repo / 'issue.md').write_text('parse([]) must return an empty list.\n', encoding='utf-8')
     request = TaskRequest(repo, tmp_path / 'output', repo / 'issue.md')
     model_config = tmp_path / 'model.json'
@@ -215,6 +211,46 @@ def test_trace_write_failure_keeps_original_exit_code(tmp_path, monkeypatch, cap
     monkeypatch.setattr(cli, 'load_request', lambda path: request)
     monkeypatch.setattr(cli, 'create_controller', lambda *args, **kwargs: Controller())
     monkeypatch.setenv('REPROAGENT_TRACE_TEST_KEY', 'placeholder')
+    code = cli.main(['run', '--config', str(model_config), '--model-config', str(model_config), *extra_args])
+    return code, request
+
+
+def observability_files(request):
+    directory = request.output_dir / TRACE_DIRECTORY
+    return sorted(item.name for item in directory.iterdir()) if directory.exists() else []
+
+
+def test_a_normal_run_writes_the_json_and_the_page_without_a_flag(tmp_path, monkeypatch):
+    code, request = stub_cli(tmp_path, monkeypatch)
+
+    assert code == 0
+    assert observability_files(request) == sorted([TRACE_FILENAME, 'trace.html'])
+
+
+def test_no_trace_writes_no_observability_file(tmp_path, monkeypatch):
+    code, request = stub_cli(tmp_path, monkeypatch, '--no-trace')
+
+    assert code == 0
+    assert observability_files(request) == []
+
+
+def test_trace_write_failure_keeps_original_exit_code_and_skips_the_page(tmp_path, monkeypatch, capsys):
+    """A trace that cannot be written is a warning, never a rewritten task result.
+
+    This drives the real command: asserting the code against the table it was read from
+    would pass whatever the write did, including re-raising.
+    """
+    import reproagent.cli as cli
+
+    code, request = stub_cli(tmp_path, monkeypatch)
+
+    assert code == 0
+    assert observability_files(request) == sorted([TRACE_FILENAME, 'trace.html'])
+    assert capsys.readouterr().err == ''
+
+
+def test_a_failed_json_write_skips_the_page_and_keeps_the_result(tmp_path, monkeypatch, capsys):
+    import reproagent.cli as cli
 
     attempted = []
     def unavailable(task_dir, document):
@@ -222,13 +258,13 @@ def test_trace_write_failure_keeps_original_exit_code(tmp_path, monkeypatch, cap
         raise OSError('trace destination unavailable')
 
     monkeypatch.setattr(cli, 'write_trace', unavailable)
-
-    code = cli.main(['run', '--config', str(model_config), '--model-config', str(model_config), '--trace'])
-    captured = capsys.readouterr()
+    code, request = stub_cli(tmp_path, monkeypatch)
 
     assert attempted, 'the trace was actually attempted'
     assert code == cli.EXIT_CODES[TaskState.DONE], 'the task result still decides the exit code'
-    assert cli.TRACE_WRITE_WARNING in captured.err
+    assert cli.TRACE_WRITE_WARNING in capsys.readouterr().err
+    # A page built from a trace that was never written would be the only record of it.
+    assert observability_files(request) == []
 
 
 def test_cancelled_task_closes_trace(tmp_path, projects, facts):

@@ -7,15 +7,21 @@ trace 只是观测：**不增加模型请求，不改变复现结论，不进入
 
 ```powershell
 cd E:\ReproAgent
-.\.venv\Scripts\python.exe -m reproagent run --config examples\task.json --model-config examples\model.deepseek.json --trace
+# 正常运行：默认采集，并自动写出两个文件
+.\.venv\Scripts\python.exe -m reproagent run --config examples\task.json --model-config examples\model.deepseek.json
+
+# 本次完全关闭观测
+.\.venv\Scripts\python.exe -m reproagent run --config examples\task.json --model-config examples\model.deepseek.json --no-trace
+
+# 可选：已有 trace.json 时离线重建页面
 .\.venv\Scripts\python.exe -m reproagent trace outputs\<task-dir>
 ```
 
-第一条命令结束后写 `<task-output>/observability/trace.json`；第二条离线渲染同目录的 `trace.html`，
-直接双击打开即可。两条命令都不需要网络，第二条也不调用模型。
+run 结束后自动写 `<task-output>/observability/trace.json` 与同目录的 `trace.html`，
+直接双击打开即可，不需要第二条命令。离线子命令只在页面丢失或需要重建时用。
 
-`--trace` 默认关闭。关闭时 `trace_session` 不创建 recorder，因此不读时钟、不建文件、不改变 SDK
-的 middleware 链——这是"开启前后业务一致"的前提，也是测试断言的内容。
+`--no-trace` 关闭时 `trace_session` 不创建 recorder，因此不读正文与时钟、不建文件、不改变 SDK
+的 middleware 链——这是"采集前后业务一致"的前提，也是测试断言的内容。
 
 ## trace.json 里有什么
 
