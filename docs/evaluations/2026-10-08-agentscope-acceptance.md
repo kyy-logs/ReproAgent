@@ -1,15 +1,18 @@
 # AgentScope 单运行时架构真实验收：2026-10-08
 
-**结论：验收已真实执行（上一轮"一项都没跑"的状态已解除）。已交付候选几乎不发生——这是比"两套架构谁
-更强"更要紧的一条。** 具体地：
+**结论：验收已真实执行（上一轮"一项都没跑"的状态已解除），并且验收过程中发现的问题已经被修掉、再验过。
+迁移后的架构在官方判分上与迁移前持平；但"已交付候选几乎不发生"才是更要紧的一条。** 具体地：
 
-- 两套架构的本地差分各中 1 例、且不是同一例；官方判分 1 → 0，但那 1 的差别全部落在唯一一个官方判分
-  可用的实例上（见第五节）。
-- 把 4 个 pytest 用例的环境补齐后（第八节），它们第一次真正跑起来，**7 例执行、交付候选 0 例**：模型
-  确实转向了 `write_candidate`，但都在**剩余 0～1 步**时才调，候选来不及落地。发布预留解决了"从不尝试
-  发布"，没有解决"来得及发布"。
-- 模型配置没有设温度，同配置三轮对同样 3 个用例给出三组不同结果（第八节）。**本文件里所有"各中 1 例"
-  量级的对比都落在噪声里**，只能作为个案，不能作为架构优劣的结论。
+- **官方判分**：迁移前 1 例 resolved、迁移后（修复前）0 例、修复后**又是 1 例，而且是同一例**
+  （`sphinx-doc__sphinx-11445`）。三轮里带空补丁的预测一律 unresolved，所以这个差别只来自各自有补丁的
+  那一两个实例；10 例里真正"既交了补丁、容器又能判"的只有 11445 一个（第五节）。
+- **两例判不了**（`8627`、`8474`）：harness 的容器里 setuptools 82 不再提供 `pkg_resources`，而 2022 年的
+  Sphinx 在导入阶段就要用它——**官方 gold 补丁同样跑不过**。决定记录并排除，不改评判环境（第五节）。
+- 补齐 4 个 pytest 用例的环境后（第八节），它们第一次真正跑起来，**7 例执行、交付候选 0 例**：模型确实
+  转向了 `write_candidate`，但都在**剩余 0～1 步**时才调。这一条已经被修（`e228f10`）并再验：修复后最后
+  三步不再出现读取，7 例全部产生阶段结果，交付候选与差分确认**都从 0 变成 2**。
+- 模型配置没有设温度，同配置三轮对同样 3 个用例给出三组不同结果。因此又补了温度设置（`88eb3b4`）；
+  **本文件里所有"各中 1 例"量级的对比都落在噪声里**，只能作为个案。
 - 代价是可测的：单次模型调用 token 约翻倍，每例几乎烧完 20 步预算。
 
 本文件是 [2026-10-07 的基础设施评测](2026-10-07-agentscope-infrastructure.md) 的续篇：那一轮记录了
@@ -122,34 +125,54 @@ dev20 从 7,878 涨到 16,359（2.08 倍）。机制是每步把完整对话重�
 `330a649a764fab2fadaea632776eeae87272f74b`）、`unit_test` 模式、同一份冻结 snapshot、`--max_workers 1`。
 判分不调用模型，也不消耗 token。本地轮次的比例**不是**官方成绩，官方成绩只来自这个 harness。
 
-**冻结保留集**：`sdk-holdout-001` 的 10 例已判分。
+**冻结保留集**：`sdk-holdout-001`（修复前）与 `sdk-holdout-005`（修复后）各 10 例，都已判分。
 
-判分回执：`exit_code 0`、耗时 7447 秒、`stop_reason` 空、7 份 instance 报告哈希，harness commit 与
-snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a…`）。
+判分回执（`sdk-holdout-005`）：`exit_code 0`、耗时 6397 秒、`stop_reason` 空、7 份 instance 报告哈希；
+harness commit 与 snapshot 哈希与迁移前那一轮完全相同（`330a649a…`／`d891180a…`）。
 
-| 判定 | 迁移前 `holdout-repaired-001` | 迁移后 `sdk-holdout-001` |
-| --- | --- | --- |
-| resolved | **1**（`sphinx-doc__sphinx-11445`） | **0** |
-| unresolved | 6 | 7 |
-| error | 3（三个 sympy） | 3（同样三个 sympy） |
+| 判定 | 迁移前 `holdout-repaired-001` | 迁移后·修复前 `sdk-holdout-001` | 迁移后·修复后 `sdk-holdout-005` |
+| --- | --- | --- | --- |
+| resolved | **1**（`sphinx-doc__sphinx-11445`） | **0** | **1**（同一个 `sphinx-11445`） |
+| unresolved | 6 | 7 | 6 |
+| error | 3（三个 sympy） | 3（同样三个） | 3（同样三个） |
 
-### 这个 1 对 0 不是能力对比，原因在环境
+逐例回执：7 例 `verified`（4 个 pytest 全部 unresolved，3 个 sphinx 里只有 11445 resolved），3 个
+sympy 是 `missing`——harness 没有产出报告。按工具的口径，**只要还有用例没有 verified 报告，整轮就保持
+"待判分"、不给 `official_rate`**，所以这里报的是原始计数（10 例中 1 resolved / 6 unresolved / 3 error），
+不是比率。
 
-两轮里**带空补丁的预测一律 unresolved**，所以差别只可能来自各自唯一那个有补丁的实例。把那个实例拆开看：
+### 这组官方数字能支持什么
 
-- 迁移前交付补丁的是 **11445**，官方判 RESOLVED。
-- 迁移后交付补丁的是 **8627**，官方判 unresolved。但 8627 在这个 harness 里**用官方 gold 补丁也跑不过**：
-  `gold_post` 与 `base_post` 都失败于同一个 `ModuleNotFoundError: No module named 'pkg_resources'`
-  （harness 镜像的 tox `py39` 环境缺 setuptools，抛自 `sphinx/testing/fixtures.py` → `sphinx/application.py`）。
-  同一个原因也打掉了 **8474** 的 `gold_post`。也就是说，这 10 例里只有 **11445 一例**是官方判定真正可用的：
-  另外两例 sphinx 的容器环境本身是坏的，改什么都判不出来。
-- 而那唯一一例，迁移后**没有交付补丁**——它以 `BLOCKED / ENVIRONMENT_BLOCKED` 结束（见第三节）。
+- **能支持**：修复后的迁移架构在官方判分上**与迁移前持平**——同样 1 例 resolved，而且是同一例
+  （`sphinx-doc__sphinx-11445`）。修复之前那一轮是 0。
+- **不能支持**：任何"能力优劣"的结论。这三轮里**带空补丁的预测一律 unresolved**，所以差别只可能来自
+  各自有补丁的那一两个实例；而 10 例里真正"既交了补丁、容器又能判"的只有 11445 一个。
+- 三个 sympy 的 error 三轮完全相同，都是
+  `Command '/bin/bash /eval.sh' timed out after 1800 seconds`（harness 自身默认上限），与本轮改动无关。
 
-所以官方 1 → 0 的全部内容是一句话：**在这批样本里唯一一个官方判分可用的实例上，迁移后的架构没能交付候选，
-迁移前的交付了并且通过了。** 三个 sympy 的 error 两轮完全相同，都是
-`Command '/bin/bash /eval.sh' timed out after 1800 seconds`（harness 自身默认上限），与本轮改动无关。
+### 两个实例判不了：harness 环境的一个已知缺陷（记录并排除，不修）
 
-样本量、可判分实例数（1）和两例坏容器都说明：**这里得不到可推广的能力结论**，只能得到"这一例的行为不同"。
+`sphinx-8627` 与 `sphinx-8474` 在这个 harness 里**用官方 gold 补丁也跑不过**：`gold_post` 与
+`base_post` 都失败于 `ModuleNotFoundError: No module named 'pkg_resources'`，抛自
+`sphinx/testing/fixtures.py` → `sphinx/application.py` → `from pkg_resources import iter_entry_points`。
+
+**根因已查明，而且不是镜像建坏了。** 在 8627 的镜像里新建一个干净虚拟环境就能复现：
+
+```text
+pip list            →  pip==26.0.1  setuptools==82.0.1
+import pkg_resources →  ModuleNotFoundError
+```
+
+**setuptools 82 已经不再提供 `pkg_resources`**（先弃用、后移除，改用 `importlib.metadata`），而这套
+2022 年的 Sphinx 在导入阶段就要用它，于是容器连 conftest 都加载不了。这是数据集条目本身在新工具链下
+失效，**对任何补丁一视同仁**——它既是"不是我们补丁的问题"的证据，也是"这一例判不出来"的原因。
+
+**决定：记录并排除，不改评判环境。** 另一条路（把评判环境的 setuptools 钉在 <81）能让实例重新可判，
+而且可以用"金标是否 resolve"客观验证；但它会改变分母，**使此前所有轮次的官方数字失去可比性**，要用
+就得连旧轮次一起重跑。这个取舍不属于本轮验收，所以不动。
+
+后果很小，且要说清：`8474` 本来就没有补丁；`8627` 丢的是一个**官方裁决**——它的**本地**差分是成立的
+（修复版对照通过）。官方裁决与本地差分在本文里始终分开写。
 
 
 
@@ -167,7 +190,7 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 - **人工评价**：未提供，保持 pending，且不是运行的必要步骤。
 - **费用**：未配置费率，`cost_kind` 全部为 unknown，不写 0。
 
-## 七、本轮发现并修掉的两个基础设施缺陷
+## 七、本轮发现并修掉的基础设施缺陷
 
 两者都是在真实验收里暴露出来的，都属于"迁移删掉了旧运行时里某个必要的约束"这一类。
 
@@ -179,11 +202,25 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
    `Read`——这正是第 1 条里"预算被读文件吃光"的直接原因。装上 ripgrep 并只给该进程加上 PATH 之后，
    两个轮次才跑出上面的结果。冻结回执里记了这一点。
 
+3. **判分工具在失败后无法重跑**（修复提交 `a6b3d46`）。官方 runner 用自己的 `'xb'`（独占创建）打开
+   `official.stdout.log` / `official.stderr.log`，而失败的那次会留下它们；重跑于是撞上一句既没说文件
+   也没说原因的 `FileExistsError`，只能手动删文件。而一次基础设施失败（全是 `infra_error`、没有报告哈希）
+   **不是裁决**，不该作废整个轮次。现在 `prepare_retry` 会清掉失败那次自己的遗留并记下它的停止原因，
+   新回执用 `retried_after` 保留"这是一次重跑"。**已经出结论的轮次仍然拒绝重跑**，判过的成绩不能被重掷。
+4. **CI 上一条会互斥失败的测试**（修复提交 `ab15ad8`）。`test_learning_timeout_preserves_sealed_result`
+   在 CI 上以 `assert 0 == 1` 失败：学习预算**在 `build_learning_input` 之前**开始计时，而抛异常的那个
+   检查在发请求之前，所以预算比准备工作还短时，会得到**同一个 `timeout` 代码、但一个请求都没发出**。
+   把准备时间人为加 0.2 秒即可逐字复现（同一测试、同一行、同一断言）。预算从 0.15 秒提到 5 秒——仍然远
+   小于那个挂死的处理器，掐断的依旧是"已发出的请求"这一支。
+
 另有一处**未定性**的问题必须披露：CI 运行 `37759702346`（提交 `a2aae15`）的
 `offline (windows-latest, 3.11, pytest>=8,<9)` 这一个 job 失败，用例
 `test_the_fixed_version_never_reaches_the_exploration` 报 `TaskState.FAILED` 而不是 `DONE`，同时 SDK
-打出 `Model offline exhausted all 1 attempt(s)`。同一个测试在前后两个提交、以及本地连跑 20 次都是通过的，
-所以它是间歇性的、只在这个 CI 组合上出现过一次。已记录，尚未定位。
+打出 `Model offline exhausted all 1 attempt(s)`。同一个测试在前后两个提交、以及本地连跑 20 次（又加
+6 个 CPU 负载进程连跑 8 次）都是通过的，所以它是间歇性的、只在这个 CI 组合上出现过一次。已记录，尚未定位。
+
+另需说明：CI 的 `test_learning_timeout_preserves_sealed_result` 失败跑在提交 `348796b6` 上，**是本文件
+所记改动的父提交**，与第 3、4 条都无关。
 
 ## 八、补齐没跑起来的用例，以及由此得到的架构结论（同日补充）
 
@@ -307,6 +344,10 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 都是 `INVALID_CANDIDATE`**。循环现在会终止了，所以"候选质量不够"这个问题才第一次看得见——它此前被
 "阶段根本不结束"盖住了。
 
+**官方判分**：这一轮的 10 例同样送进了独立 harness（第五节的第三列）。结果是 1 例 resolved——正是
+`sphinx-doc__sphinx-11445`，也就是本地判为 DIFFERENTIAL_VALIDATED 的同一例；`8627` 的补丁因为容器缺陷
+判不了（第五节），其余 8 例是空补丁。
+
 ## 九、与历史记录的关系
 
 - 本文件不改写任何旧轮次的结果。
@@ -325,7 +366,7 @@ snapshot 哈希都与迁移前那一轮完全相同（`330a649a…`／`d891180a�
 | 保留集轮次 | `repro-results/sdk-holdout-001/` |
 | 迁移前基线 | `repro-results/swt-bench/dev20-repaired-001/`、`repro-results/swt-bench/holdout-repaired-001/` |
 | 定点任务 | `repro-results/sdk-fixedpoint-8801-002/` |
-| 官方判分 | `repro-results/sdk-holdout-001/official-execution.receipt.json`、harness 的 `evaluation_results/` |
+| 官方判分 | `repro-results/sdk-holdout-001/`、`repro-results/sdk-holdout-005/` 的 `official-execution.receipt.json`；harness 的 `evaluation_results/`（含 005 的轮级报告与 005-subset 的两例子集报告） |
 | 轮次驱动脚本 | `.local/swt-bench/run-sdk-round.ps1`、`.local/swt-bench/official-grade-sdk.sh` |
 | 补充轮次（7 例） | `repro-results/sdk-holdout-004/`；环境探针未过的那一轮保留在 `repro-results/sdk-holdout-002/` |
 | 修复后的验证轮 | `repro-results/sdk-holdout-005/`，冻结回执 `.local/swt-bench/freeze-reserve-fix.json` |
