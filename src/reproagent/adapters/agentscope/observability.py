@@ -19,10 +19,14 @@ from agentscope.middleware import MiddlewareBase
 from agentscope.tool import ToolResponse
 
 from .dependency import require_agentscope
+from .middleware import PhaseEnded
 from ...observability import span
 
 #: The span a whole SDK reply sits in: one model round, checked as a unit.
 MODEL_ROUND_SPAN = "sdk.model_round"
+
+#: What a round that was turned away because the phase already has its result is called.
+PHASE_ENDED_CODE = "PHASE_ENDED"
 
 #: Marks the controlled outcome a tool reported, so a refusal and an execution never
 #: look alike.  The values are the SDK's own ``ToolResultState`` names.
@@ -48,9 +52,16 @@ class TraceMiddleware(MiddlewareBase):
 
     async def on_model_call(self, agent, input_kwargs, next_handler):
         """Time one SDK model round and record how the whole reply was judged."""
-        with span(MODEL_ROUND_SPAN, attributes={"purpose": "exploration"}) as handle:
+        with span(MODEL_ROUND_SPAN, attributes={"purpose": "exploration"},
+                  expected=(PhaseEnded,)) as handle:
             try:
                 response = await next_handler()
+            except PhaseEnded:
+                # The phase already has its result, so it refuses the next call.  That is
+                # how a finished phase ends -- most often right after it published -- and
+                # it must not make a clean ending read as a failed round.
+                handle.annotate(result_code=PHASE_ENDED_CODE)
+                raise
             except BaseException as failure:
                 # A rejected reply is the fact worth keeping: the phase's own check
                 # ran inside this call and refused the whole response.

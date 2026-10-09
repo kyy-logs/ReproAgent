@@ -334,6 +334,29 @@ def test_published_candidate_survives_retirement(tmp_path, projects, facts):
     assert published[0]["status"] != "error"
 
 
+def test_a_finished_phase_does_not_report_a_failed_model_round(tmp_path, projects, facts):
+    """A phase ends by refusing the next call, and that ending is not a failure.
+
+    Once ``write_candidate`` publishes, the gate is finished and the guard turns the
+    next model call away.  The round that was turned away is how the phase ended
+    cleanly -- recording it as an error would make every successful publication look
+    like it had gone wrong.
+    """
+    with traced(tmp_path, projects, facts,
+                answers=[read_reply(None, "call-1"),
+                         tool_reply("write_candidate", write_payload(), call_id="call-2")]) as env:
+        env.answers[0] = read_reply(env.module, "call-1")
+        result = explore(env)
+        doc = document(env)
+
+    assert result.kind == "candidate"
+    rounds = named(doc, "sdk.model_round")
+    assert rounds
+    assert all(entry["status"] != "error" for entry in rounds), \
+        [(entry["status"], entry["attributes"]) for entry in rounds]
+    assert any(entry["attributes"].get("result_code") == "PHASE_ENDED" for entry in rounds)
+
+
 def test_cancelled_tool_is_not_reported_success(tmp_path, projects, facts):
     final = ToolResponse(content=[TextBlock(text="done")], state=ToolResultState.SUCCESS)
 

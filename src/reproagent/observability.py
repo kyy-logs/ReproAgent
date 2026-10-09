@@ -318,8 +318,14 @@ def trace_session(*, enabled: bool, secrets: Iterable[str] = ()) -> Iterator[Tra
 
 
 @contextlib.contextmanager
-def span(name: str, *, attributes: dict | None = None) -> Iterator[Any]:
-    """Time a region; the body's exception still wins."""
+def span(name: str, *, attributes: dict | None = None, expected: tuple = ()) -> Iterator[Any]:
+    """Time a region; the body's exception still propagates unchanged.
+
+    ``expected`` names exceptions that are how this region *ends* rather than how it
+    fails -- a phase that turns the next call away because it already has its result,
+    for instance.  They are still raised to the caller; they are simply not reported
+    as a failure of the region, because a clean ending is not one.
+    """
     recorder = _recorder.get()
     if recorder is None or not recorder._active:
         yield _NoopHandle()
@@ -331,10 +337,11 @@ def span(name: str, *, attributes: dict | None = None) -> Iterator[Any]:
     except BaseException as exc:  # noqa: BLE001 - recorded, then re-raised unchanged
         if isinstance(exc, asyncio.CancelledError):
             handle._finish("cancelled")
-        elif isinstance(exc, GeneratorExit):
-            # A generator closed by whoever was iterating it is an end, not a failure.
-            # The span's own result code, recorded before the final item was handed on,
-            # is what says how the observed work actually turned out.
+        elif isinstance(exc, GeneratorExit) or (expected and isinstance(exc, expected)):
+            # A generator closed by whoever was iterating it is an end, not a failure,
+            # and so is the exception the caller nominated.  The span's own result code,
+            # recorded before the final item was handed on, is what says how the
+            # observed work actually turned out.
             handle._finish("ok")
         else:
             handle._finish("error")
