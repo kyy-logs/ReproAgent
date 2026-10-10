@@ -170,7 +170,8 @@ def _esc(value: Any) -> str:
 def _seconds(value: Any) -> str:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return UNKNOWN_TEXT
-    return f"{float(value):.3f}s"
+    from .trace_view_model import number
+    return f"{value:.3f}s" if number(value) is not None else UNKNOWN_TEXT
 
 
 def _figure(value: Any) -> str:
@@ -223,8 +224,9 @@ def _render_stats(summary: dict) -> str:
 
 def _render_timeline(spans) -> str:
     depths = _depths(spans)
-    ordered = sorted(spans, key=lambda entry: (entry.get("offset_seconds") is None,
-                                               entry.get("offset_seconds") or 0.0))
+    from .trace_view_model import number
+    ordered = sorted(spans, key=lambda entry: (number(entry.get("offset_seconds")) is None,
+                                               number(entry.get("offset_seconds")) or 0.0))
     rows = []
     kept = {s.get("span_id") for s in spans}
     for entry in ordered:
@@ -259,71 +261,35 @@ def _order(entry: dict):
     return (entry.get("offset_seconds") is None, entry.get("offset_seconds") or 0.0)
 
 
-def _render_contents(document: dict) -> str:
-    """The captured calls, grouped so a call's input and result stay together.
-
-    A flat list of content ids cannot answer "what was this tool given, and what did it
-    return": the permission point owns the arguments and the execution owns the result,
-    and only the shared call key puts them back in one place.  Small groups open by
-    default, so the page shows the model's calls rather than a list of hashes to click.
-    """
-    records = {record.get("content_id"): record for record in (document.get("contents") or ())}
-    spans = document.get("spans") or ()
+def render_content_registry(document: dict) -> str:
+    """One text container per capture, usable by static and enhanced views."""
     parts = ["<h2>Calls and content</h2>"]
-
-    arguments: dict = {}
-    for entry in spans:
-        key = (entry.get("attributes") or {}).get("tool_call_key")
-        if key and entry.get("kind") == "event":
-            arguments[key] = list(entry.get("content_refs") or ())
-
-    shown, emitted = set(), 0
-    for entry in sorted(spans, key=_order):
-        if entry.get("kind") != "span":
-            continue
-        attributes = entry.get("attributes") or {}
-        key = attributes.get("tool_call_key")
-        refs = list(entry.get("content_refs") or ())
-        if key:
-            refs = [ref for ref in arguments.get(key, ()) if ref not in refs] + refs
-        refs = [ref for ref in refs if ref in records]
-        if not refs:
-            continue
-        emitted += 1
-        size = sum(len((records[ref].get("text") or "").encode("utf-8")) for ref in refs)
-        # What is inside is named in the summary: a collapsed block labelled only with a
-        # byte count reads as empty, and the request is the thing people look for.
-        holds = ", ".join(dict.fromkeys(_source_label(records[ref].get("source")) for ref in refs))
-        label = _esc(entry.get("name"))
-        if key:
-            label += f' &middot; call {_esc(str(key)[:8])}'
-        status = str(entry.get("status") or UNKNOWN_TEXT)
-        opener = " open" if size <= OPEN_INLINE_BYTES else ""
-        parts.append(f'<details{opener}><summary>{label} '
-                     f'<span class="status-{_esc(status)}">{_esc(status)}</span>'
-                     f' &middot; {_esc(holds)}'
-                     f' <span class="unknown">{_esc(size)} bytes</span></summary>')
-        for ref in refs:
-            record = records[ref]
-            shown.add(ref)
-            flags = ", ".join(name for name in ("truncated", "redacted") if record.get(name))
-            head = (f'<h4>{_esc(_source_label(record.get("source")))} &middot; '
-                    f'{_esc(record.get("availability"))}'
-                    + (f' &middot; {_esc(flags)}' if flags else '') + "</h4>")
-            text = record.get("text")
-            parts.append(head + (f"<pre>{_esc(text)}</pre>" if text
-                                 else f'<p class="unknown">{_esc(record.get("availability"))}</p>'))
-        parts.append("</details>")
-
-    orphans = [record for cid, record in records.items() if cid not in shown]
-    for record in orphans:
+    seen = set()
+    for record in document.get("contents", []):
+        cid = record.get("content_id")
+        if cid in seen: continue
+        key = len(seen); seen.add(cid)
+        flags = ", ".join(k for k in ("truncated", "redacted", "excerpt_mode") if record.get(k))
         text = record.get("text")
-        parts.append(f'<details><summary>{_esc(_source_label(record.get("source")))} '
-                     f'&middot; {_esc(record.get("availability"))}</summary>'
-                     + (f"<pre>{_esc(text)}</pre>" if text else "") + "</details>")
-    if not emitted and not orphans:
-        parts.append('<p class="unknown">No content was captured for this run.</p>')
+        body = f'<pre data-content-body>{_esc(text)}</pre>' if text else f'<p class="unknown">{_esc(record.get("availability"))}</p>'
+        parts.append(f'<details id="trace-content-{key}" class="capture"><summary>'
+                     f'{_esc(_source_label(record.get("source")))} · {_esc(record.get("availability"))}'
+                     f' · {_esc(flags)} · {_esc(record.get("captured_bytes"))} / {_esc(record.get("original_bytes"))} bytes</summary>{body}</details>')
+    if not seen: parts.append('<p class="unknown">No content was captured for this run.</p>')
     return "\n".join(parts)
+
+
+def _render_contents(document: dict) -> str:
+    return render_content_registry(document)
+
+
+def serialize_trace_view(view: dict) -> str:
+    """Data island: HTML parsing must not recognize any trace-supplied tag."""
+    raw = json.dumps(view, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    for char, escaped in (("<", "\\u003c"), (">", "\\u003e"), ("&", "\\u0026"),
+                          ("\u2028", "\\u2028"), ("\u2029", "\\u2029")):
+        raw = raw.replace(char, escaped)
+    return raw
 
 
 def _render_decisions(document: dict) -> str:
@@ -388,7 +354,16 @@ def render_trace(document: dict) -> str:
     from importlib.resources import files
 
     template = files("reproagent").joinpath("resources/trace.html.template").read_text(encoding="utf-8")
+    import base64
+    import hashlib
+    from .trace_view_model import build_trace_view
+    view = build_trace_view(document)
+    source = files("reproagent").joinpath("resources/trace_viewer.mjs").read_text(encoding="utf-8")
+    digest = base64.b64encode(hashlib.sha256(source.encode("utf-8")).digest()).decode("ascii")
     page = template.replace(TEMPLATE_MARKER, _render_body(document))
+    page = page.replace("<!--TRACE-DATA-->", serialize_trace_view(view))
+    page = page.replace("<!--TRACE-SCRIPT-->", source)
+    page = page.replace("<!--TRACE-HASH-->", digest)
     if len(page.encode("utf-8")) > MAX_HTML_BYTES:
         # Refused rather than cut: half a timeline reads as a whole one.
         raise ValueError(WARNING_PAGE_TOO_LARGE)

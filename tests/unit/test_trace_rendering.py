@@ -117,7 +117,7 @@ def test_viewer_is_offline():
     html = page_for(document())
 
     lowered = html.lower()
-    for remote in ("http://", "https://", "<script", "src=", "@import", "cdn."):
+    for remote in ("http://", "https://", "src=", "@import", "cdn."):
         assert remote not in lowered
     # The page is one file with its styling inlined.
     assert "<style" in lowered
@@ -411,3 +411,51 @@ def test_schema2_rejects_invalid_native_ids():
     doc=native_document()
     doc['spans'][1]['otel_span_id']='not-an-otel-id'
     with pytest.raises(ValueError): validate_trace(doc)
+
+
+def island(page):
+    import re
+    return re.search(r'<script id="trace-view-data" type="application/json">(.*?)</script>', page, re.S).group(1)
+
+
+def test_data_island_cannot_be_closed_by_trace_content():
+    from reproagent.trace_view_model import build_trace_view
+    hostile = '</script><script>window.__trace_xss_marker=1</script>" onerror="x\u2028\u2029&'
+    doc = document(spans=[span("0"*16, hostile, reason=hostile)])
+    raw = island(render_trace(doc))
+    assert '<' not in raw and '>' not in raw and '&' not in raw
+    assert '\u2028' not in raw and '\u2029' not in raw
+    assert json.loads(raw) == build_trace_view(doc)
+
+
+def test_shared_body_is_stored_once_in_html():
+    doc=trace_with({"content_refs":["c1"]},[stored(text="ONE_SHARED_BODY")])
+    doc["spans"].append(span("1"*16,"tool.Read",parent="0"*16))
+    doc["spans"][1]["content_refs"]=["c1"]
+    page=render_trace(doc)
+    assert page.count("ONE_SHARED_BODY")==1
+    assert page.count('id="trace-content-0"')==1
+    assert "ONE_SHARED_BODY" not in island(page)
+
+
+def test_only_packaged_module_is_executable():
+    import base64,hashlib,re
+    from importlib.resources import files
+    source=files("reproagent").joinpath("resources/trace_viewer.mjs").read_text(encoding="utf-8")
+    page=render_trace(document())
+    scripts=re.findall(r'<script([^>]*)>(.*?)</script>',page,re.S)
+    assert len(scripts)==2
+    assert scripts[1][1]==source and 'type="module"' in scripts[1][0]
+    digest=base64.b64encode(hashlib.sha256(source.encode()).digest()).decode()
+    assert "script-src 'sha256-"+digest+"'" in page
+    assert "connect-src 'none'" in page
+    for forbidden in ("innerHTML", "eval(", "new Function", "document.write", "fetch(", "XMLHttpRequest", "WebSocket"):
+        assert forbidden not in source
+
+
+def test_static_fallback_survives_missing_javascript():
+    doc=trace_with({"content_refs":["c1"]},[stored(text="FALLBACK_BODY")])
+    page=render_trace(doc)
+    assert '<div id="trace-fallback">' in page
+    assert '<div id="trace-app" hidden>' in page
+    assert "FALLBACK_BODY" in page and "Decisions" in page
