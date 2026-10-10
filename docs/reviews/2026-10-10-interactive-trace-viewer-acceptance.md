@@ -87,3 +87,19 @@ Additional rulings from the review:
 - Synthetic SDK/tool duplicate hints are not a current collector behavior; retain current rule. Cost if a future wrapper appears: duplicate hints may need suppression.
 - Configured browser-act profiles and live providers/full domain regression remain outside this display-only acceptance; isolated Chrome/scripted SDK cover changes.
   Cost if wrong: environment-specific behavior is not covered. No real provider tokens were spent.
+
+## Main integration verification
+
+2026-10-10: fast-forwarded local main to the reviewed implementation `08f6f3e` after fetching origin.
+The canonical `E:/ReproAgent` environment imports `E:/ReproAgent/src/reproagent/__init__.py`.
+Re-ran model/rendering/path/CLI/Windows regressions in that checkout: **90 passed, 3 skipped in 27.90s**;
+frontend **8 passed**, pip check green. Full branch diff has no whitespace errors. No source differences
+from the previously tested feature commit; wheel and SDK integration evidence remains the 98-test receipt above.
+Local logs and screenshots are preserved under `E:/ReproAgent/.local/interactive-trace-viewer-verification/`.
+
+A supplementary real-model smoke on Sphinx #11445 was attempted after acceptance. The prepared target
+passed preflight, but the first model attempt failed before exploration. A same-provider read-only diagnostic
+confirmed **HTTP 401 / authentication_error: invalid credential**. No candidate or valid reproduction was produced;
+this is a provider authentication blocker and does not establish the agent's real-issue success rate.
+The failed run's diagnostic report and new interactive trace remain in the local ignored evaluation output.
+No credential values or live task payloads are included in this commit.
