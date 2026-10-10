@@ -88,7 +88,7 @@
   .trace-tree { min-width:0; }
   .axis-row, .trace-row { display:grid; grid-template-columns:38% 62%; }
   .axis-row { color:var(--muted); font-size:11px; padding:.4rem 0; border-bottom:1px solid var(--line); }
-  .axis-ticks { display:flex; justify-content:space-between; padding-right:.6rem; }
+  .axis-ticks { display:flex; justify-content:space-between; margin-left:64px; margin-right:8px; }
   .trace-row { min-height:40px; border-bottom:1px dotted var(--line); }
   .trace-row.selected { background:var(--panel); outline:1px solid #aebafb; }
   .node-label { display:flex; align-items:center; min-width:0; gap:.25rem; }
@@ -118,7 +118,7 @@
   .trace-detail .capture { margin:.5rem 0; }
   .trace-empty { padding:3rem; text-align:center; color:var(--muted); }
   .trace-footer { font-size:11px; color:var(--muted); margin-top:1rem; }
-  @media(max-width:900px) { body {padding:.75rem;} .trace-workspace.has-detail {grid-template-columns:minmax(0,1fr);} .trace-detail {position:static;max-height:none;} .node-duration {width:50px;} }
+  @media(max-width:900px) { body {padding:.75rem;} .trace-workspace.has-detail {grid-template-columns:minmax(0,1fr);} .trace-detail {position:static;max-height:none;} .node-duration {width:50px;} .axis-ticks {margin-left:50px;} }
 </style>
 </head>
 <body>
