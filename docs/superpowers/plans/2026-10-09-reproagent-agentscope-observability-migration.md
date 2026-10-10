@@ -158,7 +158,7 @@ schema2保留schema1的spans/contents/summary与展示字段，增加root_span_i
 
 已检查设计覆盖、接口名称、schema与原生ID、两类状态、原生生命周期全局约束、现有8MiBHTML限额；五个Review Focus都有指定测试。新依赖与原生序列化故障需实施时实测，不提前声明兼容或测试通过。
 
-全部任务已执行；真实SDK专项、独立安装及完整unit/integration最终704pass5skip，pip check通过。重要审查问题由新增测试RED→GREEN修复；详见 `docs/reviews/2026-10-09-agentscope-observability-migration-acceptance.md`。执行方式为当前会话逐项实现、一次独立全分支审查。尚未合并main或push。
+全部任务已执行；真实SDK专项、独立安装及完整unit/integration最终704pass5skip，pip check通过。重要审查问题由新增测试RED→GREEN修复；详见 `docs/reviews/2026-10-09-agentscope-observability-migration-acceptance.md`。执行方式为当前会话逐项实现、一次独立全分支审查。2026-10-10已按用户选择快进合并本地main；主环境追加60pass、pip check通过。未push。
 
 
 ### 实施修订

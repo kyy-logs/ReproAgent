@@ -111,4 +111,4 @@ summary仍只汇总model.http_attempt的usage/费用、model.logical的逻辑次
 
 实现步骤及逐项验收见 `../plans/2026-10-09-reproagent-agentscope-observability-migration.md`。本设计不承载测试结果；不得引用旧验收数字作为本次迁移通过证据。
 
-验收回执：`../../reviews/2026-10-09-agentscope-observability-migration-acceptance.md`；最终704pass5skip、pip check通过。产品代码在独立分支，未合并或推送。
+验收回执：`../../reviews/2026-10-09-agentscope-observability-migration-acceptance.md`；最终704pass5skip、pip check通过。已快进合并本地main，主环境追加验证60pass、pip check通过；未推送。

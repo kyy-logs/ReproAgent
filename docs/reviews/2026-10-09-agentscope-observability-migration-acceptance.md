@@ -71,4 +71,8 @@ Windows无符号链接创建权限时，原有链接实测会skip；不把这些
 
 ## 交付状态
 
-产品代码在独立分支本地提交。未合并main、未push、未调用真实模型。完整回归结果已更新；后续合并/推送由用户选择。
+2026-10-10按用户选择快进合并到本地main（cf1c4d9），无冲突；未push、未调用真实模型。主工作区解释器已确认加载E:/ReproAgent/src源码。
+
+主工作区追加验证：原生backend/projection、真实SDK、viewer、CLI及独立安装包共60pass（37.44秒），pip check通过。证据：`.local/agentscope-observability-migration-verification/main-merge-verification.log`。快进合并未改变已通过704pass5skip完整回归的代码版本，故按同提交复用全量结果，并验证主环境入口。
+
+迁移分支的本地原始日志已校验并保留到E盘主工作区；临时托管worktree在通过验证后归档。
