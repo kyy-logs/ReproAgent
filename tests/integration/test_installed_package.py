@@ -112,3 +112,21 @@ def test_required_sdk_is_packaged_but_target_replay_is_independent(tmp_path, pro
                                  '--output', str(tmp_path / ('replay-' + label)), '--install'],
                                 capture_output=True, timeout=60)
         assert replay.returncode == expected, replay.stderr.decode(errors='replace')
+
+
+def test_wheel_includes_and_inlines_viewer_module(tmp_path):
+    checkout=Path(__file__).resolve().parents[2]
+    wheels=tmp_path/'wheels'
+    command([sys.executable,'-m','pip','wheel',checkout,'--no-deps','--no-build-isolation','--wheel-dir',wheels])
+    wheel=next(wheels.glob('*.whl'))
+    with zipfile.ZipFile(wheel) as archive:
+        source=archive.read('reproagent/resources/trace_viewer.mjs').decode('utf-8')
+        assert 'mountTraceViewer' in source
+        assert 'reproagent/trace_view_model.py' in archive.namelist()
+    tool=tmp_path/'viewer-env';command([sys.executable,'-m','venv',tool])
+    command([python_in(tool),'-m','pip','install','--no-index','--no-deps',wheel])
+    env=dict(os.environ);env.pop('PYTHONPATH',None);env['PYTHONIOENCODING']='utf-8'
+    result=command([python_in(tool),'-c',"from reproagent.trace_rendering import render_trace; print(render_trace({'schema_version':1,'spans':[],'summary':{}}))"],cwd=tmp_path,env=env)
+    page=result.stdout.decode('utf-8')
+    assert source in page and '<script type="module">' in page
+    assert '<div id="trace-fallback">' in page

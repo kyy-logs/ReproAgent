@@ -274,7 +274,7 @@ def render_content_registry(document: dict) -> str:
         body = f'<pre data-content-body>{_esc(text)}</pre>' if text else f'<p class="unknown">{_esc(record.get("availability"))}</p>'
         parts.append(f'<details id="trace-content-{key}" class="capture"><summary>'
                      f'{_esc(_source_label(record.get("source")))} · {_esc(record.get("availability"))}'
-                     f' · {_esc(flags)} · {_esc(record.get("captured_bytes"))} / {_esc(record.get("original_bytes"))} bytes</summary>{body}</details>')
+                     f' · {_esc(flags)} · {_esc(record.get("captured_bytes", UNKNOWN_TEXT))} / {_esc(record.get("original_bytes", UNKNOWN_TEXT))} bytes</summary>{body}</details>')
     if not seen: parts.append('<p class="unknown">No content was captured for this run.</p>')
     return "\n".join(parts)
 

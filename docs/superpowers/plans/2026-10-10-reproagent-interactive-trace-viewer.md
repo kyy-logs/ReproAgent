@@ -10,7 +10,7 @@
 
 **Spec:** 本文件“设计合同”落实用户认可的短设计与截图参考；现有采集与权限边界沿用 `docs/observability.md` 和 `docs/superpowers/specs/2026-10-09-reproagent-agentscope-observability-migration-design.md`。
 
-**Baseline:** 2026-10-10，本地main `308ba6a`。当前renderer约400行、模板约75行；现有 `test_viewer_is_offline` 禁止任何script，需有针对性更新为“仅允许打包的固定脚本，不执行trace内容”。所有任务当前未执行。
+**Baseline:** 2026-10-10，本地main `308ba6a`。当前renderer约400行、模板约75行；现有 `test_viewer_is_offline` 禁止任何script，需有针对性更新为“仅允许打包的固定脚本，不执行trace内容”。实现任务已执行；最终独立审查状态见验收回执。
 
 ## 设计合同
 
@@ -52,7 +52,7 @@
 - 只读取已有脱敏trace document；不重新读取源码、stdout/stderr或模型原始请求。所有派生值有来源，不反馈给Agent或证据链。
 - 保留schema1/2、单文件离线、8MiB HTML/6MiB JSON限额、Windows路径入口/原子写及写失败非致命行为。
 - 允许的是固定打包模块，trace数据仍不可执行。更新与旧“禁止任何script”有关的观测文档和测试，不弱化XSS及零外部请求断言。
-- 沿用当前会话逐项执行；执行前建立隔离工作区。本次仅写计划，不改产品、不调用真实模型、不push。
+- 沿用当前会话逐项执行；执行前建立隔离工作区。实施仅改本计划指定的展示/打包范围，不调用真实模型，不默认合并或push。
 
 ## Review Focus
 
@@ -97,57 +97,57 @@ view_version=1，字段header/nodes/roots/contents/hints/time_axis。node包含k
 **Files:** Create trace_view_model.py、test_trace_view_model.py、合成fixtures。
 **Interfaces:** Produces build_trace_view、node/content_keys、time_axis、hints；消费现有validate_trace和有限输入document。
 
-- [ ] Step 1: 写 `test_schema1_and_schema2_permissions_join_tools`、`test_denied_and_reserved_calls_keep_their_own_arguments`、`test_shared_content_has_one_descriptor_and_no_embedded_text`。断言双kind关联同key、无tool仍有详情、没有正文拷贝、不修改输入对象。
-- [ ] Step 2: 写 `test_time_geometry_handles_unknown_zero_and_nonfinite_values`（offset=2/duration=3/extent=10得到20%/30%，未知为null）、`test_partial_metrics_are_labelled_known_subtotals`、`test_deep_tree_and_missing_parent_do_not_invent_edges`；1024层迭代无溢出，父子耗时不相加。最慢3节点/真实重试/预留提示只从保留数据派生。
-- [ ] Step 3: Run `.venv/Scripts/python.exe -m pytest tests/unit/test_trace_view_model.py -q`，Expected: RED指向缺失展示接口/行为。
-- [ ] Step 4: 实现build_trace_view与数据合同、node分类、model提取和程序规则。保留真正原parent，输出纯JSON可序列化数值；拒绝bad schema/循环沿用原reader规则。
-- [ ] Step 5: 同命令GREEN；每项输入deepcopy前后相等，提交 `feat: add a readonly trace viewer model`。
+- [x] Step 1: 写 `test_schema1_and_schema2_permissions_join_tools`、`test_denied_and_reserved_calls_keep_their_own_arguments`、`test_shared_content_has_one_descriptor_and_no_embedded_text`。断言双kind关联同key、无tool仍有详情、没有正文拷贝、不修改输入对象。
+- [x] Step 2: 写 `test_time_geometry_handles_unknown_zero_and_nonfinite_values`（offset=2/duration=3/extent=10得到20%/30%，未知为null）、`test_partial_metrics_are_labelled_known_subtotals`、`test_deep_tree_and_missing_parent_do_not_invent_edges`；1024层迭代无溢出，父子耗时不相加。最慢3节点/真实重试/预留提示只从保留数据派生。
+- [x] Step 3: Run `.venv/Scripts/python.exe -m pytest tests/unit/test_trace_view_model.py -q`，Expected: RED指向缺失展示接口/行为。
+- [x] Step 4: 实现build_trace_view与数据合同、node分类、model提取和程序规则。保留真正原parent，输出纯JSON可序列化数值；拒绝bad schema/循环沿用原reader规则。
+- [x] Step 5: 同命令GREEN；每项输入deepcopy前后相等，提交 `feat: add a readonly trace viewer model`。
 
 ## Task 2: 单文件页面、安全数据岛和静态回退
 
 **Files:** Modify trace_rendering.py、template、pyproject.toml与test_trace_rendering.py；Create trace_viewer.mjs的纯入口骨架。
 **Interfaces:** Consumes Task1；Produces serialize_trace_view/render_content_registry、可信脚本/CSP与各布局区域，render_trace仍按8MiB完整字节判断。
 
-- [ ] Step 1: 写 `test_data_island_cannot_be_closed_by_trace_content`、`test_shared_body_is_stored_once_in_html`、`test_only_packaged_module_is_executable`、`test_static_fallback_survives_missing_javascript`。用</script><script>、引号/事件属性、URL、U+2028/2029，断言解析元数据等于原投影、只有一个正文容器、没有外部资源和动态代码执行入口。
-- [ ] Step 2: Run `.venv/Scripts/python.exe -m pytest tests/unit/test_trace_rendering.py -q`，Expected: 新合同RED。将旧test_viewer_is_offline改成核对固定模块内容/hash、无src/CDN/connect资源，而非简单禁止所有<script>；原恶意正文转义断言保留。
-- [ ] Step 3: 实现模板布局/颜色/字段、固定模块内联及hash、安全JSON转义、正文单份注册表和回退。未知/截断/脱敏/partial提示保留；不能双存静态正文和JSON正文来凑交互。
-- [ ] Step 4: 同命令GREEN，覆盖8MiB超限、JSON成功HTML失败、静态内容/验收可读，提交 `feat: render an offline trace tree and waterfall shell`。
+- [x] Step 1: 写 `test_data_island_cannot_be_closed_by_trace_content`、`test_shared_body_is_stored_once_in_html`、`test_only_packaged_module_is_executable`、`test_static_fallback_survives_missing_javascript`。用</script><script>、引号/事件属性、URL、U+2028/2029，断言解析元数据等于原投影、只有一个正文容器、没有外部资源和动态代码执行入口。
+- [x] Step 2: Run `.venv/Scripts/python.exe -m pytest tests/unit/test_trace_rendering.py -q`，Expected: 新合同RED。将旧test_viewer_is_offline改成核对固定模块内容/hash、无src/CDN/connect资源，而非简单禁止所有<script>；原恶意正文转义断言保留。
+- [x] Step 3: 实现模板布局/颜色/字段、固定模块内联及hash、安全JSON转义、正文单份注册表和回退。未知/截断/脱敏/partial提示保留；不能双存静态正文和JSON正文来凑交互。
+- [x] Step 4: 同命令GREEN，覆盖8MiB超限、JSON成功HTML失败、静态内容/验收可读，提交 `feat: render an offline trace tree and waterfall shell`。
 
 ## Task 3: 浏览器搜索、折叠、选择和详情
 
 **Files:** Modify trace_viewer.mjs；Create tests/frontend/trace_viewer.test.mjs；必要CSS调整归本task。
 **Interfaces:** Consumes view数据/正文DOM；Produces computeVisibleRows/mountTraceViewer及类型/异常/页签/详情交互。
 
-- [ ] Step 1: 用Node内置runner写 `matching_descendant_preserves_and_opens_ancestors`、`clearing_query_restores_manual_collapses`、`combined_filters_distinguish_expected_otel_error`、`shared_content_matches_without_per_node_body_duplication`。覆盖孤儿、空结果、零时间、同名多调用，用纯数据测试而不是CSS截图镜像断言。
-- [ ] Step 2: Run `node --test tests/frontend/trace_viewer.test.mjs`，Expected: RED；实施时先定位现有/捆绑Node，使用实际绝对路径，不为产品添加npm依赖。
-- [ ] Step 3: 实现筛选/祖先集/折叠状态、150ms搜索、DOM正文索引、纯文本详情及键盘焦点。module在无document的Node环境仅导出纯函数，在浏览器挂载成功后才切换增强视图；不创建模型“智能分析”按钮。
-- [ ] Step 4: Node测试GREEN；使用browser-act技能在独立浏览器页打开file://合成案例，验证点击/折叠/查询/错误筛选/清空恢复/权限详情、1366px与800px布局；脚本错误时回退不空白、控制台无未处理错误。
-- [ ] Step 5: 保存交互检查结果与截图到本地验收目录，提交 `feat: add local trace inspection interactions`。浏览器工具不可用则保留案例并将实际浏览器验收not_run，不以静态字符串测试冒充通过。
+- [x] Step 1: 用Node内置runner写 `matching_descendant_preserves_and_opens_ancestors`、`clearing_query_restores_manual_collapses`、`combined_filters_distinguish_expected_otel_error`、`shared_content_matches_without_per_node_body_duplication`。覆盖孤儿、空结果、零时间、同名多调用，用纯数据测试而不是CSS截图镜像断言。
+- [x] Step 2: Run `node --test tests/frontend/trace_viewer.test.mjs`，Expected: RED；实施时先定位现有/捆绑Node，使用实际绝对路径，不为产品添加npm依赖。
+- [x] Step 3: 实现筛选/祖先集/折叠状态、150ms搜索、DOM正文索引、纯文本详情及键盘焦点。module在无document的Node环境仅导出纯函数，在浏览器挂载成功后才切换增强视图；不创建模型“智能分析”按钮。
+- [x] Step 4: Node测试GREEN；使用browser-act技能在独立浏览器页打开file://合成案例，验证点击/折叠/查询/错误筛选/清空恢复/权限详情、1366px与800px布局；脚本错误时回退不空白、控制台无未处理错误。
+- [x] Step 5: 保存交互检查结果与截图到本地验收目录，提交 `feat: add local trace inspection interactions`。浏览器工具不可用则保留案例并将实际浏览器验收not_run，不以静态字符串测试冒充通过。
 
 ## Task 4: 安装、端到端与验收回执
 
 **Files:** Modify installed_package/end_to_end测试、docs/observability.md、本计划状态；Create验收回执。
 **Interfaces:** Consumes完整查看器；Produces安装与输出兼容证据、程序提示说明、browser验证记录。
 
-- [ ] Step 1: 写 `test_wheel_includes_and_inlines_viewer_module`、`test_interactive_viewer_adds_no_requests_or_task_artifacts`。独立wheel核对mjs/template且可生成页面；真实SDK+pytest原用例中模型/工具次数、token、结果及交付包不变，task-output仍只增加两个观测文件。原schema1离线重建不覆写JSON。
-- [ ] Step 2: Run `.venv/Scripts/python.exe -m pytest tests/integration/test_installed_package.py tests/integration/test_observability_end_to_end.py -q`，Expected: 新打包/页面行为RED；只做必要renderer/package-data修复后GREEN。
-- [ ] Step 3: 浏览器实际检查恶意案例：window.__trace_xss_marker保持未定义，脚本/图片/iframe/外部地址不触发请求；加载后资源记录不含外部网络资源，搜索点击不发请求。关闭JS后仍有静态输入/输出/验收。截断/未知/partial、键盘操作和1024节点案例有实测。
-- [ ] Step 4: 跑本改动直接相关的view_model/rendering、frontend Node、CLI/Windows路径、installed_package/end_to_end回归与pip check。仅当新故障/跨层改动/审查要求出现时扩大到完整suite；不重复旧704pass当新界面验收。独立审查按requesting-code-review技能做一次，重要发现先复现再修复。
-- [ ] Step 5: 更新使用文档、固定脚本安全边界和回执；记录版本、命令、实际结果、浏览器/截图、失败及修复位置。提交 `docs: verify the interactive offline trace viewer`；不默认合并/push。
+- [x] Step 1: 写 `test_wheel_includes_and_inlines_viewer_module`、`test_interactive_viewer_adds_no_requests_or_task_artifacts`。独立wheel核对mjs/template且可生成页面；真实SDK+pytest原用例中模型/工具次数、token、结果及交付包不变，task-output仍只增加两个观测文件。原schema1离线重建不覆写JSON。
+- [x] Step 2: Run `.venv/Scripts/python.exe -m pytest tests/integration/test_installed_package.py tests/integration/test_observability_end_to_end.py -q`，Expected: 新打包/页面行为RED；只做必要renderer/package-data修复后GREEN。
+- [x] Step 3: 浏览器实际检查恶意案例：window.__trace_xss_marker保持未定义，脚本/图片/iframe/外部地址不触发请求；加载后资源记录不含外部网络资源，搜索点击不发请求。关闭JS后仍有静态输入/输出/验收。截断/未知/partial、键盘操作和1024节点案例有实测。
+- [x] Step 4: 跑本改动直接相关的view_model/rendering、frontend Node、CLI/Windows路径、installed_package/end_to_end回归与pip check。仅当新故障/跨层改动/审查要求出现时扩大到完整suite；不重复旧704pass当新界面验收。独立审查按requesting-code-review技能做一次，重要发现先复现再修复。
+- [x] Step 5: 更新使用文档、固定脚本安全边界和回执；记录版本、命令、实际结果、浏览器/截图、失败及修复位置。提交 `docs: verify the interactive offline trace viewer`；不默认合并/push。
 
 ## 验收矩阵与自检
 
 | ID | 必选项 | 当前 | 失败定位 |
 | --- | --- | --- | --- |
-| V01 | schema1/2、真实parent、permission/tool及共享正文关联 | not_run | view_model/renderer |
-| V02 | 真实时间条、未知值/零值/partial计数诚实、程序提示有依据 | not_run | view_model/时间线 |
-| V03 | 折叠/查询/组合筛选/祖先恢复/详情/验收页签实际可操作 | not_run | mjs/模板 |
-| V04 | 已有推理/参数/结果可见；缺失不补写；正常控制结束不误报错误 | not_run | 分类/详情投影 |
-| V05 | 固定脚本+CSP；恶意文本不可执行、外部资源零请求；单份正文 | not_run | 序列化/模板/DOM操作 |
-| V06 | 单文件file://、JS回退、桌面/窄屏、键盘和1024节点实测 | not_run | 页面样式/入口/迭代逻辑 |
-| V07 | 命令/输出/模型token及调用数不变；8MiB/长路径/wheel/旧文件重建 | not_run | renderer/package-data/集成测试 |
-| V08 | 命令/结果/截图/失败修复/审查齐全，未测部分单列 | not_run | 验收回执 |
+| V01 | schema1/2、真实parent、permission/tool及共享正文关联 | pass | view_model/renderer |
+| V02 | 真实时间条、未知值/零值/partial计数诚实、程序提示有依据 | pass | view_model/时间线 |
+| V03 | 折叠/查询/组合筛选/祖先恢复/详情/验收页签实际可操作 | pass | mjs/模板 |
+| V04 | 已有推理/参数/结果可见；缺失不补写；正常控制结束不误报错误 | pass | 分类/详情投影 |
+| V05 | 固定脚本+CSP；恶意文本不可执行、外部资源零请求；单份正文 | pass | 序列化/模板/DOM操作 |
+| V06 | 单文件file://、JS回退、桌面/窄屏、键盘和1024节点实测 | pass | 页面样式/入口/迭代逻辑 |
+| V07 | 命令/输出/模型token及调用数不变；8MiB/长路径/wheel/旧文件重建 | pass | renderer/package-data/集成测试 |
+| V08 | 命令/结果/截图/失败修复/审查齐全，未测部分单列 | review_pending | 验收回执 |
 
 每项记录expected/status/command/observed/evidence_ref/fix_location/recheck_command。回执和原始日志/截图保留到 `.local/interactive-trace-viewer-verification/`；截图只是视觉证据，不替代交互/安全断言。所有必选项有证据才宣称查看器验收完成。
 
-已自检：Python与JS接口均有产出任务，content字段沿用original_bytes/captured_bytes；只改展示/打包，接口一致，正文单份与8MiB限额一致，旧script禁令明确修订，五个Review Focus各有测试/浏览器步骤；不引用旧测试数量或截图里未采集指标作为完成证据。执行方式沿用当前会话逐项实现。本次仅交付计划，未改产品代码。
+已自检：Python与JS接口均有产出任务，content字段沿用original_bytes/captured_bytes；只改展示/打包，接口一致，正文单份与8MiB限额一致，旧script禁令明确修订，五个Review Focus各有测试/浏览器步骤；不引用旧测试数量或截图里未采集指标作为完成证据。执行方式沿用当前会话逐项实现。已实施并完成自动化与浏览器检查，独立审查见 docs/reviews/2026-10-10-interactive-trace-viewer-acceptance.md。

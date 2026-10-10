@@ -122,3 +122,22 @@ def test_the_page_is_a_real_file_beside_the_task(tmp_path, projects, facts):
     assert page == request.output_dir / TRACE_DIRECTORY / 'trace.html'
     assert (request.output_dir / TRACE_DIRECTORY / TRACE_FILENAME).is_file()
     assert page.read_text(encoding="utf-8").startswith("<!DOCTYPE html>")
+
+
+def test_interactive_viewer_adds_no_requests_or_task_artifacts(tmp_path, projects, facts):
+    import copy
+    from reproagent.trace_rendering import write_trace_html
+    request,controller,result,recorder,seen,calls=run_sdk_task(tmp_path,projects,facts,trace=True)
+    document=document_for(request,controller,result,recorder)
+    def tree():
+        return {p.relative_to(request.output_dir).as_posix():p.read_bytes()
+                for p in request.output_dir.rglob('*') if p.is_file()}
+    before=tree();old=copy.deepcopy(document);requests=copy.deepcopy(seen);kinds=list(calls)
+    write_trace(request.output_dir,document);path=write_trace_html(request.output_dir,document)
+    after=tree();changed={k for k in set(before)|set(after) if before.get(k)!=after.get(k)}
+    assert changed=={'observability/trace.json','observability/trace.html'}
+    assert seen==requests and calls==kinds and document==old
+    assert '<script type="module">' in path.read_text(encoding='utf-8')
+    # Rendering is repeatable and doesn't invoke SDK/pytest again or touch artifacts.
+    snapshot=tree();write_trace_html(request.output_dir,document)
+    assert tree()==snapshot and seen==requests and calls==kinds

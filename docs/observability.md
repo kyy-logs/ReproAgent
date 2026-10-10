@@ -38,7 +38,7 @@ cd E:\ReproAgent
 
 ```text
 task-output/observability/trace.json     # 数据
-task-output/observability/trace.html     # 单页查看器，本地静态
+task-output/observability/trace.html     # 单文件离线交互查看器
 ```
 
 run 结束（主结果封存、学习资源关闭）后自动写 JSON，再由**同一份**已脱敏的 document 渲染 HTML。
@@ -63,6 +63,25 @@ middleware 链。这是"采集前后业务一致"的前提，也是测试断言�
 **关于"思考"的边界。** 这里显示的是**接口返回的推理文本**，不是模型内部的完整思维过程，也不保证
 忠实反映内部决策。**不会**为了看思考去改 system prompt、开启 `thinking_mode`、提高输出额度或追加
 追问。缺失、被关闭或不支持时明确注明，**不补写**。
+
+## 离线查看器
+
+直接打开 `observability/trace.html` 即可，普通运行命令不变。页面的调用树与瀑布时间条保留真实父子关系，
+点击节点查看输入、输出、已返回推理、工具参数与结果。工具详情通过 `tool_call_key` 关联权限参数；
+`DENIED` 与 `RESERVED_FOR_PUBLISHING` 单独标注和筛选，权限检查不算额外工具执行。
+
+搜索覆盖名称、受控属性和已保留正文，可与类型、失败筛选组合；匹配时展开祖先，清空后恢复手动折叠。
+“验收”页签显示程序检查、模型声明和既有 verdict，不新增评分。运行提示由固定规则生成：慢步骤、
+同一逻辑调用的多次 HTTP 尝试、发布预留、已记录失败位置；不让模型再次分析。
+
+时间以记录的偏移和耗时计算，父子时长不累加；未知/非有限值不画假时间条，零耗时和点事件画刻度。
+开始时间转为浏览器本地时区并标注时区。计数遵循原 summary；`partial` 只覆盖保留数据，
+不完整 token/费用标“已知小计”。TTFT 和缓存命中率未采集，不为显示这些字段追加请求。
+
+HTML 内联打包的固定 JavaScript 模块和 CSS，无 CDN、服务器、外部资源或网络请求，生成与点击均不消耗模型 token。
+正文每个 ID 在 HTML 只保存一次，JSON 展示模型只存引用。采集内容始终转义为文本，不能执行；
+CSP 仅允许固定模块源码的 SHA-256 hash，并禁止连接、图片、iframe 等。禁用 JS 或初始化失败仍可
+阅读静态概览、原生折叠正文和验收；8 MiB HTML、6 MiB JSON、Windows 路径和原子写限制不变。
 
 ## 采集边界
 
@@ -104,7 +123,7 @@ middleware 链。这是"采集前后业务一致"的前提，也是测试断言�
 
 | 现象 | 排查位置 |
 | --- | --- |
-| 模型答得不对 | `trace.html` 的 Calls 区：`wire_request` 看它收到了什么，`provider_response` 看它返回了什么 |
+| 模型答得不对 | `trace.html` 的调用树节点详情：`wire_request` 看它收到了什么，`provider_response` 看它返回了什么 |
 | 工具调用被拒 | 时间线上的 `permission` 点（三态）+ 同 `tool_call_key` 的 `tool.*` span |
 | 复现判定可疑 | 时间线上的 `check.*` 点：`provider_claim` 是模型声明，`program_check` 是程序自己的检查 |
 | 环境/进程问题 | `process` span 的 `health`/`stop_reason`/`cleanup_ok` |
