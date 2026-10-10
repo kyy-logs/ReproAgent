@@ -459,3 +459,35 @@ def test_static_fallback_survives_missing_javascript():
     assert '<div id="trace-fallback">' in page
     assert '<div id="trace-app" hidden>' in page
     assert "FALLBACK_BODY" in page and "Decisions" in page
+
+
+def test_static_calls_link_shared_arguments_to_their_own_results():
+    doc=document(spans=[span("0"*16,"task"),span("1"*16,"permission",parent="0"*16,kind="event",tool_call_key="call-A"),span("2"*16,"tool.Read",parent="0"*16,tool_call_key="call-A"),span("3"*16,"permission",parent="0"*16,kind="event",tool_call_key="call-B"),span("4"*16,"tool.Read",parent="0"*16,tool_call_key="call-B")],contents=[stored("args",text="SHARED_ARGS"),stored("result-A",text="RESULT_A"),stored("result-B",text="RESULT_B")])
+    doc["spans"][1]["content_refs"]=["args"];doc["spans"][2]["content_refs"]=["result-A"]
+    doc["spans"][3]["content_refs"]=["args"];doc["spans"][4]["content_refs"]=["result-B"]
+    page=render_trace(doc)
+    from html.parser import HTMLParser
+    class Links(HTMLParser):
+        def __init__(self):super().__init__();self.call=None;self.refs={}
+        def handle_starttag(self,tag,attrs):
+            a=dict(attrs)
+            if 'data-static-call-key' in a:self.call=a['data-static-call-key'];self.refs[self.call]=[]
+            if tag=='a' and self.call is not None:self.refs[self.call].append(a.get('href'))
+        def handle_endtag(self,tag):
+            if tag=='li':self.call=None
+    links=Links();links.feed(page)
+    assert links.refs['2']==['#trace-content-0','#trace-content-1']
+    assert links.refs['4']==['#trace-content-0','#trace-content-2']
+    assert page.count('SHARED_ARGS')==1
+
+
+def test_nonfinite_timestamp_keeps_the_usable_trace_page():
+    doc=document(started_at=float('inf'))
+    page=render_trace(doc)
+    assert json.loads(island(page))['header']['started_at'] is None
+
+
+@pytest.mark.parametrize('bad',[-1,float('nan'),float('inf')])
+def test_static_invalid_metrics_are_unknown(bad):
+    from reproagent.trace_rendering import _figure
+    assert 'unknown' in _figure(bad)

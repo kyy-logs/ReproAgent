@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {computeVisibleRows, formatStartTime} from '../../src/reproagent/resources/trace_viewer.mjs';
+import {computeVisibleRows, formatStartTime, uncitedContentKeys} from '../../src/reproagent/resources/trace_viewer.mjs';
 
 function fixture() {
  return {roots:[0],nodes:[
@@ -49,4 +49,10 @@ test('native_unix_seconds_render_in_the_current_century',()=>{
  assert.match(formatStartTime(1791583200), /2026/);
  assert.match(formatStartTime('2026-10-10T00:00:00Z'), /2026/);
  assert.equal(formatStartTime(null),'未记录');
+});
+
+test('retained_uncited_capture_keys_are_accessible_without_fake_nodes',()=>{
+ const view=fixture();view.contents=[{key:0},{key:1}];
+ assert.deepEqual(uncitedContentKeys(view),[1]);
+ assert.equal(view.nodes.length,4);
 });

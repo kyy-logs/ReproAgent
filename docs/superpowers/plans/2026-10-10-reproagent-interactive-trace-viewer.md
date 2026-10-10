@@ -146,7 +146,7 @@ view_version=1，字段header/nodes/roots/contents/hints/time_axis。node包含k
 | V05 | 固定脚本+CSP；恶意文本不可执行、外部资源零请求；单份正文 | pass | 序列化/模板/DOM操作 |
 | V06 | 单文件file://、JS回退、桌面/窄屏、键盘和1024节点实测 | pass | 页面样式/入口/迭代逻辑 |
 | V07 | 命令/输出/模型token及调用数不变；8MiB/长路径/wheel/旧文件重建 | pass | renderer/package-data/集成测试 |
-| V08 | 命令/结果/截图/失败修复/审查齐全，未测部分单列 | review_pending | 验收回执 |
+| V08 | 命令/结果/截图/失败修复/审查齐全，未测部分单列 | pass | 验收回执 |
 
 每项记录expected/status/command/observed/evidence_ref/fix_location/recheck_command。回执和原始日志/截图保留到 `.local/interactive-trace-viewer-verification/`；截图只是视觉证据，不替代交互/安全断言。所有必选项有证据才宣称查看器验收完成。
 

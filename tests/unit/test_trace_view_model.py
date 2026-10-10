@@ -109,3 +109,20 @@ def test_hints_use_retained_attempts_and_exclude_nested_wrappers():
     view=build_trace_view(doc)
     assert any(h["kind"]=="retry" for h in view["hints"])
     assert all(h["node_key"]!=0 for h in view["hints"] if h["kind"]=="slow")
+
+
+def test_shared_wire_request_populates_each_actual_http_branch():
+    doc=fixture();doc["contents"][0].update(owner_span_id="2"*16,source="wire_request",text='{"model":"same-model"}')
+    doc["spans"][1].update(name="model.logical",kind="span",content_refs=[])
+    doc["spans"][2].update(name="model.http_attempt",parent_span_id="1"*16,content_refs=["args"])
+    doc["spans"].extend([node("3"*16,"model.logical","0"*16),node("4"*16,"model.http_attempt","3"*16)])
+    doc["spans"][-1]["content_refs"]=["args"]
+    view=build_trace_view(doc)
+    assert [view["nodes"][k]["model"] for k in (1,2,3,4)]==["same-model"]*4
+    assert view["nodes"][0]["model"] is None
+
+
+@pytest.mark.parametrize("value",[True,-1,float("nan"),float("inf")])
+def test_invalid_start_timestamp_is_unknown(value):
+    doc=fixture();doc["started_at"]=value
+    assert build_trace_view(doc)["header"]["started_at"] is None

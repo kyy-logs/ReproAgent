@@ -100,6 +100,11 @@ def build_trace_view(document: dict) -> dict:
     for group in groups.values():
         refs = list(dict.fromkeys(k for n in group for k in n["content_keys"]))
         for n in group: n["content_keys"] = list(refs)
+    http_by_content = {}
+    for n in nodes:
+        if n["kind_tag"] == "HTTP":
+            for key in n["content_keys"]:
+                http_by_content.setdefault(key, set()).add(n["key"])
     for record in records:
         if record.get("source") != "wire_request" or record.get("truncated") or record.get("excerpt_mode"):
             continue
@@ -107,11 +112,14 @@ def build_trace_view(document: dict) -> dict:
         try: model = json.loads(record["text"]).get("model")
         except (ValueError, AttributeError, RecursionError): continue
         if not isinstance(model, str): continue
-        k = id_map.get(record.get("owner_span_id"))
-        if k is None or nodes[k]["kind_tag"] != "HTTP": continue
-        while k is not None:
-            if nodes[k]["kind_tag"] in ("LLM", "HTTP"): nodes[k]["model"] = model
-            k = nodes[k]["parent_key"]
+        owners = set(http_by_content.get(content_map.get(record.get("content_id")), ()))
+        owner = id_map.get(record.get("owner_span_id"))
+        if owner is not None and nodes[owner]["kind_tag"] == "HTTP": owners.add(owner)
+        # The store deduplicates identical requests: every actual citing branch counts.
+        for k in owners:
+            while k is not None:
+                if nodes[k]["kind_tag"] in ("LLM", "HTTP"): nodes[k]["model"] = model
+                k = nodes[k]["parent_key"]
     total = number(document.get("total_duration"))
     ends = [n["offset_seconds"] + (n["duration_seconds"] or 0) for n in nodes
             if n["offset_seconds"] is not None]
@@ -126,7 +134,8 @@ def build_trace_view(document: dict) -> dict:
     usage, cost = summary.get("usage") or {}, summary.get("cost") or {}
     tin, tout = number(usage.get("input_tokens")), number(usage.get("output_tokens"))
     header = dict(status=document.get("status", "unknown"), trace_id=document.get("trace_id"),
-                  task_id=document.get("task_id"), started_at=document.get("started_at"),
+                  task_id=document.get("task_id"), started_at=(document.get("started_at") if isinstance(document.get("started_at"), str)
+                              else number(document.get("started_at"))),
                   main_duration=number(document.get("main_duration")), total_duration=total,
                   partial=bool(document.get("partial")), metrics_complete=document.get("metrics_complete", True),
                   content_complete=document.get("content_complete", True),

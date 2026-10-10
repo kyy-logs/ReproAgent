@@ -176,7 +176,8 @@ def _seconds(value: Any) -> str:
 
 def _figure(value: Any) -> str:
     """A number, or a plain admission that nobody reported one."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    from .trace_view_model import number
+    if number(value) is None:
         return f'<span class="unknown">{UNKNOWN_TEXT}</span>'
     return _esc(f"{value:g}")
 
@@ -279,8 +280,19 @@ def render_content_registry(document: dict) -> str:
     return "\n".join(parts)
 
 
-def _render_contents(document: dict) -> str:
-    return render_content_registry(document)
+def _render_contents(document: dict, view: dict | None = None) -> str:
+    from .trace_view_model import build_trace_view
+    view = view if view is not None else build_trace_view(document)
+    rows = []
+    for node in view["nodes"]:
+        if not node["content_keys"]: continue
+        call = node["attributes"].get("tool_call_key")
+        label = f'{node["label"]} · {node["span_id"]}' + (f' · call {call}' if call else '')
+        refs = " · ".join(f'<a href="#trace-content-{k}">{_esc(_source_label(view["contents"][k]["source"]))} [content {k}]</a>'
+                          for k in node["content_keys"])
+        rows.append(f'<li data-static-call-key="{node["key"]}"><span>{_esc(label)}</span>: {refs}</li>')
+    index = '<h3>Call → content references</h3><ul class="capture-index">' + "".join(rows) + '</ul>' if rows else ''
+    return index + render_content_registry(document)
 
 
 def serialize_trace_view(view: dict) -> str:
@@ -318,7 +330,7 @@ def _render_decisions(document: dict) -> str:
     return f"{parts[0]}<table>{head}{''.join(rows)}</table>"
 
 
-def _render_body(document: dict) -> str:
+def _render_body(document: dict, view: dict | None = None) -> str:
     parts = [
         '<section id="overview"><h1>ReproAgent activity trace</h1>',
         f'<p class="meta"><span class="pill status-{_esc(document.get("status") or "unknown")}">'
@@ -340,7 +352,7 @@ def _render_body(document: dict) -> str:
     parts.append(_render_stats(document.get("summary") or {}))
     parts.append(_render_timeline(document.get("spans") or ()))
     parts.append("</section>")
-    parts.append(f'<section id="calls">{_render_contents(document)}</section>')
+    parts.append(f'<section id="calls">{_render_contents(document, view)}</section>')
     parts.append(f'<section id="decisions">{_render_decisions(document)}</section>')
     return "\n".join(parts)
 
@@ -360,7 +372,7 @@ def render_trace(document: dict) -> str:
     view = build_trace_view(document)
     source = files("reproagent").joinpath("resources/trace_viewer.mjs").read_text(encoding="utf-8")
     digest = base64.b64encode(hashlib.sha256(source.encode("utf-8")).digest()).decode("ascii")
-    page = template.replace(TEMPLATE_MARKER, _render_body(document))
+    page = template.replace(TEMPLATE_MARKER, _render_body(document, view))
     page = page.replace("<!--TRACE-DATA-->", serialize_trace_view(view))
     page = page.replace("<!--TRACE-SCRIPT-->", source)
     page = page.replace("<!--TRACE-HASH-->", digest)

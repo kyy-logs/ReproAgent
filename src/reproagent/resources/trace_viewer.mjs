@@ -32,6 +32,11 @@ export function computeVisibleRows(view, state, matchedContentKeys = new Set()) 
   return rows;
 }
 
+export function uncitedContentKeys(view) {
+  const cited=new Set(view.nodes.flatMap(n=>n.content_keys));
+  return view.contents.filter(c=>!cited.has(c.key)).map(c=>c.key);
+}
+
 export function formatStartTime(value) {
   if(value === null || value === undefined || typeof value === 'boolean') return '未记录';
   const d = new Date(typeof value === 'number' ? value * 1000 : value);
@@ -59,6 +64,7 @@ export function mountTraceViewer(root, view) {
     collapsedKeys:new Set(view.nodes.filter(n=>n.depth>=2&&n.child_keys.length).map(n=>n.key)),selectedKey:null};
   const captures = new Map(view.contents.map(c=>[c.key,document.getElementById(c.container_id)]));
   const bodyIndex = new Map([...captures].map(([k,e])=>[k,e?.querySelector('[data-content-body]')?.textContent?.toLowerCase() || '']));
+  const captureHomes=new Map([...captures.keys()].map(k=>[k,fallback.querySelector('#calls')]));
   const fragment = document.createDocumentFragment();
   const h = view.header;
   const heading=el('div','trace-heading'); heading.append(el('h1','','ReproAgent Trace'),el('span','pill',h.status),el('span','trace-id',figure(h.trace_id)));
@@ -84,6 +90,9 @@ export function mountTraceViewer(root, view) {
   callsTab.setAttribute('role','tab'); decisionsTab.setAttribute('role','tab');
   callsTab.setAttribute('aria-selected','true'); decisionsTab.setAttribute('aria-selected','false');
   tabs.append(callsTab,decisionsTab); fragment.append(tabs);
+  const unlinked=el('details','trace-uncited');const uncited=uncitedContentKeys(view);
+  unlinked.append(el('summary','','未关联到保留节点的正文 · '+uncited.length));unlinked.hidden=!uncited.length;
+  for(const k of uncited)captureHomes.set(k,unlinked);
   const calls=el('section',''); calls.id='trace-calls-panel';
   const acceptance=el('section',''); acceptance.id='trace-acceptance-panel'; acceptance.hidden=true;
   callsTab.setAttribute('aria-controls',calls.id); decisionsTab.setAttribute('aria-controls',acceptance.id);
@@ -106,7 +115,7 @@ export function mountTraceViewer(root, view) {
   option(permission,'','全部权限结果'); option(permission,'ALLOWED','ALLOWED · 允许');
   option(permission,'DENIED','DENIED · 拒绝');option(permission,'RESERVED_FOR_PUBLISHING','RESERVED · 发布预留');
   permission.addEventListener('change',()=>{state.permissionFilter=permission.value;drawRows();});
-  toolbar.append(search,clear,types,errorLabel,permission);calls.append(toolbar);
+  toolbar.append(search,clear,types,errorLabel,permission);calls.append(toolbar,unlinked);
   const workspace=el('div','trace-workspace'), tree=el('div','trace-tree'), detail=el('aside','trace-detail'); detail.hidden=true; detail.setAttribute('aria-label','节点详情');
   const axis=el('div','axis-row');axis.append(el('span','',view.time_axis.label));
   const ticks=el('div','axis-ticks'); const extent=view.time_axis.extent_seconds;
@@ -117,7 +126,7 @@ export function mountTraceViewer(root, view) {
 
   function showTab(decisions) { calls.hidden=decisions;acceptance.hidden=!decisions;
     callsTab.setAttribute('aria-selected',String(!decisions));decisionsTab.setAttribute('aria-selected',String(decisions)); }
-  function restoreCaptures() { const registry=fallback.querySelector('#calls'); for(const item of captures.values()) if(item) registry.append(item); }
+  function restoreCaptures() { for(const [k,item] of captures) if(item) captureHomes.get(k).append(item); }
   function closeDetail() { const key=state.selectedKey; restoreCaptures();detail.replaceChildren();detail.hidden=true;
     workspace.classList.remove('has-detail');state.selectedKey=null;drawRows();rows.querySelector('[data-select-key="'+key+'"]')?.focus(); }
   function selectNode(key) {
@@ -171,6 +180,7 @@ export function mountTraceViewer(root, view) {
     rows.replaceChildren(frag);
   }
   drawRows();root.replaceChildren(fragment);
+  for(const k of uncited)if(captures.get(k))unlinked.append(captures.get(k));
   // Move the static acceptance section, preserving a single set of check elements.
   const decisions=fallback.querySelector('#decisions'); if(decisions)acceptance.append(decisions);
   root.hidden=false;fallback.hidden=true;

@@ -15,7 +15,7 @@ Run from the implementation checkout, with `REPROAGENT_RG_PATH` pointing to the 
 | `.venv/Scripts/python.exe -m pytest tests/integration/test_installed_package.py tests/integration/test_observability_end_to_end.py -q` | 8 passed, 80.32s |
 | `E:/node/nodejs/node.exe --test tests/frontend/trace_viewer.test.mjs` | 7 passed |
 | `.venv/Scripts/python.exe -m pip check` | No broken requirements |
-| `E:/node/nodejs/node.exe .local/interactive-trace-viewer-verification/browser-check.cjs` | 11 scenario checks passed, zero page errors / external requests |
+| `E:/node/nodejs/node.exe .local/interactive-trace-viewer-verification/browser-check.cjs` | 12 scenario checks passed, zero page errors / external requests |
 
 Browser: Chrome 155.0.8059.39 through bundled Playwright, isolated temporary headless profile.
 No browser installation, configured user profile mutation or remote backend. file:// at 1366x900 and 800x900.
@@ -34,9 +34,10 @@ All evidence paths below are relative to `.local/interactive-trace-viewer-verifi
 | V05 | pass: data-island escaping, exact module/hash, one body, zero external requests and XSS marker absent | regression.log, browser-results.json | rendering / module; rerun unit + browser |
 | V06 | pass: file://, JS disabled + init failure fallback, narrow layout, keyboard return focus, 1024-depth search | browser.log, desktop.png, narrow.png | template / module; rerun browser |
 | V07 | pass: wheel includes/inlines module in independent env; no additional SDK/pytest work or task artifacts; old JSON retained; size and path guards | integration-recheck.log, regression.log | packaging / rendering; rerun both Python commands |
-| V08 | pending independent GPT-6.1 review; commands and browser evidence preserved | progress.md, review-report.md (after review) | acceptance receipt |
+| V08 | pass: independent GPT-6.1 review plus one RED/GREEN correction pass; commands/browser evidence preserved | progress.md, review-report.md, review-red.log, review-green.log, final-regression.log | acceptance receipt |
 
-The three platform/capability skips are explicit pytest skips in the regression log; they are not counted as passes.
+The three skips are two Windows symlink-creation privilege checks and one interpreter-link test inapplicable to this interpreter.
+They are explicit skips, not passes; regression-skip-reasons.log and final-regression.log preserve the reasons.
 The older 704-pass migration suite is not this viewer's acceptance. No new domain changes require repeating that full suite.
 
 ## Failures and corrections
@@ -60,4 +61,29 @@ The older 704-pass migration suite is not this viewer's acceptance. No new domai
 
 ## Independent review
 
-Pending. Reviewer must be GPT-6.1, read-only, no Astra, and cover all five Review Focus items from the implementation plan.
+GPT-6.1 reviewed 9e12b97..15c7dec read-only, without Astra or subagents; no Critical findings.
+Four Important findings were verified: static per-call associations lost, uncited retained captures hidden,
+shared requests attributed only to the first branch, nonfinite start timestamps refusing the page.
+One Minor numeric fallback inconsistency was regraded Important because the supported static view must not
+present impossible counts/cost as measured data. All five findings entered one consolidated correction pass.
+
+- Python regressions: 10 failures observed before the fixes, then 52 model/renderer tests passed.
+- Frontend uncited-content helper: missing export RED, then 8 tests passed.
+- Browser uncited-content access: missing entry point RED, then 12 scenarios passed; static references also checked.
+- Final related Python suite: **98 passed, 3 skipped in 94.93s**, command below. Node: **8 passed**; pip check green.
+- No second review was requested; corrections are verified by their regressions and the final related suite.
+- No unresolved review findings or deferred minors. Initial reviewer verdict was "with fixes"; the author verified fixes.
+
+```powershell
+.venv/Scripts/python.exe -m pytest tests/unit/test_trace_view_model.py tests/unit/test_trace_rendering.py tests/unit/test_paths.py tests/integration/test_cli.py tests/integration/test_windows_long_paths.py tests/integration/test_installed_package.py tests/integration/test_observability_end_to_end.py -q -rs
+E:/node/nodejs/node.exe --test tests/frontend/trace_viewer.test.mjs
+```
+
+Final evidence: final-regression.log, frontend-final.log, browser-final.log, browser-results.json,
+pip-check-final.log, review-report.md, review-red.log, review-browser-red.log, review-green.log.
+
+Additional rulings from the review:
+- Static malformed numbers are treated as Important, with three numeric validation regressions; cost if overgraded: small extra test/display work.
+- Synthetic SDK/tool duplicate hints are not a current collector behavior; retain current rule. Cost if a future wrapper appears: duplicate hints may need suppression.
+- Configured browser-act profiles and live providers/full domain regression remain outside this display-only acceptance; isolated Chrome/scripted SDK cover changes.
+  Cost if wrong: environment-specific behavior is not covered. No real provider tokens were spent.
