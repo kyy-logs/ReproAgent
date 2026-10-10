@@ -1,0 +1,152 @@
+{
+  "schema1": {
+    "schema_version": 1,
+    "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "root_span_id": "0000000000000000",
+    "total_duration": 10,
+    "status": "DONE",
+    "spans": [
+      {
+        "span_id": "0000000000000000",
+        "otel_span_id": "0000000000000000",
+        "otel_status": "UNSET",
+        "name": "task",
+        "parent_span_id": null,
+        "kind": "span",
+        "status": "ok",
+        "attributes": {},
+        "offset_seconds": 0,
+        "duration_seconds": 1
+      },
+      {
+        "span_id": "1111111111111111",
+        "otel_span_id": "1111111111111111",
+        "otel_status": "UNSET",
+        "name": "permission",
+        "parent_span_id": "0000000000000000",
+        "kind": "event",
+        "status": "ok",
+        "attributes": {
+          "tool_call_key": "call",
+          "result_code": "ALLOWED"
+        },
+        "offset_seconds": 0,
+        "duration_seconds": 1,
+        "content_refs": [
+          "args"
+        ]
+      },
+      {
+        "span_id": "2222222222222222",
+        "otel_span_id": "2222222222222222",
+        "otel_status": "UNSET",
+        "name": "tool.Read",
+        "parent_span_id": "0000000000000000",
+        "kind": "span",
+        "status": "ok",
+        "attributes": {
+          "tool_call_key": "call"
+        },
+        "offset_seconds": 0,
+        "duration_seconds": 1
+      }
+    ],
+    "contents": [
+      {
+        "content_id": "args",
+        "owner_span_id": "1111111111111111",
+        "source": "sdk_tool_input",
+        "availability": "captured",
+        "text": "unique body",
+        "truncated": false
+      }
+    ],
+    "summary": {
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "complete": true
+      },
+      "cost": {
+        "amount": 0.1,
+        "complete": true
+      },
+      "logical_calls": 1
+    }
+  },
+  "schema2": {
+    "schema_version": 2,
+    "trace_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "root_span_id": "0000000000000000",
+    "total_duration": 10,
+    "status": "DONE",
+    "spans": [
+      {
+        "span_id": "0000000000000000",
+        "otel_span_id": "0000000000000000",
+        "otel_status": "UNSET",
+        "name": "task",
+        "parent_span_id": null,
+        "kind": "span",
+        "status": "ok",
+        "attributes": {},
+        "offset_seconds": 0,
+        "duration_seconds": 1
+      },
+      {
+        "span_id": "point:0000000000000000:1",
+        "otel_span_id": null,
+        "otel_status": "UNSET",
+        "name": "permission",
+        "parent_span_id": "0000000000000000",
+        "kind": "point",
+        "status": "ok",
+        "attributes": {
+          "tool_call_key": "call",
+          "result_code": "ALLOWED"
+        },
+        "offset_seconds": 0,
+        "duration_seconds": 1,
+        "content_refs": [
+          "args"
+        ]
+      },
+      {
+        "span_id": "2222222222222222",
+        "otel_span_id": "2222222222222222",
+        "otel_status": "UNSET",
+        "name": "tool.Read",
+        "parent_span_id": "0000000000000000",
+        "kind": "span",
+        "status": "ok",
+        "attributes": {
+          "tool_call_key": "call"
+        },
+        "offset_seconds": 0,
+        "duration_seconds": 1
+      }
+    ],
+    "contents": [
+      {
+        "content_id": "args",
+        "owner_span_id": "point:0000000000000000:1",
+        "source": "sdk_tool_input",
+        "availability": "captured",
+        "text": "unique body",
+        "truncated": false
+      }
+    ],
+    "summary": {
+      "usage": {
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "complete": true
+      },
+      "cost": {
+        "amount": 0.1,
+        "complete": true
+      },
+      "logical_calls": 1
+    }
+  }
+}
