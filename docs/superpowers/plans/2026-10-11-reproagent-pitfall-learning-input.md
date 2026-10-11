@@ -50,7 +50,7 @@
 
 **Selection:** Use `run.completed` references and `execution_role=original`, grouping by actual candidate ID. Select the latest candidate and closest earlier candidate with different code or execution settings (fallback to the preceding ID for repeated identical attempts), chronological order. Track all original run/repeat counts; read selected candidates/contracts/snapshots with binding and hash checks. Send no verdict reasoning as proved cause: typed classification and known confirmation status are observations only. Retain candidate hypotheses as explicitly untrusted statements.
 
-**Atoms:** The issue is preserved whole and is subject to the 8192-byte input boundary. Add workflow measurements and small per-attempt execution summaries first, including actual failing test/node/exception/observed comparison. Add controlled protocol errors, exact cited original source segments, candidate code fragments for failing test functions (whole AST function when possible; complete lines and explicit context omissions), and framework error summaries. Use <=2048 serialized bytes per optional atom, <=24 entries, <=16 omissions. Repeated body stays in its original artifact; a source fragment always carries a verified original-file hash and exact line range. The packed payload is measured after every proposed addition; a skipped atom does not erase unrelated groups.
+**Atoms:** The issue is preserved whole and is subject to the 8192-byte input boundary. Add workflow measurements and small per-attempt execution summaries first, including actual failing test/node/exception/observed comparison. Add controlled protocol errors and candidate code fragments for failing test functions (whole AST function when possible; complete lines and explicit context omissions) before secondary crash/framework details. Exact cited original source segments are validated against the task original snapshot; later fixed-version freeze events never extend this allowlist. Use <=2048 serialized bytes per optional atom, <=24 entries, <=16 omissions. Repeated body stays in its original artifact; a source fragment always carries a verified original-file hash and exact line range. The packed payload is measured after every proposed addition; a skipped atom does not erase unrelated groups.
 
 - [x] Write RED tests for two distinct attempts, large original failure still producing workflow material, original-only boundaries, altered source rejection, source/code fragments and UTF-8 final cap.
 - [x] Run new tests in an outside-checkout unique temporary directory; confirm expected behavior failures.
@@ -66,14 +66,16 @@
 - `AgentScopeExplorer.learning_context`: initialized empty; captured after `runtime.aclose()` while its messages are still available. Factory cleanup always runs even when capture fails.
 - `ExperienceService.retain_exploration(context)` and `prepare_learning_input(... exploration=self.exploration)`; Controller uses an optional callable handoff after explorer closes. Existing injected ports remain compatible.
 
-- [ ] Write RED SDK/lifecycle tests with trace disabled: a real Read error survives close, original source refs survive, old memory and arbitrary assistant claims are absent, and learning begins only after main clients close and result seals.
-- [ ] Implement capture/handoff without extra model requests or changed tool results. Include all needed tool-call association fields as measured facts; missing links remain explicit.
-- [ ] Wire build codes into `LearningResult` and learning events. Diagnostics distinguish oversized from invalid/missing material; selected/omitted information is included in the learning payload and observation event.
-- [ ] Update extraction prompt and docs: independent request sees representative pitfall history, fragments are not complete programs, temporal sequence/hypothesis is not proof of causation. No successes are invented for failed/exhausted tasks.
-- [ ] Run all experience lifecycle/evaluation/SDK tests; run full pytest and Node viewer tests. Preserve logs and counts.
-- [ ] One fresh reviewer (GPT-6.1, not Astra) reviews the branch against this plan. Reproduce important findings RED->GREEN; run affected checks and a green full suite after fixes. No paid-model semantic accuracy claim.
-- [ ] Write acceptance record and commit final feature. Keep the worktree for review; no push/merge unless authorized separately.
+- [x] Write RED SDK/lifecycle tests with trace disabled: a real Read error survives close, original source refs survive, old memory and arbitrary assistant claims are absent, and learning begins only after main clients close and result seals.
+- [x] Implement capture/handoff without extra model requests or changed tool results. Include all needed tool-call association fields as measured facts; missing links remain explicit.
+- [x] Wire build codes into `LearningResult` and learning events. Diagnostics distinguish oversized from invalid/missing material; selected/omitted information is included in the learning payload and observation event.
+- [x] Update extraction prompt and docs: independent request sees representative pitfall history, fragments are not complete programs, temporal sequence/hypothesis is not proof of causation. No successes are invented for failed/exhausted tasks.
+- [x] Run all experience lifecycle/evaluation/SDK tests; run full pytest and Node viewer tests. Preserve logs and counts.
+- [x] One fresh reviewer (GPT-6.1, not Astra) reviews the branch against this plan. Reproduce important findings RED->GREEN; run affected checks and a green full suite after fixes. No paid-model semantic accuracy claim.
+- [x] Write acceptance record and commit final feature. Keep the worktree for review; no push/merge unless authorized separately.
 
 ## Execution Ledger
 
 Use `.superpowers/sdd/2026-10-11-reproagent-pitfall-learning-input/progress.md` for task progress, commands, review findings and rulings. Baseline is main commit `1c7a604`; relevant baseline tests run in the worktree environment before edits. Final receipt contains all incomplete/skipped checks and the limits of offline validation.
+
+**Execution completed:** 757 pytest tests passed, 5 Windows-link-privilege skips; Node viewer 8 passed. Fresh GPT-6.1-sol review found three P2 issues, all reproduced RED then fixed GREEN; final full suite passed. Saved diag-8365 projection: 8022 bytes, two attempts, two candidate fragments, original trace/verdict hashes unchanged, no paid provider calls. Receipt: `docs/reviews/2026-10-11-pitfall-learning-acceptance.md`.

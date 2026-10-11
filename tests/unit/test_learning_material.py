@@ -39,6 +39,59 @@ def test_observed_code_has_priority_over_unverified_hypotheses(tmp_path, project
     assert len(canonical_bytes(material.payload)) <= 8192
 
 
+def test_repeated_failure_details_do_not_displace_candidate_fragments(tmp_path, projects, facts):
+    from tests.unit.test_controller import nothing
+    body = ('from example.parser import parse\n'
+        'def test_empty_one(): assert parse([]) == []\n'
+        'def test_empty_two(): assert parse([]) == []\n')
+    request, model, controller, context = setup(tmp_path, projects, facts,
+        plan=[publish(content=body), publish(content=body+'# adjustment\n'), nothing()])
+    request.issue_file.write_text('Empty input must return [].\n' * 65, encoding='utf-8')
+    model.classification = 'NOT_REPRODUCED'
+    result = asyncio.run(controller.run(request, context))
+    events, _ = controller.store.read_events()
+    for event in events:
+        if event.kind != 'run.completed':
+            continue
+        run_id = event.refs[0].split('/')[1]
+        run = controller.store.load_record('runs', run_id)
+        tests = tuple(dict(phase, crash=dict(phase.get('crash') or {}, context='duplicate ' * 100))
+            if phase.get('outcome') == 'failed' else phase for phase in run.observation.tests)
+        changed = replace(run, observation=replace(run.observation, tests=tests))
+        atomic_write(controller.store.record_path('runs', run_id), canonical_bytes(encode_record(changed)))
+    material = exp().build_learning_input(controller.store, result, facts.context())
+    assert material is not None
+    assert sum(entry['kind'] == 'candidate' for entry in material.payload['evidence']) == 2
+    assert all(attempt['evidence_ids'] for attempt in material.payload['attempts'])
+    assert len(canonical_bytes(material.payload)) <= 8192
+
+
+def test_registered_fixed_snapshot_cannot_supply_learning_source(tmp_path, projects, facts):
+    from reproagent.workspace import Workspace
+    from reproagent.core.models import EvidenceRef
+    from reproagent.core.serialization import bytes_hash
+    from reproagent.learning_material import prepare_learning_input
+    _, result, store, _, _, original, request = export_setup(tmp_path, projects, facts)
+    atomic_write(store.root/'input/issue.md', (original.root/'issue.md').read_bytes())
+    fixed_repo = projects.fixed(tmp_path/'fixed')
+    fixed = Workspace(store.root, store).freeze(replace(request, repo=fixed_repo), facts.context())
+    source = fixed.root/'example/parser.py'
+    ref = EvidenceRef(source.relative_to(store.root).as_posix(), bytes_hash(source.read_bytes()), 1, 2)
+    built = prepare_learning_input(store, result, facts.context(), exploration={'source_refs':(ref,)})
+    assert built.code == 'skipped_invalid_evidence'
+    assert not (store.root/'learning/evidence.jsonl').exists()
+
+
+def test_small_candidate_uses_same_line_boundary_validation(tmp_path, projects, facts):
+    from reproagent.learning_material import prepare_learning_input
+    body = 'from example.parser import parse\nNOTE = "a\u2028b"\ndef test_empty(): assert parse([]) == []\n'
+    request, _, controller, context = setup(tmp_path, projects, facts, plan=[publish(content=body)])
+    result = asyncio.run(controller.run(request, context))
+    built = prepare_learning_input(controller.store, result, facts.context())
+    assert built.code == 'skipped_invalid_evidence'
+    assert not (controller.store.root/'learning/evidence.jsonl').exists()
+
+
 @pytest.mark.parametrize('mutation', ['altered', 'fixed', 'unicode_lines'])
 def test_untrustworthy_exploration_source_is_rejected(tmp_path, projects, facts, mutation):
     from reproagent.core.models import EvidenceRef

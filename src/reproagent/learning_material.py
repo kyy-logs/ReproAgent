@@ -42,10 +42,10 @@ def _ref(store, path):
 
 def _candidate_fragment(data, failed_names):
     """Whole source when small; otherwise one complete relevant AST function."""
+    lines = _lines(data)
     text = data.decode('utf-8')
     if len(canonical_bytes({'content': text})) <= ATOM_BYTES - 300:
         return text, 1, max(1, len(data.splitlines())), False
-    lines = _lines(data)
     try:
         tree = ast.parse(text)
     except SyntaxError:
@@ -243,10 +243,17 @@ def _prepare(store, result, context, *, secrets, exploration):
     registered = {}
     # Reading source may precede the first candidate; the freeze event is the
     # original registration boundary even when no test could be published.
-    for event in events:
-        if event.kind != 'snapshot.created':
-            continue
-        snapshot = store.load_record('snapshots', event.payload['snapshot_id'])
+    # Controller freezes the task original first, and may freeze the supplied
+    # fixed version later. Only the first freeze can supply exploration facts;
+    # original executions must independently bind to that same snapshot.
+    first_freeze = next((event for event in events if event.kind == 'snapshot.created'), None)
+    original_ids = {run.snapshot_id for run in originals}
+    primary_id = first_freeze.payload.get('snapshot_id') if first_freeze is not None else next(iter(original_ids), None)
+    if (len(original_ids) > 1 or first_freeze is not None and not isinstance(primary_id, str)
+        or original_ids and primary_id not in original_ids):
+        raise ValueError('ambiguous original snapshot registration')
+    if primary_id is not None:
+        snapshot = store.load_record('snapshots', primary_id)
         if not is_within(snapshot.root, safe_child(store.root, 'snapshots')):
             raise ValueError('snapshot escapes original collection')
         registered.update({str(workspace_path(snapshot.root / f.path).resolve()):f.content_hash for f in snapshot.files})
@@ -261,12 +268,12 @@ def _prepare(store, result, context, *, secrets, exploration):
         candidate = candidates[candidate_id]
         contract = store.load_contract(candidate.contract_id, candidate.contract_version)
         snapshot = store.load_record('snapshots', candidate.snapshot_id)
-        if (candidate_hash(candidate) != candidate.manifest_hash or not is_within(snapshot.root, store.root)
+        if (candidate_hash(candidate) != candidate.manifest_hash or candidate.snapshot_id != primary_id
+            or not is_within(snapshot.root, store.root)
             or any(r.candidate_id != candidate_id or r.snapshot_id != candidate.snapshot_id
                 or r.manifest_hash != candidate.manifest_hash or r.contract_id != candidate.contract_id
                 or r.contract_version != candidate.contract_version for r in runs)):
             raise ValueError('learning binding invalid')
-        registered.update({str(workspace_path(snapshot.root / f.path).resolve()):f.content_hash for f in snapshot.files})
         for source in contract.sources:
             path = safe_child(store.root, source.path)
             if source.path != 'input/issue.md' and registered.get(str(path.resolve())) != source.content_hash:
@@ -330,7 +337,22 @@ def _prepare(store, result, context, *, secrets, exploration):
     for issue_code in exploration.get('capture_issues', ())[:4]:
         omit('exploration', str(issue_code))
 
-    # Outcomes precede large optional code: one oversized field cannot erase the episode.
+    # Attempt outcomes are already present. Preserve concrete test code before
+    # secondary crash details can consume the remaining input budget.
+    for candidate_id, file, path, data, failed_names in files:
+        fragment = _candidate_fragment(data, failed_names)
+        if fragment is None:
+            omit('candidate', 'NO_COMPLETE_FRAGMENT_FITS', len(data))
+            continue
+        text, start, end, partial = fragment
+        ref = EvidenceRef(relative_name(path,store.root), file.content_hash, start, end)
+        identity = add('candidate', {'candidate_id':candidate_id, 'path':file.path, 'content':text,
+            'start_line':start, 'end_line':end, 'partial_context':partial}, (ref,), ('model',))
+        if identity:
+            next(a for a in payload['attempts'] if a['candidate_id']==candidate_id)['evidence_ids'].append(identity)
+        if partial:
+            omit('candidate_context', 'OTHER_CODE_RETAINED_IN_ORIGINAL_ARTIFACT')
+    # Additional failure details are optional: one oversized field cannot erase the episode.
     for attempt, run, failed in run_details:
         origin = (_ref(store, store.record_path('runs', run.run_id)),)
         for phase in failed[:2]:
@@ -375,19 +397,6 @@ def _prepare(store, result, context, *, secrets, exploration):
         add('source', {'path':_redact(source.path,secrets), 'start_line':source.start_line,
             'end_line':source.end_line, 'content':text, 'scope':'cited original fragment'}, (ref,), ('framework','model'))
 
-    for candidate_id, file, path, data, failed_names in files:
-        fragment = _candidate_fragment(data, failed_names)
-        if fragment is None:
-            omit('candidate', 'NO_COMPLETE_FRAGMENT_FITS', len(data))
-            continue
-        text, start, end, partial = fragment
-        ref = EvidenceRef(relative_name(path,store.root), file.content_hash, start, end)
-        identity = add('candidate', {'candidate_id':candidate_id, 'path':file.path, 'content':text,
-            'start_line':start, 'end_line':end, 'partial_context':partial}, (ref,), ('model',))
-        if identity:
-            next(a for a in payload['attempts'] if a['candidate_id']==candidate_id)['evidence_ids'].append(identity)
-        if partial:
-            omit('candidate_context', 'OTHER_CODE_RETAINED_IN_ORIGINAL_ARTIFACT')
     for hypothesis in hypotheses:
         add('agent_hypothesis', hypothesis, categories=('model','workflow'))
     # References appended to attempts have a cost too.
