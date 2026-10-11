@@ -34,8 +34,8 @@ def test_native_content_sources_and_limits():
         session.close()
         doc=session.sink.finish(task_id="one",status="DONE",main_duration=1)
     content=next(c for c in doc["contents"] if c["source"] == "sdk_model_input")
-    assert content["truncated"]
-    assert len(json.dumps(content,ensure_ascii=False).encode()) <= 32768
+    assert not content["truncated"]
+    assert len(json.dumps(content,ensure_ascii=False).encode()) <= 262144
 
 
 def test_dropped_sdk_attributes_mark_partial():

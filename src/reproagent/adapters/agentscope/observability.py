@@ -11,7 +11,7 @@ from opentelemetry import trace, context as otel_context
 from .middleware import PhaseEnded
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
-from ...observability import current_handle, span, tool_call_key
+from ...observability import current_handle, span, tool_call_key, tracing_enabled
 from ...otel_backend import current_sink
 
 MODEL_ROUND_SPAN='sdk.model_call'
@@ -39,6 +39,20 @@ def tool_result(response) -> dict:
         text = getattr(block, "text", None)
         blocks.append(text if isinstance(text, str) else {"type": getattr(block, "type", "unknown")})
     return {"content": blocks, "state": str(getattr(response, "state", ""))}
+
+
+def capture_sdk_model_input(input_kwargs):
+    if not tracing_enabled(): return
+    try:
+        from ...otel_projection import project_sdk_messages
+        def copy(item):
+            if hasattr(item,'model_dump'): return project_sdk_messages(item.model_dump(mode='json'))
+            if isinstance(item,list): return [copy(x) for x in item]
+            if isinstance(item,dict): return project_sdk_messages({k:copy(v) for k,v in item.items()})
+            return item
+        current_handle().capture('sdk_model_input',copy(input_kwargs.get('messages',[])),source='sdk_model_input')
+    except Exception:
+        current_handle().capture('sdk_model_input',None,source='sdk_model_input',availability='capture_error')
 
 
 class SafeTracingMiddleware(TracingMiddleware):
@@ -122,6 +136,7 @@ class ReproTraceMiddleware(MiddlewareBase):
     async def on_model_call(self,agent,input_kwargs,next_handler):
         handle=current_handle()
         handle.annotate(purpose='exploration')
+        capture_sdk_model_input(input_kwargs)
         try: return await next_handler()
         except (PhaseEnded,BudgetStopped) as exc:
             handle.annotate(result_code='PHASE_ENDED' if isinstance(exc,PhaseEnded) else str(exc.reason))

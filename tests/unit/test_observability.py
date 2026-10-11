@@ -412,7 +412,7 @@ def test_a_span_that_captured_nothing_says_why():
     assert ref is not None
     assert entry["content_refs"] == [ref]
     assert entry["content_status"] == "not_returned"
-    assert document["content_complete"] is False
+    assert document["content_complete"] is True
 
 
 def test_record_check_returns_the_value_and_records_the_outcome():

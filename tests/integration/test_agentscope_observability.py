@@ -601,3 +601,28 @@ def test_disabled_tracing_leaves_the_middleware_chain_alone(tmp_path, projects, 
 
     assert [type(middleware).__name__ for middleware in env.runtime._agent._model_call_middlewares] \
         == ["ExplorationMiddleware"]
+
+
+def test_one_step_three_http_attempts_has_one_charge(tmp_path,projects,facts):
+    with traced(tmp_path,projects,facts,answers=[BUSY,BUSY,text_reply()]) as env:
+        explore(env)
+        doc=document(env)
+    charges=named(doc,"budget.step_charged")
+    assert len(charges)==1 and env.context.budget.steps_used==1
+    assert charges[0]["attributes"]["budget"]["steps_remaining"]==19
+    assert doc["summary"]["http_attempts"]==3
+
+
+def test_hook_keeps_sdk_input_beyond_native_attribute_limit(tmp_path,projects,facts,monkeypatch):
+    import sys
+    module=sys.modules[__name__]
+    monkeypatch.setattr(module,'SYSTEM_PROMPT','HEAD '+('x'*80000)+' MIDDLE TAIL')
+    with traced(tmp_path,projects,facts,answers=[text_reply()]) as env:
+        explore(env);doc=document(env)
+    records=[r for r in doc['contents'] if r['source']=='sdk_model_input']
+    assert len(records)==1 and records[0]['availability']=='captured'
+    assert not records[0]['truncated']
+    assert 'HEAD' in records[0]['text'] and 'MIDDLE TAIL' in records[0]['text']
+    wires=[r for r in doc['contents'] if r['source']=='wire_request']
+    assert wires and not wires[0]['truncated']
+    assert len(env.requests)==1

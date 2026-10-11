@@ -29,7 +29,7 @@ class Exporter:
                 raise BudgetStopped('EXHAUSTED', 'local finalization deadline exceeded')
             if success and context:
                 context.budget.check()
-                if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+                if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED', dimension='cancelled')
         # One shared set of task-root spellings for bytes and for decoded records, longest
         # first: the native form, its forward-slash form and the JSON-escaped form.
         root_spellings = tuple(sorted({str(store.root), str(store.root).replace('\\', '/'),

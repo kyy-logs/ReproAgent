@@ -80,7 +80,7 @@ class ReproAgent:
         for attempt in range(3):
             self.context.budget.check()
             if self.context.cancel_event.is_set():
-                raise BudgetStopped('CANCELLED')
+                raise BudgetStopped('CANCELLED', dimension='cancelled')
             try:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt('analyze_issue')},
                     {'role':'user','content':canonical_bytes(data).decode()}), 'contract'), self.context)

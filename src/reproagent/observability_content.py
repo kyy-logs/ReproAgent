@@ -20,7 +20,7 @@ from typing import Any, Iterable
 
 #: How much content one run may keep, and how much room it has to keep it in.
 MAX_CONTENT_ITEMS = 512
-MAX_CONTENT_BYTES = 32768
+MAX_CONTENT_BYTES = 256 << 10
 MAX_CONTENTS_BYTES = 4 << 20
 
 CAPTURED = "captured"
@@ -84,128 +84,142 @@ def _serialized_size(record: dict) -> int:
     return len(json.dumps(record, ensure_ascii=False).encode("utf-8"))
 
 
+class CaptureIssues:
+    """Bounded loss metadata, independent of whether a body could be stored."""
+    def __init__(self):
+        self.items = []
+        self.dropped = 0
+
+    def add(self, code, *, span_id=None, source=None, content_id=None,
+            limit_scope=None, limit_value=None, original_bytes=None, captured_bytes=None):
+        item = dict(code=code, severity="info" if code in
+                    ("PROVIDER_NOT_RETURNED", "CAPTURE_DISABLED") else "warning",
+                    span_id=span_id, source=source, content_id=content_id,
+                    limit_scope=limit_scope, limit_value=limit_value,
+                    original_bytes=original_bytes, captured_bytes=captured_bytes)
+        for existing in self.items:
+            if all(existing[k] == v for k, v in item.items()):
+                existing["count"] += 1
+                return
+        if len(self.items) >= 128:
+            self.dropped += 1
+        else:
+            self.items.append({**item, "count": 1})
+
+
+REASONS = dict(disabled="CAPTURE_DISABLED", not_returned="PROVIDER_NOT_RETURNED",
+               unsupported="UNSUPPORTED_CONTENT", incomplete="STREAM_INCOMPLETE",
+               omitted_limit="LEGACY_UNSPECIFIED", capture_error="CAPTURE_EXCEPTION")
+
+
 class ContentStore:
-    """Collects the bounded, redacted content of one task.
-
-    Deduplicated by what the content *is*: a message that appears in two requests is
-    stored once, and two spans that saw it refer to the same id.
-    """
-
+    """Redacted copies, with explicit bounded loss records and full-copy deduplication."""
     def __init__(self, *, secrets: Iterable[str] = ()) -> None:
         self._secrets = tuple(secret for secret in secrets if secret)
-        self._records: list[dict] = []
-        self._ids: dict[str, str] = {}
-        self._total_bytes = 0
+        self._records = []
+        self._ids = {}
+        self._total_bytes = 2
         self.complete = True
-        self.omissions: list[str] = []
+        self.omissions = []
+        self._issues = CaptureIssues()
 
-    # -- capture -------------------------------------------------------------
-
-    def capture(self, *, owner_span_id: str, kind: str, value: Any, source: str,
-                availability: str = CAPTURED) -> str | None:
-        """Store one redacted copy, or record why there is none.
-
-        Returns:
-            The content id, or None when nothing was stored.
-        """
+    def capture(self, *, owner_span_id, kind, value, source, availability=CAPTURED,
+                reason_code=None, limit_scope=None, limit_value=None, original_bytes=None):
         try:
-            return self._capture(owner_span_id, kind, value, source, availability)
-        except Exception:  # noqa: BLE001 - observation never escapes
-            # Even the failure is recorded as a state, not as silence.
-            self._fail(availability="capture_error", owner_span_id=owner_span_id,
-                       kind=kind, source=source)
-            return None
+            if availability in MISSING_STATES:
+                record = self._empty_record(owner_span_id, kind, source, availability,
+                    reason_code=reason_code, limit_scope=limit_scope, limit_value=limit_value,
+                    original_bytes=original_bytes)
+                key = None
+            else:
+                projected = redact(value, self._secrets)
+                text = _as_text(projected)
+                if not text:
+                    record = self._empty_record(owner_span_id, kind, source, "not_returned")
+                    key = None
+                else:
+                    record = dict(content_id="0"*16, owner_span_id=owner_span_id, kind=kind, source=source,
+                        availability=CAPTURED, text=text, original_bytes=len(text.encode("utf-8")),
+                        captured_bytes=len(text.encode("utf-8")), truncated=False, redacted=projected != value,
+                        excerpt_mode=None, reason_code=None, limit_scope=None, limit_value=None)
+                    key = hashlib.sha256((kind+"|"+source+"|"+text).encode("utf-8")).hexdigest()
+                    record = self._fit(record)
+                    record["captured_bytes"] = len(record["text"].encode("utf-8"))
+            return self._store(record, key)
+        except Exception:
+            return self._store(self._empty_record(owner_span_id, kind, source, "capture_error"))
 
-    def _capture(self, owner_span_id: str, kind: str, value: Any, source: str,
-                 availability: str) -> str | None:
-        if availability in MISSING_STATES:
-            return self._store(self._empty_record(owner_span_id, kind, source, availability))
-
-        projected = redact(value, self._secrets)
-        text = _as_text(projected)
-        if not text:
-            return self._store(self._empty_record(owner_span_id, kind, source, "not_returned"))
-
-        record = {
-            "content_id": "",
-            "owner_span_id": owner_span_id,
-            "kind": kind,
-            "source": source,
-            "availability": CAPTURED,
-            "text": text,
-            "original_bytes": len(text.encode("utf-8")),
-            "captured_bytes": 0,
-            "truncated": False,
-            "redacted": projected != value,
-            "excerpt_mode": None,
-        }
-        record = self._fit(record)
-        record["captured_bytes"] = len(record["text"].encode("utf-8"))
-        return self._store(record)
-
-    def _empty_record(self, owner_span_id: str, kind: str, source: str, availability: str) -> dict:
-        self.complete = False
-        if availability not in MISSING_STATES:  # pragma: no cover - callers pass known states
+    def _empty_record(self, owner_span_id, kind, source, availability, **metadata):
+        if availability not in MISSING_STATES:
             availability = "capture_error"
-        if availability == "omitted_limit":
-            self._omit(availability)
-        return {"content_id": "", "owner_span_id": owner_span_id, "kind": kind, "source": source,
-                "availability": availability, "text": None, "original_bytes": 0,
-                "captured_bytes": 0, "truncated": False, "redacted": False, "excerpt_mode": None}
+        return dict(content_id="", owner_span_id=owner_span_id, kind=kind, source=source,
+            availability=availability, text=None, original_bytes=metadata.get("original_bytes"),
+            captured_bytes=0, truncated=False, redacted=False, excerpt_mode=None,
+            reason_code=metadata.get("reason_code") or REASONS[availability],
+            limit_scope=metadata.get("limit_scope"), limit_value=metadata.get("limit_value"))
 
-    def _fit(self, record: dict) -> dict:
-        """Shrink the text until the whole record, envelope included, fits the ceiling."""
+    def _fit(self, record):
         if _serialized_size(record) <= MAX_CONTENT_BYTES:
             return record
-        status = record["availability"]
-        original = record["text"]
-        raw = original.encode("utf-8")
-        room = MAX_CONTENT_BYTES - _serialized_size({**record, "text": ""}) - len(EXCERPT_MARKER.encode("utf-8"))
-        half = max(1, room // 2)
+        original = record["text"].encode("utf-8")
+        base = {**record, "text":"", "truncated":True, "reason_code":"RECORD_BYTE_LIMIT",
+                "limit_scope":"record_bytes", "limit_value":MAX_CONTENT_BYTES}
+        half = max(1, (MAX_CONTENT_BYTES-_serialized_size(base)-len(EXCERPT_MARKER.encode()))//2)
         while True:
-            head = raw[:half].decode("utf-8", "ignore")
-            tail = raw[-half:].decode("utf-8", "ignore") if half * 2 < len(raw) else ""
-            excerpt = head + EXCERPT_MARKER + tail
-            candidate = {**record, "availability": status, "text": excerpt, "truncated": True,
-                         "excerpt_mode": "head_tail" if tail else "head"}
-            if _serialized_size(candidate) <= MAX_CONTENT_BYTES or half <= 1:
-                self.complete = False
+            head = original[:half].decode("utf-8", "ignore")
+            tail = original[-half:].decode("utf-8", "ignore") if 2*half<len(original) else ""
+            candidate = {**base,"text":head+EXCERPT_MARKER+tail,
+                         "captured_bytes":len((head+EXCERPT_MARKER+tail).encode("utf-8")),
+                         "excerpt_mode":"head_tail" if tail else "head"}
+            if _serialized_size(candidate)<=MAX_CONTENT_BYTES:
                 return candidate
-            half = half * 3 // 4
+            if half <= 1:
+                return self._empty_record(record["owner_span_id"], record["kind"], record["source"],
+                    "omitted_limit", reason_code="RECORD_BYTE_LIMIT", limit_scope="record_bytes",
+                    limit_value=MAX_CONTENT_BYTES, original_bytes=record["original_bytes"])
+            half=max(1,half*3//4)
 
-    def _omit(self, reason: str) -> None:
-        if reason not in self.omissions:
-            self.omissions.append(reason)
-        self.complete = False
+    def _issue(self, record, code=None, *, limit_scope=None, limit_value=None):
+        reason=code or record.get("reason_code")
+        if not reason:
+            return
+        if reason not in ("PROVIDER_NOT_RETURNED", "CAPTURE_DISABLED"):
+            self.complete=False
+        self._issues.add(reason, span_id=record["owner_span_id"], source=record["source"],
+            content_id=record.get("content_id") or None,
+            limit_scope=limit_scope or record.get("limit_scope"),
+            limit_value=limit_value if limit_value is not None else record.get("limit_value"),
+            original_bytes=record.get("original_bytes"), captured_bytes=record.get("captured_bytes"))
 
-    def _fail(self, *, availability: str, owner_span_id: str, kind: str, source: str) -> None:
-        self.complete = False
-        self._store(self._empty_record(owner_span_id, kind, source, availability))
-
-    def _store(self, record: dict) -> str | None:
-        key = json.dumps({k: record[k] for k in ("kind", "source", "availability", "text",
-                                                 "truncated", "excerpt_mode")},
-                         ensure_ascii=False, sort_keys=True)
-        content_id = hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
-        if content_id in self._ids:
-            return content_id
-        record["content_id"] = content_id
-        size = _serialized_size(record)
-        if len(self._records) >= MAX_CONTENT_ITEMS or self._total_bytes + size > MAX_CONTENTS_BYTES:
-            # Over budget: the entry is not stored at all, and the run says so.
-            self._omit("omitted_limit")
+    def _store(self, record, key=None):
+        key=key or json.dumps({k:v for k,v in record.items() if k not in
+                              ("content_id","owner_span_id")},ensure_ascii=False,sort_keys=True)
+        cid=hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+        if cid in self._ids:
+            record["content_id"]=cid
+            self._issue(record)
+            return cid
+        size=_serialized_size({**record,"content_id":cid})+(2 if self._records else 0)
+        if len(self._records)>=MAX_CONTENT_ITEMS or self._total_bytes+size>MAX_CONTENTS_BYTES:
+            if "omitted_limit" not in self.omissions: self.omissions.append("omitted_limit")
+            item_limit=len(self._records)>=MAX_CONTENT_ITEMS
+            self._issue({**record,"content_id":None,"captured_bytes":0},
+                "CONTENT_ITEM_LIMIT" if item_limit else "CONTENT_TOTAL_BYTE_LIMIT",
+                limit_scope="content_items" if item_limit else "content_total_bytes",
+                limit_value=MAX_CONTENT_ITEMS if item_limit else MAX_CONTENTS_BYTES)
             return None
-        self._ids[content_id] = content_id
-        self._total_bytes += size
+        record["content_id"]=cid
+        self._ids[cid]=cid
         self._records.append(record)
-        if record["availability"] in MISSING_STATES or record["truncated"]:
-            self.complete = False
-        return content_id
+        self._total_bytes+=size
+        self._issue(record)
+        return cid
 
-    # -- output --------------------------------------------------------------
-
-    def records(self) -> list[dict]:
+    def records(self):
         return list(self._records)
+
+    def issues(self):
+        return [dict(item) for item in self._issues.items]
 
 
 __all__ = ["CAPTURED", "ContentStore", "MAX_CONTENT_BYTES", "MAX_CONTENT_ITEMS",

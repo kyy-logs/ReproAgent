@@ -48,7 +48,7 @@ class AgentScopeModelGateway:
 
         context.budget.check()
         if context.cancel_event.is_set():
-            raise BudgetStopped('CANCELLED')
+            raise BudgetStopped('CANCELLED', dimension='cancelled')
         if context.budget.limits.model_cost_limit is not None:
             raise ValueError('this provider cannot guarantee a hard model cost limit')
         started = time.monotonic()

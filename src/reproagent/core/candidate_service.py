@@ -18,6 +18,7 @@ from dataclasses import replace
 from reproagent.workspace import Workspace
 
 from .budget import BudgetStopped
+from ..observability_decisions import observe_decision
 from .models import CallContext, Candidate, CandidateDraft, CodeSnapshot, IssueContract, ProjectView
 
 
@@ -55,6 +56,12 @@ class CandidateService:
             raise ValueError("a bound contract needs an id and a version")
         self._contract = contract
 
+    def _observe_rejection(self, code):
+        contract=self._contract
+        observe_decision('publication.rejected',attributes={'decision_code':code,'result_code':'ERROR',
+            'contract_id':contract.contract_id if contract else None,
+            'contract_version':contract.version if contract else None},context=self.context)
+
     def publish(self, draft: CandidateDraft) -> Candidate:
         """Publish *draft* as an immutable candidate and return the stored record.
 
@@ -65,16 +72,20 @@ class CandidateService:
         """
         self.context.budget.check()
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         contract = self._contract
         if contract is None:
+            self._observe_rejection("NO_BOUND_CONTRACT")
             raise ValueError("no contract is bound to this phase, so no candidate can be published")
         if (draft.contract_id, draft.contract_version) != (contract.contract_id, contract.version):
+            self._observe_rejection("STALE_CONTRACT")
             raise ValueError(f"candidate was built against contract {draft.contract_id} v{draft.contract_version}, "
                              f"not the bound {contract.contract_id} v{contract.version}")
         if draft.snapshot_id != self.snapshot.snapshot_id:
+            self._observe_rejection("SNAPSHOT_MISMATCH")
             raise ValueError(f"candidate was built against snapshot {draft.snapshot_id!r}, not the bound {self.snapshot.snapshot_id!r}")
         if not contract.expected or not contract.sources or contract.missing_information:
+            self._observe_rejection("CONTRACT_UNGROUNDED")
             raise ValueError("candidate requires a grounded contract: expected behaviour, at least one source, and no missing information")
         candidate = self.workspace.publish(draft, self.snapshot)
         self.workspace.validate_candidate(candidate)

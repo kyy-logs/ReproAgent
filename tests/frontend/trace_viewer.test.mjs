@@ -56,3 +56,10 @@ test('retained_uncited_capture_keys_are_accessible_without_fake_nodes',()=>{
  assert.deepEqual(uncitedContentKeys(view),[1]);
  assert.equal(view.nodes.length,4);
 });
+
+
+test('diagnostic target restores the actual ancestor path and rejects missing targets', async()=>{
+ const {diagnosticTarget}=await import('../../src/reproagent/resources/trace_viewer.mjs');
+ assert.deepEqual(diagnosticTarget(fixture(),2),[0,1,2]);
+ assert.deepEqual(diagnosticTarget(fixture(),99),[]);
+});

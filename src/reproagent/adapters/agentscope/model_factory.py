@@ -111,7 +111,7 @@ class LimitedResponseStream(httpx.AsyncByteStream):
         async for chunk in self.stream:
             self.context.budget.check()
             if self.context.cancel_event.is_set():
-                raise BudgetStopped('CANCELLED')
+                raise BudgetStopped('CANCELLED', dimension='cancelled')
             size += len(chunk)
             if size > RESPONSE_LIMIT_BYTES:
                 # This is the path a real HTTP response takes, so it has to classify the
@@ -278,7 +278,7 @@ class _GuardedModel:
                                       self.context)
                 self.context.budget.check()
                 if self.context.cancel_event.is_set() or str(reply.finished_reason) == 'interrupted':
-                    raise BudgetStopped('CANCELLED')
+                    raise BudgetStopped('CANCELLED', dimension='cancelled' if self.context.cancel_event.is_set() else None)
                 if self.observation.error is not None:
                     raise self.observation.error
                 failure = self._validate_reply(reply)

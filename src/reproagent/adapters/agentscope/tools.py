@@ -34,6 +34,7 @@ from .dependency import require_agentscope
 from .evidence import READ_LINE_CHARACTERS, EvidenceLedger, original_lines
 from .snapshot_backend import SnapshotRefusal, UnverifiedContent
 from ...core.budget import BudgetStopped
+from ...observability_decisions import observe_decision
 from ...core.candidate_service import CandidateService
 from ...core.models import CandidateDraft, DraftFile, EvidenceRef
 from ...core.phase import PhaseGate, PhaseResult
@@ -436,7 +437,7 @@ class _DomainTool(ToolBase):
         """
         self.context.budget.check()
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         if self.gate.finished:
             raise ValueError("this phase has already ended; the controller decides what happens next")
 
@@ -526,8 +527,12 @@ class ReviseContract(_DomainTool):
         """
         canonical = canonical_ref(self.views.search, item.path, item.start_line, item.end_line)
         if canonical.content_hash != item.content_hash:
+            observe_decision('citation.rejected',attributes={'decision_code':'CITATION_HASH_MISMATCH',
+                'result_code':'ERROR','source_ref':item.model_dump()},context=self.context)
             raise UnverifiedContent(f"the cited hash is not the frozen hash of {item.path!r}; copy the hash an evidence block listed")
         if not self.views.contains(canonical):
+            observe_decision('citation.rejected',attributes={'decision_code':'CITATION_NOT_DISPLAYED',
+                'result_code':'ERROR','source_ref':item.model_dump()},context=self.context)
             raise UnverifiedContent(f"lines {item.start_line}-{item.end_line} of {item.path!r} were not displayed whole by Read or Grep; "
                                     "cite a range an evidence block listed exactly, and Read the exact lines first if you need a narrower one")
         return canonical
@@ -574,7 +579,7 @@ class ReadExperience(ToolBase):
     async def call(self, **kwargs):
         self.context.budget.check()
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         params = _ExperienceParams(**kwargs)
         data = self.view.read(params.id, max_bytes=self.context.budget.limits.tool_response_bytes)
         self.store.append_event("experience.read", (), {"id": params.id})

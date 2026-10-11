@@ -109,6 +109,12 @@ def validate_trace(document: dict) -> dict:
            for key in ("usage", "cost", "learning")):
         raise ValueError("the trace is not shaped like a trace")
 
+    for field in ('capture_health','diagnostic_summary'):
+        if document.get(field) is not None and not isinstance(document[field],dict):
+            raise ValueError('invalid diagnostic extension')
+    health=document.get('capture_health') or {}
+    if not isinstance(health.get('issues',[]),list) or any(not isinstance(i,dict) for i in health.get('issues',[])):
+        raise ValueError('invalid capture issues')
     by_id: dict = {}
     for entry in spans:
         if not isinstance(entry, dict) or not isinstance(entry.get("attributes", {}), dict):
@@ -275,7 +281,9 @@ def render_content_registry(document: dict) -> str:
         body = f'<pre data-content-body>{_esc(text)}</pre>' if text else f'<p class="unknown">{_esc(record.get("availability"))}</p>'
         parts.append(f'<details id="trace-content-{key}" class="capture"><summary>'
                      f'{_esc(_source_label(record.get("source")))} · {_esc(record.get("availability"))}'
-                     f' · {_esc(flags)} · {_esc(record.get("captured_bytes", UNKNOWN_TEXT))} / {_esc(record.get("original_bytes", UNKNOWN_TEXT))} bytes</summary>{body}</details>')
+                     f' · {_esc(flags)} · {_figure(record.get("captured_bytes"))} / {_figure(record.get("original_bytes"))} bytes'
+                     f' · {_esc(record.get("reason_code") or "")} {_esc(record.get("limit_scope") or "")} '
+                     f'{_esc(record.get("limit_value") if record.get("limit_value") is not None else "")}</summary>{body}</details>' )
     if not seen: parts.append('<p class="unknown">No content was captured for this run.</p>')
     return "\n".join(parts)
 
@@ -285,12 +293,11 @@ def _render_contents(document: dict, view: dict | None = None) -> str:
     view = view if view is not None else build_trace_view(document)
     rows = []
     for node in view["nodes"]:
-        if not node["content_keys"]: continue
         call = node["attributes"].get("tool_call_key")
         label = f'{node["label"]} · {node["span_id"]}' + (f' · call {call}' if call else '')
         refs = " · ".join(f'<a href="#trace-content-{k}">{_esc(_source_label(view["contents"][k]["source"]))} [content {k}]</a>'
                           for k in node["content_keys"])
-        rows.append(f'<li data-static-call-key="{node["key"]}"><span>{_esc(label)}</span>: {refs}</li>')
+        rows.append(f'<li id="trace-node-{node["key"]}" data-static-call-key="{node["key"]}"><span>{_esc(label)}</span>: {refs}</li>')
     index = '<h3>Call → content references</h3><ul class="capture-index">' + "".join(rows) + '</ul>' if rows else ''
     return index + render_content_registry(document)
 
@@ -330,6 +337,44 @@ def _render_decisions(document: dict) -> str:
     return f"{parts[0]}<table>{head}{''.join(rows)}</table>"
 
 
+def _render_capture_health(view):
+    health=view['header']['capture_health']
+    labels=[]
+    for key,label in (('structure_complete','结构'),('counts_complete','计数'),('content_complete','正文')):
+        value=health.get(key)
+        labels.append(label+('完整' if value is True else '有缺失' if value is False else '未知'))
+    parts=['<section id="capture-health"><h2>采集健康</h2><p>'+_esc(' · '.join(labels))+'</p>']
+    if health.get('legacy'): parts.append('<p class="unknown">历史记录未提供精确缺失原因；不补写。</p>')
+    for issue in health.get('issues',[]):
+        parts.append('<p>'+_esc(issue.get('code'))+' · '+_esc(issue.get('source') or 'unknown')+
+            ' · span '+_esc(issue.get('span_id') or 'unknown')+' · '+_figure(issue.get('count'))+
+            ' · '+_esc(issue.get('limit_scope') or '')+' '+_figure(issue.get('limit_value'))+'</p>')
+    if health.get('issues_dropped'): parts.append('<p class="warn">额外缺失记录 '+_figure(health['issues_dropped'])+'</p>')
+    return ''.join(parts)+'</section>'
+
+
+def _render_diagnostics(view):
+    parts=['<section id="diagnostics"><h2>业务诊断链</h2><p class="meta">按已记录事实排序；时间先后不等于因果，预算快照不表示工具另扣一步。</p>']
+    if not view['diagnostics']: parts.append('<p class="unknown">历史记录未提供业务诊断事件。</p>')
+    for r in view['diagnostics']:
+        key=r['node_key']
+        link=(f'<a data-diagnostic-node="{key}" href="#trace-node-{key}">{_esc(r.get("label") or r["kind"])}</a>'
+              if key is not None else _esc(r.get('label') or r['kind']))
+        budget=r.get('budget')
+        remaining=budget.get('steps_remaining') if isinstance(budget,dict) else None
+        version=('v'+_figure(r.get('previous_contract_version'))+' → v'+_figure(r.get('contract_version'))
+                 if r['kind']=='contract.revised' and r.get('previous_contract_version') is not None
+                 else 'v'+_figure(r.get('contract_version')))
+        call=r.get('tool_call_key');phase=r.get('phase_id')
+        grouping=(' · 调用 '+_esc(str(call)[:8]) if call else '')+(' · 阶段 '+_esc(str(phase)[:8]) if phase else '')
+        remaining_label='许可时剩余步数 ' if r.get('budget_origin')=='same_call_permission' else '剩余步数 '
+        parts.append('<div class="diagnostic-row">'+link+' · '+_esc(r.get('decision_code') or r.get('result_code') or 'unknown')+
+            ' · 契约 '+version+' · '+remaining_label+_figure(remaining)+grouping+
+            ' · '+_esc(r.get('stop_reason') or '')+' '+_esc(r.get('budget_dimension') or '')+
+            ' · 关联 '+_esc(r['relation'])+'</div>')
+    return ''.join(parts)+'</section>'
+
+
 def _render_body(document: dict, view: dict | None = None) -> str:
     parts = [
         '<section id="overview"><h1>ReproAgent activity trace</h1>',
@@ -341,7 +386,7 @@ def _render_body(document: dict, view: dict | None = None) -> str:
         f' &nbsp;&middot;&nbsp; capture {_esc(document.get("capture_mode") or UNKNOWN_TEXT)}</p>',
         f'<p class="meta">trace {_esc(document.get("trace_id") or UNKNOWN_TEXT)}</p>',
     ]
-    if document.get("partial") or not document.get("metrics_complete", True):
+    if not document.get("metrics_complete", True):
         parts.append('<p class="warn">This trace is incomplete: some observations were dropped or failed. '
                      "Every figure below covers only what was recorded.</p>")
     if not document.get("content_complete", True):
@@ -349,11 +394,12 @@ def _render_body(document: dict, view: dict | None = None) -> str:
                      "each entry below says which, and why.</p>")
     for warning in document.get("warnings") or ():
         parts.append(f'<p class="warn">{_esc(warning)}</p>')
+    parts.append(_render_capture_health(view))
     parts.append(_render_stats(document.get("summary") or {}))
     parts.append(_render_timeline(document.get("spans") or ()))
     parts.append("</section>")
     parts.append(f'<section id="calls">{_render_contents(document, view)}</section>')
-    parts.append(f'<section id="decisions">{_render_decisions(document)}</section>')
+    parts.append(f'<section id="decisions">{_render_diagnostics(view)}{_render_decisions(document)}</section>')
     return "\n".join(parts)
 
 

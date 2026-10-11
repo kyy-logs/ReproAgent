@@ -33,7 +33,7 @@ TRACE_FILENAME = "trace.json"
 TRACE_HTML_FILENAME = "trace.html"
 TEMPLATE_MARKER = "<!--TRACE-CONTENT-->"
 UNKNOWN_TEXT = "unknown"
-WARNING_DOCUMENT_TOO_LARGE = "the trace exceeded the document ceiling and was written marked incomplete"
+WARNING_DOCUMENT_TOO_LARGE = "the trace exceeded the document ceiling; the file was refused"
 WARNING_PAGE_TOO_LARGE = "the rendered page exceeded the viewer ceiling and was refused"
 WARNING_TRACE_PATH_UNSAFE = "the trace destination is not a plain task-local directory and was refused"
 
@@ -45,6 +45,8 @@ ALLOWED_ATTRIBUTES = frozenset({
     "permission_result", "error_category", "classification_source",
     "checks", "reason_origin", "exit_code", "stop_reason", "cleanup_ok", "health",
     "attempt", "output_limit", "budget", "usage", "cost", "unknown",
+    "decision_code", "phase_id", "step_index", "previous_contract_version",
+    "changed_fields", "budget_dimension", "source_ref", "task_status",
 })
 
 #: The one capture mode this version has: metadata plus the content it can copy.
@@ -91,8 +93,8 @@ class SpanHandle:
         self.span_id = entry["span_id"]
     def annotate(self, **fields):
         self._recorder._annotate(self._entry, fields)
-    def capture(self, kind, value, *, source, availability="captured"):
-        return self._recorder._capture(self._entry, kind, value, source=source, availability=availability)
+    def capture(self, kind, value, *, source, availability="captured", **metadata):
+        return self._recorder._capture(self._entry, kind, value, source=source, availability=availability, **metadata)
 
 class TraceRecorder:
     """Compatibility facade; OTel owns all IDs and parent contexts."""
@@ -184,8 +186,8 @@ def span(name, *, attributes=None, expected=()):
             try: context.detach(token)
             except (ValueError,RuntimeError): sink._fault()
 
-def capture(kind,value,*,source,availability="captured"):
-    return current_handle().capture(kind,value,source=source,availability=availability)
+def capture(kind,value,*,source,availability="captured", **metadata):
+    return current_handle().capture(kind,value,source=source,availability=availability,**metadata)
 
 def mark(name, *, attributes=None):
     sink=_active_sink()
@@ -288,8 +290,7 @@ def write_trace(task_dir: Path, document: dict) -> Path:
     """Write one task's trace beside the task, atomically, or refuse.
 
     The trace is a local diagnostic: it belongs to the task's own output directory and
-    never to the sealed package.  A document over the ceiling is written *marked*
-    incomplete rather than silently kept whole, and a destination that is a link -- so
+    never to the sealed package.  A document over the ceiling is refused before writing, and a destination that is a link -- so
     that "the task directory" would mean somewhere else -- is refused outright.
 
     Raises:
@@ -301,11 +302,6 @@ def write_trace(task_dir: Path, document: dict) -> Path:
     target = _trace_destination(task_dir, TRACE_FILENAME)
     encoded = _encode_document(document)
     if len(encoded) > MAX_DOCUMENT_BYTES:
-        # Marked in place, not on a copy: the caller renders the same object to the page,
-        # and a page that claimed completeness while the JSON beside it said otherwise
-        # would make the two files disagree about the same run.
-        document.update(partial=True, metrics_complete=False,
-                        warnings=[*document.get("warnings", ()), WARNING_DOCUMENT_TOO_LARGE])
-        encoded = _encode_document(document)
+        raise ValueError(WARNING_DOCUMENT_TOO_LARGE)
     atomic_write(target, encoded)
     return target

@@ -13,7 +13,7 @@ OpenTelemetry 管理统一 trace/span ID 和父子上下文。一个任务的主
 工具调用与模型调用的层级按 SDK 实际执行关系保留，不把所有工具强行挂到模型节点下。
 `trace.json` 是产品本地格式，不是 OTLP 报文；本版不发送到远程后端。
 
-新文件使用 schema2，保留真实 OTel ID 和原始状态；旧 schema1 继续可读、可离线重建，原JSON不改写。
+新文件使用 schema2，保留真实 OTel ID 和原始状态；旧 schema1/schema2 继续可读、可离线重建，原JSON不改写。本次新增采集健康与业务诊断字段是schema2可选扩展。
 页面同时显示 OTel 原始状态与程序展示状态，例如预算正常终止或成功发布后的收尾可能被 SDK 记为 ERROR，
 这与程序最终接受/拒绝结果分开。程序检查以 point 展示，point的展示ID不是OTel span ID。
 
@@ -57,7 +57,7 @@ middleware 链。这是"采集前后业务一致"的前提，也是测试断言�
 | 工具参数 | `on_check_permission` 处已验证、已脱敏的 `tool_input` |
 | 工具结果 | `on_acting` 原样透传的最终 `ToolResponse` 内容与状态 |
 | 契约与验收 | 契约版本、候选/run/verdict 关联、程序检查、模型声明与最终理由 |
-| SDK消息视图 | 原生span的Agent/模型消息，与wire视图区分，不把SDK视图当精确HTTP请求 |
+| SDK消息视图 | 模型输入优先通过公开on_model_call hook直接复制；其余消息从原生span投影。与wire视图区分，不把SDK视图当精确HTTP请求 |
 | 原始运行日志 | 已有 run 的 stdout/stderr/probe 引用；trace **不**复制这些正文 |
 
 **关于"思考"的边界。** 这里显示的是**接口返回的推理文本**，不是模型内部的完整思维过程，也不保证
@@ -71,11 +71,11 @@ middleware 链。这是"采集前后业务一致"的前提，也是测试断言�
 `DENIED` 与 `RESERVED_FOR_PUBLISHING` 单独标注和筛选，权限检查不算额外工具执行。
 
 搜索覆盖名称、受控属性和已保留正文，可与类型、失败筛选组合；匹配时展开祖先，清空后恢复手动折叠。
-“验收”页签显示程序检查、模型声明和既有 verdict，不新增评分。运行提示由固定规则生成：慢步骤、
+“验收”页签同时显示业务诊断链、程序检查、模型声明和既有 verdict，不新增评分。诊断项可点击跳转到原节点/正文；无JS时保留静态链接。运行提示由固定规则生成：慢步骤、
 同一逻辑调用的多次 HTTP 尝试、发布预留、已记录失败位置；不让模型再次分析。
 
 时间以记录的偏移和耗时计算，父子时长不累加；未知/非有限值不画假时间条，零耗时和点事件画刻度。
-开始时间转为浏览器本地时区并标注时区。计数遵循原 summary；`partial` 只覆盖保留数据，
+开始时间转为浏览器本地时区并标注时区。计数遵循原 summary；采集健康分别标注结构、计数和正文。正文截断不使已完整记录的token变成小计；`partial` 表示观察有实际损失，
 不完整 token/费用标“已知小计”。TTFT 和缓存命中率未采集，不为显示这些字段追加请求。
 
 HTML 内联打包的固定 JavaScript 模块和 CSS，无 CDN、服务器、外部资源或网络请求，生成与点击均不消耗模型 token。
@@ -103,21 +103,21 @@ CSP 仅允许固定模块源码的 SHA-256 hash，并禁止连接、图片、ifr
 | 单条属性 JSON | 2048 字节 | 整条丢弃（不截断） |
 | 元数据合计 | 1 MiB | 同上 |
 | 正文条目 | 512 条 | 超出不创建记录，`content_status` 记 `omitted_limit` |
-| 单条正文 | 32768 字节 | 保留**标记过的头尾摘录**（只留头会让最新工具消息永远看不见） |
+| 单条正文记录（含JSON envelope） | 256 KiB（262144字节） | 保留**标记过的头尾摘录**（只留头会让最新工具消息永远看不见） |
 | 正文合计 | 4 MiB | 同上 |
-| trace.json | 6 MiB | 读取前按文件大小拒绝 |
+| trace.json | 6 MiB | 写入编码后/读取前按大小拒绝；观测失败不影响任务 |
 | HTML | 8 MiB | 渲染阶段拒绝（截断的页面会被读成完整的） |
 
-原生OTel span另有64个属性、32个event、0个link、属性最多65536字符的限制；丢弃/疑似截断会标partial。
+原生OTel span另有64个属性、32个event、0个link、属性最多65536字符的限制；无法从直接hook取得的消息，若原生属性达到65536字符，标记疑似截断与未知原始长度；不猜测已经丢失了多少内容。
 原生SDK在投影之前会序列化消息和异常，因此上述本地保留限额不保证瞬时序列化内存有同样上限。
 
-`original_bytes` 是脱敏/截断**前**的 UTF-8 长度，`captured_bytes` 是脱敏摘录的 UTF-8 长度；
+`original_bytes` 是脱敏后、截断前的 UTF-8 长度；无法取得正文时为null（未知），不是0。`captured_bytes` 是脱敏摘录的 UTF-8 长度；
 一律按字节而非字符计量。
 
 **缺失不伪装。** 内容缺失分别记 `disabled` / `not_returned` / `unsupported` / `incomplete` /
 `omitted_limit` / `capture_error`，各自含义不同——**已取得但被省略**和**接口根本没提供**分开。
-根上还有三个独立标记：`partial`（整体不完整）、`metrics_complete`（元数据）、`content_complete`
-（正文）。某条推理没返回是提供方的正常行为，不算系统故障。
+根上还有三个独立标记：`partial`（整体不完整）、`metrics_complete`（统计覆盖）、`content_complete`
+（正文）。某条推理没返回是提供方的正常行为，不算系统故障，也不会单独将partial或content_complete判为不完整。
 
 ## 失败时去哪看
 
@@ -147,3 +147,27 @@ CLI解析/凭据缺失等任务开始前的错误仍使用已有CLI错误输出�
 不发送到远程平台/OTLP、不做实时监控、跨任务仪表盘、告警或自动优化；不自动回放模型请求或工具；
 不新增"评分 Agent"，也不引入任意百分制——接受标准仍是既有的硬检查 + 语义核验 + 重复/可选差分。
 用户审查的入口仍是既有 `report.md` 与交付包，trace 是**补充**而非第二套判定。
+
+## 缺失原因与业务诊断链
+
+采集健康的 `capture_health.issues` 按原因、span、来源、正文ID聚合，最多128条，超出计入issues_dropped。
+原因包括 `PROVIDER_NOT_RETURNED`（正常未返回）、`CAPTURE_DISABLED`、`UNSUPPORTED_CONTENT`、
+`STREAM_INCOMPLETE`、`RECORD_BYTE_LIMIT`、`CONTENT_ITEM_LIMIT`、`CONTENT_TOTAL_BYTE_LIMIT`、
+`OTEL_ATTRIBUTE_POSSIBLY_TRUNCATED`、`CAPTURE_EXCEPTION`，以及结构/元数据损失。
+实际损失有固定警告与可定位的原因；正文无法入库时依然记录其span/source，不生成悬空引用。
+旧记录缺少具体信息则显示 `LEGACY_UNSPECIFIED` / 历史记录未提供，不能从旧partial推断具体原因。
+
+业务诊断按已有事实显示初始契约、请求与实际修订、权限三态、发布/引用拒绝、预算快照和最终停止。
+实际保存新版后才记录 `contract.revised`，字段差异来自真实before/after；请求revision本身不算修订成功。
+权限允许后工具仍可能因未完成契约或未读完整引用而拒绝，这属于程序业务拒绝；与OTel状态分开展示。
+诊断关系只代表同工具调用、同phase、实际契约变更或仅先后顺序，不能以时间顺序证明因果。
+
+`budget.step_charged` 每次成功消耗探索步骤记录一次；HTTP重试不重复计步，工具调用/拒绝不额外扣步。
+契约分析、verdict和学习模型调用也不标为探索步。快照展示steps_used/limit/remaining、剩余时间、已知费用和未知费用调用数。
+停止维度 `steps/time/cost/cancelled` 来自程序实际预算检查分支；外部停止未知则不根据错误文案猜测。
+`diagnostic_summary` 保留最终TaskResult状态、stop_reason与CLI取得的最终预算，span达到容量上限时仍可定位最终结论。
+
+256KiB单条上限仍受4MiB总量约束；超限不保证整次会话完整。正文每个ID只存一次，trace仍只有两个文件。
+thinking关闭不妨碍记录以上执行事实；记录与离线查看均不新增模型请求或token，也不补写未返回的推理。
+
+完整性分项不会因为原生OTel的冗余event列表溢出就抹掉本地已完整保留的统计：仍记录结构损失警告；只有统计所需span/属性真的丢失或覆盖无法确认时，才把计数/用量标为不完整。最终预算快照或trace封存失败也走观测隔离边界，任务JSON、退出码与结论保持原值。

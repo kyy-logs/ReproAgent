@@ -28,6 +28,7 @@ from .middleware import PROTOCOL_ATTEMPTS, ExplorationMiddleware, PhaseEnded, Ph
 from .observability import ReproTraceMiddleware, SafeTracingMiddleware
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
+from ...observability_decisions import observe_decision
 from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import bytes_hash, canonical_bytes
@@ -165,6 +166,7 @@ class AgentScopeRuntime:
                 "budget": {"steps_remaining": self._steps_remaining(),
                            "seconds_remaining": round(max(0.0, self.context.budget.deadline
                                                            - self.context.budget.clock()), 3)}})
+        observe_decision("phase.started",attributes={},context=self.context,contract=context.contract)
         message = self._message(context)
         end_reason = ""
         for attempt in range(PROTOCOL_ATTEMPTS):
@@ -189,6 +191,8 @@ class AgentScopeRuntime:
         result = self._result()
         self.middleware.record("exploration.finished", action=result.kind, result_code=result.kind,
                                sdk_end_reason=end_reason)
+        observe_decision("phase.completed",attributes={"result_code":result.kind},
+                         context=self.context,contract=context.contract)
         return result
 
     async def aclose(self) -> None:
@@ -218,7 +222,7 @@ class AgentScopeRuntime:
         if self.gate.finished:
             return self.gate.result
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         return PhaseResult("no_candidate", reason=NO_CANDIDATE_REASON)
 
     async def _reply(self, message: Msg) -> Msg | None:

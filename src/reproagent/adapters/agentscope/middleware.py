@@ -33,6 +33,7 @@ from agentscope.permission import PermissionBehavior, PermissionDecision
 from .dependency import require_agentscope
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
+from ...observability_decisions import observe_decision, decision_metadata
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
 from ...observability import mark, tool_call_key
@@ -137,9 +138,11 @@ class ExplorationMiddleware(MiddlewareBase):
         if self.gate.finished:
             raise PhaseEnded("the phase already produced its result")
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         self.context.budget.check()
         self.context.budget.take_step()
+        observe_decision("budget.step_charged",attributes={"result_code":"STEP"},
+                         context=self.context,contract=self.contract)
         self.record("exploration.step", action="", result_code="STEP")
 
     # =======================================================================
@@ -200,7 +203,8 @@ class ExplorationMiddleware(MiddlewareBase):
         # the decision went -- a refused call is exactly the one worth looking at.
         call_key = tool_call_key(sdk_call_id=getattr(input_kwargs.get("tool_call"), "id", ""),
                                  step_index=self.context.budget.steps_used)
-        attributes = {"tool": name if name in self.allowed_tools else "", "result_code": code}
+        attributes = {**decision_metadata(self.context,self.contract),
+            "tool": name if name in self.allowed_tools else "", "result_code": code, "permission_result":code}
         if call_key is not None:
             attributes["tool_call_key"] = call_key
         mark("permission", attributes=attributes).capture(
@@ -262,7 +266,7 @@ class ExplorationMiddleware(MiddlewareBase):
             # after a domain tool is exactly the one whose arguments pushed the context up.
             return
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         config = input_kwargs.get("context_config") or agent.context_config
         threshold = config.trigger_ratio * agent.model.context_size
         if await self._estimated_tokens(agent) < threshold:

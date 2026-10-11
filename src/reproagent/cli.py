@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .app import LEGACY_BACKENDS, create_controller
 from .core.budget import Budget
+from .observability_decisions import budget_snapshot
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
 from .observability import trace_session, write_trace
@@ -86,9 +87,19 @@ def run_command(args):
     with trace_session(enabled=not args.no_trace, secrets=(os.environ.get(model.api_key_env, ''),)) as recorder:
         result = asyncio.run(run())
         if recorder is not None:
-            learning = asdict(controller.learning_result) if getattr(controller, 'learning_result', None) is not None else None
-            trace_document = recorder.finish(task_id=result.task_id, status=result.status.value,
-                                             main_duration=result.duration, learning=learning)
+            try:
+                try:
+                    final_budget=budget_snapshot(context.budget)
+                except Exception:
+                    final_budget=None
+                    recorder._partial=True
+                    recorder.note_capture_issue('OBSERVATION_EXCEPTION',source='final_budget')
+                    print(TRACE_WRITE_WARNING,file=sys.stderr)
+                learning = asdict(controller.learning_result) if getattr(controller,'learning_result',None) is not None else None
+                trace_document=recorder.finish(task_id=result.task_id,status=result.status.value,
+                    main_duration=result.duration,learning=learning,stop_reason=result.stop_reason,budget=final_budget)
+            except Exception:
+                print(TRACE_WRITE_WARNING,file=sys.stderr)
     summary = {'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
         'export_state':result.export_state, 'output_dir':display_path(output)}
     if getattr(controller, 'learning_result', None) is not None:

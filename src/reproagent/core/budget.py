@@ -8,8 +8,9 @@ from .models import BudgetLimits
 
 
 class BudgetStopped(Exception):
-    def __init__(self, reason: str, message: str = ""):
+    def __init__(self, reason: str, message: str = "", *, dimension: str | None = None):
         self.reason = reason
+        self.dimension = dimension
         super().__init__(message or reason)
 
 
@@ -34,16 +35,16 @@ class Budget:
 
     def check(self):
         if self._cancelled:
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         if self.clock() >= self.deadline:
-            raise BudgetStopped("EXHAUSTED", "task time limit reached")
+            raise BudgetStopped("EXHAUSTED", "task time limit reached", dimension="time")
         if self.limits.model_cost_limit is not None and self.cost_spent >= Decimal(str(self.limits.model_cost_limit)):
-            raise BudgetStopped("EXHAUSTED", "model cost limit reached")
+            raise BudgetStopped("EXHAUSTED", "model cost limit reached", dimension="cost")
 
     def take_step(self):
         self.check()
         if self._steps >= self.limits.agent_steps:
-            raise BudgetStopped("EXHAUSTED", "agent step limit reached")
+            raise BudgetStopped("EXHAUSTED", "agent step limit reached", dimension="steps")
         self._steps += 1
 
     def command_timeout(self):
@@ -60,7 +61,7 @@ class Budget:
             raise ValueError("invalid cost upper bound")
         held = sum((v for v in self._reservations.values() if v is not None), Decimal("0"))
         if limit is not None and self.cost_spent + held + value > Decimal(str(limit)):
-            raise BudgetStopped("EXHAUSTED", "insufficient model cost budget")
+            raise BudgetStopped("EXHAUSTED", "insufficient model cost budget", dimension="cost")
         identifier = uuid.uuid4().hex
         self._reservations[identifier] = value
         return identifier
@@ -77,7 +78,7 @@ class Budget:
         self._reservations.pop(reservation_id)
         self.cost_spent += value
         if reserved is not None and value > reserved:
-            raise BudgetStopped("EXHAUSTED", "provider exceeded reserved cost")
+            raise BudgetStopped("EXHAUSTED", "provider exceeded reserved cost", dimension="cost")
 
 
 class BudgetedGateway:

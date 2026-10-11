@@ -119,6 +119,8 @@
   .trace-empty { padding:3rem; text-align:center; color:var(--muted); }
   .trace-footer { font-size:11px; color:var(--muted); margin-top:1rem; }
   @media(max-width:900px) { body {padding:.75rem;} .trace-workspace.has-detail {grid-template-columns:minmax(0,1fr);} .trace-detail {position:static;max-height:none;} .node-duration {width:50px;} .axis-ticks {margin-left:50px;} }
+  .diagnostic-row { padding: .5rem; border-left: 3px solid var(--line); margin: .4rem 0; overflow-wrap: anywhere; }
+  .trace-health { overflow-wrap: anywhere; }
 </style>
 </head>
 <body>

@@ -275,7 +275,7 @@ class SnapshotBackend(BackendBase):
         """The task deadline and the cancel flag apply to every read and every command."""
         self.context.budget.check()
         if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
 
     # ── the manifest as the tools see it ───────────────────────────────────
 
@@ -649,7 +649,7 @@ class SnapshotBackend(BackendBase):
         stdout, truncated = await outgoing
         stderr = (await errors)[0]
         if cancelled:
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         if timed_out:
             return ExecResult(EXIT_TIMEOUT, b"", b"timed out"), False
         return ExecResult(process.returncode or 0, stdout, stderr), truncated

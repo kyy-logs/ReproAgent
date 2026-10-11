@@ -71,7 +71,7 @@ def test_the_same_content_is_stored_once():
 
 def test_an_oversized_entry_keeps_a_marked_head_and_tail():
     store = ContentStore()
-    text = "HEAD" + ("x" * 100_000) + "TAIL"
+    text = "HEAD" + ("x" * (MAX_CONTENT_BYTES * 3)) + "TAIL"
 
     capture(store, {"content": text})
 
@@ -112,7 +112,7 @@ def test_every_missing_state_is_recorded_rather_than_an_empty_string(availabilit
     assert record["text"] in (None, "")
     # A missing figure is never dressed up as content that was simply empty.
     assert record["captured_bytes"] == 0
-    assert store.complete is False
+    assert store.complete is (availability in ("disabled", "not_returned"))
 
 
 def test_capture_never_raises_and_marks_its_own_failure():

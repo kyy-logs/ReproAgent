@@ -23,6 +23,7 @@ import uuid
 from dataclasses import asdict, dataclass, field, replace
 
 from ..observability import span
+from ..observability_decisions import observe_decision, contract_snapshot, contract_diff
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
@@ -93,6 +94,7 @@ class Step:
 
     def __init__(self, controller, name, parameters, context, contract):
         self.controller = controller
+        self.context, self.contract = context, contract
         self.code = 'OK'
         self.selected = controller.action_start(name, parameters, context, contract)
         self.started = time.monotonic()
@@ -120,7 +122,7 @@ class Step:
                 self.code = rejection_code(error)
             else:
                 self.code = 'INTERNAL_ERROR'
-        self.controller.action_end(self.selected, self.started, self.code)
+        self.controller.action_end(self.selected, self.started, self.code, context=self.context, contract=self.contract)
         return False
 
 
@@ -157,6 +159,7 @@ class Controller:
         self.backend_info = component_identity(**(backend_info or {}))
         self.explorer = None
         self._explorer_closed = False
+        self._observed_stop_dimension = None
 
     def state(self, result, status, **changes):
         result = replace(result, status=status, **changes)
@@ -198,10 +201,15 @@ class Controller:
         self.store.append_event('action.selected', (), selected)
         return selected
 
-    def action_end(self, selected, started, code):
+    def action_end(self, selected, started, code, *, context=None, contract=None):
         if code not in ACTION_RESULT_CODES: raise ValueError(f'unknown action result code: {code}')
         self.store.append_event('action.completed' if code == 'OK' else 'action.rejected', (),
             {**selected, 'result_code':code, 'duration':time.monotonic() - started})
+
+        observe_decision('action.completed' if code=='OK' else 'action.rejected',
+            attributes={'purpose':selected['action'],'result_code':code,'decision_code':code,
+                'contract_id':contract.contract_id if contract else None,
+                'contract_version':contract.version if contract else selected.get('contract_version')},context=context)
 
     def phase_end(self, phase, code, context):
         """Record what one phase result led to: its kind and a fixed outcome code."""
@@ -363,6 +371,12 @@ class Controller:
             for ref in revised.sources:
                 self.verifier.resolve(ref)
             self.store.save_contract(revised)
+            observe_decision('contract.revised',attributes={'contract_id':revised.contract_id,
+                'contract_version':revised.version,'previous_contract_version':contract.version,
+                'changed_fields':[k for k in ('trigger','expected','reported_actual','observable_checks','sources',
+                    'assumptions','missing_information') if getattr(contract,k)!=getattr(revised,k)]},
+                content=lambda:{'before':contract_snapshot(contract),'after':contract_snapshot(revised),
+                                'diff':contract_diff(contract,revised)})
             # The new contract version has observed nothing: evidence from another version
             # cannot be carried into it, and no accepted candidate survives the revision.
             lifecycle.executions.clear(); lifecycle.verdicts.clear()
@@ -445,13 +459,15 @@ class Controller:
             for evidence in contract.sources:
                 self.verifier.resolve(evidence)
             self.store.save_contract(contract)
+            observe_decision('contract.established',attributes={'contract_id':contract.contract_id,
+                'contract_version':contract.version},content=lambda:contract_snapshot(contract),context=context)
             experience_summaries = self.experience_service.summaries(IssueDescription(issue_text, issue_hash)) if self.experience_service is not None else ()
             lifecycle = Lifecycle(request, fixed, snapshot, environment)
             feedback = self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else ''
             history = []
             while True:
                 context.budget.check()
-                if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+                if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED', dimension='cancelled')
                 result = self.state(result, TaskState.GENERATING)
                 try:
                     # The contract this phase worked from: without it a reader cannot tell
@@ -515,10 +531,12 @@ class Controller:
             result = self.recorded(result)
             result = self.state(result, TaskState.FAILED, stop_reason=exc.reason, uncertainties=(*result.uncertainties, 'Process cleanup failed; directories retained.'))
         except BudgetStopped as exc:
+            self._observed_stop_dimension = exc.dimension
             result = self.recorded(result)
             terminal = TaskState.CANCELLED if exc.reason == 'CANCELLED' else TaskState.NEEDS_INFORMATION if exc.reason == 'NEEDS_INFORMATION' else TaskState.EXHAUSTED
             result = self.state(result, terminal, stop_reason=exc.reason, uncertainties=(*result.uncertainties, str(exc)))
         except asyncio.CancelledError:
+            self._observed_stop_dimension = "cancelled"
             result = self.recorded(result)
             context.cancel_event.set(); context.budget.cancel()
             result = self.state(result, TaskState.CANCELLED, stop_reason='CANCELLED')
@@ -543,9 +561,10 @@ class Controller:
             final_status = TaskState.DONE if result.status == TaskState.EXPORTING else result.status
             if final_status == TaskState.DONE:
                 context.budget.check()
-                if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+                if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED', dimension='cancelled')
             result = self.state(result, final_status, export_state='published', duration=time.monotonic() - started)
         except BudgetStopped as exc:
+            self._observed_stop_dimension = exc.dimension
             result = self.state(result, TaskState.CANCELLED if exc.reason == 'CANCELLED' else TaskState.EXHAUSTED, export_state='failed', stop_reason=exc.reason, duration=time.monotonic() - started)
         except Exception as exc:
             result = self.state(result, TaskState.FAILED, export_state='failed', stop_reason=result.stop_reason or 'EXPORT_FAILED', duration=time.monotonic() - started, uncertainties=(*result.uncertainties, self.feedback(str(exc))))
@@ -555,6 +574,9 @@ class Controller:
             except Exception:
                 from ..experience import LearningResult
                 self.learning_result = LearningResult("store_error", event_recorded=False)
+        observe_decision('task.stopped',attributes={'task_status':result.status.value,
+            'stop_reason':result.stop_reason,'budget_dimension':self._observed_stop_dimension
+                if result.stop_reason in ('EXHAUSTED','CANCELLED') else None},context=context)
         return result
 
     async def close_explorer(self):

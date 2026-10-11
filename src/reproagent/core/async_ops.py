@@ -14,12 +14,12 @@ async def bounded(awaitable, context):
     if context.cancel_event.is_set():
         if hasattr(awaitable, 'close'):
             awaitable.close()
-        raise BudgetStopped('CANCELLED')
+        raise BudgetStopped('CANCELLED', dimension='cancelled')
     task = asyncio.ensure_future(awaitable)
     try:
         while not task.done():
             if context.cancel_event.is_set():
-                raise BudgetStopped('CANCELLED')
+                raise BudgetStopped('CANCELLED', dimension='cancelled')
             context.budget.check()
             await asyncio.wait((task,), timeout=0.05)
         return await task

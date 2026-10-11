@@ -24,6 +24,10 @@ class TaskTraceSink:
         self._started = {}
         self._event_ordinals = {}
         self._session = None
+        self._issues = self._content._issues
+        self._terminal = {}
+        self._counts_partial = False
+        self._captured_sources = set()
     def _redact(self, value):
         return redact(value, self._secrets)
     def _explore_scope(self):
@@ -42,7 +46,9 @@ class TaskTraceSink:
         if self._frozen: return False
         if len(self._spans) >= observability.MAX_SPANS:
             self._partial = True
+            self._counts_partial = True
             self._warn(WARNING_SPAN_CAP)
+            self.note_capture_issue("SPAN_LIMIT", span_id=entry["span_id"], limit_scope="spans", limit_value=observability.MAX_SPANS)
             return False
         self._entries[entry["span_id"]] = entry
         self._spans.append(entry)
@@ -68,14 +74,22 @@ class TaskTraceSink:
         return self._entries.get(format(sc.span_id,"016x")) if sc.is_valid else None
     def note_event(self, name, attributes=None):
         with self._lock:
+            if self._frozen: return None
+            if name=='task.stopped':
+                self._terminal={k:self._redact(v) for k,v in (attributes or {}).items()
+                                if k in ('task_status','stop_reason','budget_dimension')}
             host = self.current_entry()
-            if host is None: self._partial=True; return None
+            if host is None:
+                self._partial=True
+                self.note_capture_issue("PARENT_MISSING")
+                return None
             index = self._event_ordinals.get(host["span_id"],0)
             self._event_ordinals[host["span_id"]] = index+1
             # The event is also emitted to OTel; the local snapshot stays bounded.
             name=self._redact(name)
             if len(name.encode("utf-8"))>256:
                 name="event.omitted_name";self._partial=True
+                self.note_capture_issue("METADATA_LIMIT", limit_scope="event_name_bytes", limit_value=256)
             trace.get_current_span().add_event(name)
             entry = dict(span_id=f"point:{host['span_id']}:{index}",parent_span_id=host['span_id'],
                 name=name,kind="point",offset_seconds=max(0.,self._clock()-self._started_clock),
@@ -84,18 +98,21 @@ class TaskTraceSink:
             if not self._admit(entry): return None
             self._annotate(entry, attributes or {})
             return entry
-    def finish(self, *, task_id, status, main_duration, learning=None):
+    def finish(self, *, task_id, status, main_duration, learning=None, stop_reason=None, budget=None):
         if self._session is not None: self._session.close()
         with self._lock:
             if self._started:
                 self._partial=True
                 self._warn("some spans had not ended when the task trace closed")
+                for ident in self._started: self.note_capture_issue("SPAN_UNFINISHED", span_id=ident)
             self._frozen=True
             # Enforce combined metadata limits, not only each attribute key.
             total=0
             for entry in self._spans:
                 if len(json.dumps(entry,ensure_ascii=False).encode()) > MAX_ATTRIBUTE_BYTES:
+                    self._counts_partial |= entry['name']==HTTP_ATTEMPT_SPAN
                     entry['attributes']={};self._partial=True
+                    self.note_capture_issue('METADATA_LIMIT',span_id=entry['span_id'],limit_scope='entry_bytes',limit_value=MAX_ATTRIBUTE_BYTES)
                     if len(entry['name'].encode('utf-8'))>256: entry['name']='operation.omitted_name'
                     while entry['content_refs'] and len(json.dumps(entry,ensure_ascii=False).encode())>MAX_ATTRIBUTE_BYTES:
                         entry['content_refs'].pop()
@@ -104,20 +121,48 @@ class TaskTraceSink:
                 total += len(json.dumps(entry,ensure_ascii=False).encode())
             if total > 1<<20:
                 self._partial=True
+                self._counts_partial=True
+                self.note_capture_issue("METADATA_LIMIT",limit_scope="metadata_total_bytes",limit_value=1<<20)
                 while total > 1<<20 and len(self._spans)>1:
                     item=self._spans.pop()
                     total-=len(json.dumps(item,ensure_ascii=False).encode())
             kept={x['span_id'] for x in self._spans}
-            if any(s['parent_span_id'] and s['parent_span_id'] not in kept for s in self._spans): self._partial=True
+            if any(s['parent_span_id'] and s['parent_span_id'] not in kept for s in self._spans):
+                self._partial=True
+                self.note_capture_issue('PARENT_MISSING')
             refs={ref for s in self._spans for ref in s['content_refs']}
+            issues=self._content.issues()
+            for item in issues:
+                if item['severity']!='info': self._warn('capture loss: '+item['code'])
+            if self._issues.dropped: self._warn('capture issue limit reached; additional losses counted')
+            if (self._partial or self._failed) and not any(i['severity']!='info' for i in issues):
+                self.note_capture_issue('OBSERVATION_EXCEPTION')
+                issues=self._content.issues()
+                self._warn('capture loss: OBSERVATION_EXCEPTION')
+            counts_complete=not(self._counts_partial or self._failed)
+            summary=self._summarise(learning)
+            if not counts_complete:
+                summary['usage']['complete']=False
+                summary['cost']['complete']=False
+            final_reason=stop_reason if stop_reason is not None else self._terminal.get('stop_reason')
+            final_dimension=(self._terminal.get('budget_dimension') if
+                final_reason==self._terminal.get('stop_reason') and
+                status==self._terminal.get('task_status',status) else None)
             doc=dict(schema_version=2,trace_id=self.trace_id,root_span_id=self.root_span_id,
                 task_id=task_id,status=status,capture_mode="content",started_at=self._started_at,
                 main_duration=main_duration,total_duration=max(0.,self._clock()-self._started_clock),
-                partial=self._partial or self._failed,metrics_complete=not(self._partial or self._failed),
+                partial=self._partial or self._failed or not self._content.complete,metrics_complete=counts_complete,
                 content_complete=self._content.complete and not self._failed,warnings=list(self._warnings),
                 spans=self._spans,contents=[c for c in self._content.records() if c['content_id'] in refs],
-                summary=self._summarise(learning))
+                summary=summary,
+                diagnostic_summary=dict(status=status,stop_reason=final_reason,budget=self._redact(budget),budget_dimension=final_dimension),
+                capture_health=dict(structure_complete=not(self._partial or self._failed),counts_complete=counts_complete,
+                    content_complete=self._content.complete and not self._failed,
+                    issues=issues,issues_dropped=self._issues.dropped))
             return copy.deepcopy(doc)
+
+    def note_capture_issue(self, code, **fields):
+        self._issues.add(code, **fields)
 
     def _warn(self, message: str) -> None:
             if message not in self._warnings:
@@ -125,6 +170,8 @@ class TaskTraceSink:
 
     def _fault(self) -> None:
             self._failed = True
+            self._counts_partial = True
+            self.note_capture_issue("OBSERVATION_EXCEPTION")
             self._warn(WARNING_OBSERVATION_FAILED)
 
     def _annotate(self, entry: dict, fields: dict) -> None:
@@ -145,18 +192,22 @@ class TaskTraceSink:
                         # Whole or not at all: a truncated fact would read as complete.
                         self._warn(WARNING_ATTRIBUTE_TOO_LARGE)
                         self._partial = True
+                        self._counts_partial |= key in ("usage","cost")
+                        self.note_capture_issue("METADATA_LIMIT",span_id=entry["span_id"],source=key,limit_scope="attribute_bytes",limit_value=MAX_ATTRIBUTE_BYTES)
                         continue
                     entry["attributes"][key] = value
             except Exception:  # noqa: BLE001 - observation never escapes
                 self._fault()
 
     def _capture(self, entry: dict, kind: str, value: Any, *, source: str,
-                     availability: str = "captured") -> str | None:
+                     availability: str = "captured", **metadata) -> str | None:
             """Copy one piece of content, attributing it to the span that produced it."""
             content_id = self._content.capture(owner_span_id=entry["span_id"], kind=kind, value=value,
-                                               source=source, availability=availability)
+                                               source=source, availability=availability, **metadata)
             if content_id is not None:
-                entry["content_refs"].append(content_id)
+                if content_id not in entry["content_refs"]: entry["content_refs"].append(content_id)
+                availability=next(c["availability"] for c in self._content.records() if c["content_id"]==content_id)
+                if availability=='captured': self._captured_sources.add((entry['span_id'],source))
             else:
                 availability = "omitted_limit"
             # The first capture decides the span's status: a later successful copy must not
@@ -194,7 +245,11 @@ def project_native_span(span, *, sink):
     with sink._lock:
         ident=format(span.context.span_id,"016x")
         entry=sink._entries.get(ident)
-        if entry is None: sink._partial=True; return
+        if entry is None:
+            sink._partial=True
+            sink._counts_partial=True
+            sink.note_capture_issue("SPAN_LIMIT",span_id=ident)
+            return
         start=sink._started.pop(ident,None)
         entry['duration_seconds']=max(0.,sink._clock()-start) if start is not None else None
         entry['otel_start_time_ns']=span.start_time
@@ -215,16 +270,17 @@ def project_native_span(span, *, sink):
                 raw=attributes.get(key)
                 if not isinstance(raw,str): continue
                 # Already captured terminal tool payloads are not stored again.
-                if source in ('sdk_tool_input','sdk_tool_result') and any(
-                    c['source']==source and c['owner_span_id']==ident for c in sink._content.records()): continue
+                if (ident,source) in sink._captured_sources: continue
                 availability='captured'
                 if len(raw)>=65536:
-                    sink._partial=True;availability='omitted_limit'
+                    availability='omitted_limit'
                 try: value=json.loads(raw) if availability=='captured' else raw
                 except (ValueError,TypeError): value=raw
                 if source.startswith('sdk_agent_') or source.startswith('sdk_model_'):
                     value=project_sdk_messages(value)
-                sink._capture(entry,source,value,source=source,availability=availability)
+                sink._capture(entry,source,value,source=source,availability=availability,
+                    **({'reason_code':'OTEL_ATTRIBUTE_POSSIBLY_TRUNCATED','limit_scope':'otel_attribute_characters',
+                        'limit_value':65536} if availability=='omitted_limit' else {}))
             usage={k:attributes.get('gen_ai.usage.'+v) for k,v in
                    [('input_tokens','input_tokens'),('output_tokens','output_tokens')]}
             if any(v is not None for v in usage.values()): sink._annotate(entry,{'usage':usage})
@@ -238,6 +294,8 @@ def project_native_span(span, *, sink):
         if any(getattr(span,k,0) for k in ('dropped_attributes','dropped_events','dropped_links')):
             sink._partial=True
             sink._warn('OpenTelemetry omitted some attributes, events or links')
+            sink.note_capture_issue('OTEL_DROPPED_FIELDS',span_id=ident)
+            if getattr(span,'dropped_attributes',0): sink._counts_partial=True
 
 
 def classify_error(exc):

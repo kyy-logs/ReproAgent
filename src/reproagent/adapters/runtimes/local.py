@@ -50,7 +50,7 @@ class LocalBackend:
     async def _execute(self, spec, context):
         context.budget.check()
         if context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
         started = time.monotonic()
         timeout = context.budget.command_timeout()
         cwd = workspace_path(spec.cwd)

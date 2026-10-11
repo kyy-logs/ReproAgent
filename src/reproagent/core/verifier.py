@@ -114,7 +114,7 @@ class Verifier:
         for attempt in range(3):
             context.budget.check()
             if context.cancel_event.is_set():
-                raise BudgetStopped('CANCELLED')
+                raise BudgetStopped('CANCELLED', dimension='cancelled')
             text = canonical_bytes(review.payload).decode()
             for secret in self.secrets:
                 text = text.replace(secret, '[REDACTED]')

@@ -177,7 +177,7 @@ def _check(context):
     if context is not None:
         context.budget.check()
         if context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
+            raise BudgetStopped("CANCELLED", dimension="cancelled")
 
 
 def append_experience(path: Path, card: ExperienceCard, context) -> str:

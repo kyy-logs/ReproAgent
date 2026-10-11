@@ -1,3 +1,12 @@
+export function diagnosticTarget(view,key) {
+  if(!Number.isInteger(key)||!view.nodes[key])return [];
+  const path=[],seen=new Set();let k=key;
+  while(k!==null&&k!==undefined&&view.nodes[k]&&!seen.has(k)) {
+    seen.add(k);path.unshift(k);k=view.nodes[k].parent_key;
+  }
+  return path;
+}
+
 // Fixed offline module. Trace values are only rendered as text.
 export function isFailure(node) {
   const a = node.attributes || {};
@@ -78,9 +87,19 @@ export function mountTraceViewer(root, view) {
     ['费用 · '+h.cost_label,figure(h.cost)],['TTFT','未采集'],['缓存命中','未采集']];
   for (const [label,value] of metrics) { const m=el('span','metric',label); m.append(el('b','',value)); stats.append(m); }
   fragment.append(stats);
-  if(h.partial || !h.metrics_complete) fragment.append(el('p','warn','incomplete / 基于已保留数据；计数与提示不覆盖未采集步骤。'));
+  if(!h.metrics_complete) fragment.append(el('p','warn','incomplete / 基于已保留数据；计数与提示不覆盖未采集步骤。'));
   if(!h.content_complete) fragment.append(el('p','warn','部分正文 missing or was cut short；详情保留截断与缺失原因。'));
   for (const w of h.warnings || []) fragment.append(el('p','warn',w));
+  const health=h.capture_health;
+  if(health) {
+    const box=el('details','trace-health');box.append(el('summary','','采集健康 · 结构 / 计数 / 正文'));
+    for(const [key,label]of [['structure_complete','结构'],['counts_complete','计数'],['content_complete','正文']])
+      box.append(el('p','',label+'：'+(health[key]===true?'完整':health[key]===false?'有缺失':'未知')));
+    if(health.legacy)box.append(el('p','unknown','历史记录未提供精确缺失原因；不补写。'));
+    for(const issue of health.issues||[])box.append(el('p','',JSON.stringify(issue)));
+    if(health.issues_dropped)box.append(el('p','warn','额外缺失记录 '+health.issues_dropped));
+    fragment.append(box);
+  }
   const hints=el('div','trace-hints'); hints.append(el('strong','','运行提示 · 程序规则 '));
   for(const hint of view.hints) hints.append(hint.node_key===null ? el('span','',hint.text+' · ') : button(hint.text,()=>selectNode(hint.node_key)));
   if(!view.hints.length) hints.append(el('span','','当前保留数据无提示'));
@@ -183,6 +202,12 @@ export function mountTraceViewer(root, view) {
   for(const k of uncited)if(captures.get(k))unlinked.append(captures.get(k));
   // Move the static acceptance section, preserving a single set of check elements.
   const decisions=fallback.querySelector('#decisions'); if(decisions)acceptance.append(decisions);
+  for(const link of acceptance.querySelectorAll('[data-diagnostic-node]'))link.addEventListener('click',event=>{
+    event.preventDefault();const key=Number(link.dataset.diagnosticNode);
+    const path=diagnosticTarget(view,key);if(!path.length)return;
+    clear.click();for(const k of path)state.collapsedKeys.delete(k);
+    selectNode(key);rows.querySelector('[data-select-key="'+key+'"]')?.scrollIntoView({block:'nearest'});
+  });
   root.hidden=false;fallback.hidden=true;
 }
 
