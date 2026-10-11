@@ -618,3 +618,11 @@ class Controller:
             failed = True
         if failed:
             self.store.append_event('explorer.cleanup_failed', (), {'result_code':'CLEANUP_FAILED'})
+        if self.experience_service is not None:
+            retain = getattr(self.experience_service, 'retain_exploration', None)
+            if callable(retain):
+                try:
+                    retain(getattr(self.explorer, 'learning_context', None))
+                except Exception:
+                    # Learning capture is optional and must not alter the sealed task.
+                    pass

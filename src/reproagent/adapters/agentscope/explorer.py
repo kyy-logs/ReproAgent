@@ -18,7 +18,7 @@ from .evidence import EvidenceLedger
 from .model_factory import AgentScopeModelFactory
 from .runtime import AgentScopeRuntime
 from .snapshot_backend import SnapshotBackend
-from .tools import build_toolkit
+from .tools import EvidenceViews, build_toolkit
 from ...core.agent import ReproAgent, exploration_prompt
 from ...core.candidate_service import CandidateService
 from ...core.phase import PhaseGate
@@ -53,7 +53,9 @@ class AgentScopeExplorer(ReproAgent):
         self.candidates = CandidateService(project, workspace, context)
         self.backend = SnapshotBackend(project, self.store, context)
         self.ledger = EvidenceLedger(project, self.store)
+        self.evidence_views = EvidenceViews(self.ledger)
         self.runtime = None
+        self.learning_context = {'source_refs':(), 'tool_errors':(), 'capture_issues':()}
 
     async def explore(self, phase):
         """Run the phase *phase* describes under the contract it carries.
@@ -75,11 +77,21 @@ class AgentScopeExplorer(ReproAgent):
         otherwise accumulate.
         """
         runtime, self.runtime = self.runtime, None
-        if runtime is not None:
-            await runtime.aclose()
         factory, self.model_factory = self.model_factory, None
-        if factory is not None:
-            await factory.aclose()
+        try:
+            if runtime is not None:
+                await runtime.aclose()
+                try:
+                    from ...learning_material import capture_exploration
+                    self.learning_context = capture_exploration(runtime.messages, self.evidence_views.issued_refs,
+                        secrets=getattr(self.gateway, 'secrets', ()))
+                except Exception:
+                    # Advisory learning cannot replace retirement or business results.
+                    self.learning_context = {'source_refs':(), 'tool_errors':(),
+                        'capture_issues':('CAPTURE_FAILED',)}
+        finally:
+            if factory is not None:
+                await factory.aclose()
 
     def _runtime(self, phase):
         """The one SDK runtime of this task, under the first phase's product prompt.
@@ -89,7 +101,8 @@ class AgentScopeExplorer(ReproAgent):
         its own message, never as a rewritten system prompt.
         """
         model = self.model_factory.create(self.context, 'exploration')
-        toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context, experience_view=self.experience_view)
+        toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context,
+            experience_view=self.experience_view, evidence_views=self.evidence_views)
         return AgentScopeRuntime(model, toolkit, self.gate, self.context,
                                  system_prompt=exploration_prompt(phase, self.candidate_parent),
                                  store=self.store, secrets=getattr(self.gateway, 'secrets', ()), experience_view=self.experience_view)

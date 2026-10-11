@@ -34,7 +34,7 @@
 
 - Create `src/reproagent/learning_material.py`: independent projection, attempt selection, capture normalization, budget packing and explicit build outcome.
 - Modify `src/reproagent/experience.py`: compatibility wrapper, typed build outcome handling, capture handoff, group-aware prompt context and diagnostics.
-- Modify `src/reproagent/adapters/agentscope/evidence.py`, `explorer.py`: expose issued references and retain allowed facts after SDK retirement.
+- Modify `src/reproagent/adapters/agentscope/evidence.py`, `explorer.py`, `tools.py`: expose issued references and retain allowed facts after SDK retirement.
 - Modify `src/reproagent/core/controller.py`: hand retained learning context to the real experience service after explorer closure, without requiring it from injected strategies/services.
 - Modify `src/reproagent/prompts/extract_experience.md`, `docs/experience.md`: explain attempts, fragments, observed outcomes and omissions.
 - Tests: new `tests/unit/test_learning_material.py`, existing experience learning/lifecycle and SDK experience integration tests.
@@ -62,7 +62,7 @@
 
 **Interfaces:**
 - `capture_exploration(messages, source_refs, *, secrets=()) -> dict`: keys `source_refs`, `tool_errors`, `capture_issues`; no raw chat or assistant text. <=16 source refs, <=8 complete allowed tool-error records, <=2048 bytes each; never export `read_experience` content.
-- Readonly `EvidenceLedger.issued_refs -> tuple[EvidenceRef,...]`.
+- Readonly `EvidenceLedger.issued_refs -> tuple[EvidenceRef,...]`; expose the union from actual Read/Grep EvidenceViews without changing either width policy.
 - `AgentScopeExplorer.learning_context`: initialized empty; captured after `runtime.aclose()` while its messages are still available. Factory cleanup always runs even when capture fails.
 - `ExperienceService.retain_exploration(context)` and `prepare_learning_input(... exploration=self.exploration)`; Controller uses an optional callable handoff after explorer closes. Existing injected ports remain compatible.
 

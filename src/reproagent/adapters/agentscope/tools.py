@@ -163,6 +163,11 @@ class EvidenceViews:
         self.search = search
         self.read = EvidenceLedger(search.project, search.store, max_line_characters=READ_LINE_CHARACTERS)
 
+    @property
+    def issued_refs(self) -> tuple[EvidenceRef, ...]:
+        """References issued by either tool width, without widening either policy."""
+        return tuple(dict.fromkeys((*self.search.issued_refs, *self.read.issued_refs)))
+
     def contains(self, ref: EvidenceRef) -> bool:
         """Whether a Read view or a search view displayed exactly this reference."""
         return self.search.contains(ref) or self.read.contains(ref)
@@ -582,7 +587,7 @@ class ReadExperience(ToolBase):
                          state=ToolResultState.SUCCESS, is_last=True)
 
 
-def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *, experience_view=None) -> Toolkit:
+def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *, experience_view=None, evidence_views=None) -> Toolkit:
     """The toolkit one exploration phase runs with: exactly :data:`TOOL_NAMES`.
 
     Args:
@@ -596,7 +601,7 @@ def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService,
         `Toolkit`: the registered tools, and nothing else.
     """
     require_agentscope()
-    views = EvidenceViews(ledger)
+    views = evidence_views if evidence_views is not None else EvidenceViews(ledger)
     tools = [
         SnapshotRead(backend=backend, max_line_characters=READ_LINE_CHARACTERS,
                      middlewares=[SnapshotResponseMiddleware(backend, views.read, context, view="read")]),

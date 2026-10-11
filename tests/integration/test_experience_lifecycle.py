@@ -12,7 +12,7 @@ from tests.unit.test_experience_store import card, library, exp
 from tests.integration.test_agentscope_backends import CANDIDATE, tool_response, text_response
 
 
-def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED", priced=False):
+def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED", priced=False, pitfalls=False):
     request, _, _, ctx = setup(tmp_path, projects, facts)
     path = tmp_path / "shared-experiences.json"
     if seed:
@@ -22,8 +22,9 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
     seen, main_calls, learning_calls = [], [], []
     holder = {}
     read = False
+    file_calls = 0
     async def handle(http_request):
-        nonlocal read
+        nonlocal read, file_calls
         payload = json.loads(http_request.content)
         seen.append(payload)
         data = json.loads(payload["messages"][-1]["content"]) if not payload.get("tools") else None
@@ -33,8 +34,10 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
             assert controller.gateway.gateway.factory._clients == []
             assert controller.explorer.runtime is None
             sealed = controller.store.load_record("task", data_task_id(controller))
-            assert sealed.status in (TaskState.DONE, TaskState.FAILED)
-            package = controller.store.root / "artifacts/reproduction"
+            assert sealed.status in (TaskState.DONE, TaskState.FAILED, TaskState.BLOCKED,
+                TaskState.NEEDS_INFORMATION, TaskState.EXHAUSTED)
+            kind = 'reproduction' if sealed.status == TaskState.DONE else 'diagnostic'
+            package = controller.store.root / 'artifacts' / kind
             if not fail_export:
                 assert (package / "manifest.json").is_file()
             learning_calls.append(data)
@@ -62,6 +65,13 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
                 if summaries:
                     read = True
                     return tool_response("read_experience", {"id": summaries[0]["id"]}, "memory")
+            if pitfalls and file_calls < 2:
+                file_calls += 1
+                path = 'absent.py' if file_calls == 1 else 'example/parser.py'
+                root = holder['controller'].explorer.project.snapshot.root
+                return tool_response('Read', {'file_path':str(root/path)}, f'file{file_calls}')
+            if pitfalls == 'information':
+                return tool_response('request_information', {'question':'Please clarify the expected result.'}, 'info')
             return tool_response("write_candidate", {"files": [{"path": "tests/test_repro.py",
                 "content": CANDIDATE, "role": "test"}], "hypothesis": "empty input"}, "write")
         kind = "verdict" if "available_refs" in data else "contract"
@@ -78,6 +88,54 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
         controller.exporter.export = fail
     result = asyncio.run(controller.run(request, ctx))
     return request, controller, result, seen, main_calls, learning_calls
+
+
+def test_learning_sees_sdk_pitfalls_and_citations_with_trace_disabled(tmp_path, projects, facts):
+    from reproagent.observability import trace_session
+    with trace_session(enabled=False):
+        _, controller, result, _, _, learning = run_sdk_task(tmp_path, projects, facts, pitfalls=True)
+    assert result.status == TaskState.DONE and len(learning) == 1
+    text = json.dumps(learning[0], ensure_ascii=False)
+    assert 'absent.py' in text and 'return [values[0]]' in text
+    assert 'HISTORICAL_HINT' not in text
+    assert controller.explorer.learning_context['tool_errors']
+    assert controller.explorer.learning_context['source_refs']
+    assert not (controller.store.root/'observability/trace.json').exists()
+
+
+def test_learning_retains_issued_source_before_any_candidate_is_run(tmp_path, projects, facts):
+    _, controller, result, _, _, learning = run_sdk_task(tmp_path, projects, facts, pitfalls='information')
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert len(learning) == 1 and controller.learning_result.code == 'written'
+    text = json.dumps(learning[0], ensure_ascii=False)
+    assert 'return [values[0]]' in text and 'absent.py' in text
+    assert learning[0]['attempts'] == []
+
+
+def test_capture_failure_cannot_replace_sealed_task_or_cleanup(tmp_path, projects, facts, monkeypatch):
+    from reproagent import learning_material
+    def fail(*args, **kwargs):
+        raise RuntimeError('capture unavailable')
+    monkeypatch.setattr(learning_material, 'capture_exploration', fail)
+    _, controller, result, _, _, learning = run_sdk_task(tmp_path, projects, facts)
+    assert result.status == TaskState.DONE and len(learning) == 1
+    assert controller.explorer.model_factory is None
+    assert {'kind':'exploration', 'code':'CAPTURE_FAILED'} in learning[0]['omissions']
+
+
+def test_learning_reports_input_overflow_without_creating_model(tmp_path, projects, facts):
+    from tests.integration.test_exporter import export_setup
+    from reproagent.store import atomic_write
+    _, result, store, _, _, _, request = export_setup(tmp_path, projects, facts)
+    atomic_write(store.root/'input/issue.md', '大'.encode() * 3000)
+    def forbidden(store):
+        raise AssertionError('overflow must skip model creation')
+    service = exp().ExperienceService(replace(request, experience_file=tmp_path/'shared.json'), store, forbidden)
+    context = facts.context()
+    service.prepare(None, context)
+    outcome = asyncio.run(service.learn(result, context))
+    assert outcome.code == 'skipped_input_too_large'
+    assert not (store.root/'learning/evidence.jsonl').exists()
 
 
 def data_task_id(controller):

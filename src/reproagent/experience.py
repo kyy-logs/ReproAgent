@@ -364,6 +364,11 @@ class ExperienceService:
         self.snapshot = None
         self._learning_started = False
         self._learning_result = None
+        self.exploration = {}
+
+    def retain_exploration(self, context):
+        """Receive bounded current-task facts only after explorer resources close."""
+        self.exploration = dict(context or {})
 
     def prepare(self, fixed, context):
         _check(context)
@@ -410,7 +415,20 @@ class ExperienceService:
             elif self.snapshot is not None and self.snapshot.state == "store_error":
                 code = "store_error"
             elif self.path is not None and self.learning_gateway_factory is not None:
-                material = build_learning_input(self.store, result, context, secrets=self.secrets)
+                from .learning_material import prepare_learning_input
+                built = prepare_learning_input(self.store, result, context,
+                    secrets=self.secrets, exploration=self.exploration)
+                material, code = built.material, built.code
+                try:
+                    diagnostics = {'code':code}
+                    if material is not None:
+                        diagnostics.update({'input_bytes':len(canonical_bytes(material.payload)),
+                            'evidence_count':len(material.evidence_map),
+                            'attempt_count':len(material.payload['attempts']),
+                            'omissions':material.payload['omissions']})
+                    self.store.append_event('experience.material', (), diagnostics)
+                except (OSError, ValueError, TypeError):
+                    pass
                 if material is not None:
                     _check(context)
                     gateway = self.learning_gateway_factory(self.store)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import ast
-from collections import Counter
+from collections import Counter, OrderedDict, deque
 from dataclasses import asdict, dataclass
 
 from .core.models import CandidateClass, EvidenceRef, TaskState
@@ -59,6 +59,76 @@ def _candidate_fragment(data, failed_names):
                 if len(canonical_bytes({'content': fragment})) <= ATOM_BYTES - 300:
                     return fragment, start, end, True
     return None
+
+
+def capture_exploration(messages, source_refs, *, secrets=()):
+    """Copy a few complete SDK tool failures; never copy chat or memory content.
+
+    Association is chronological: a repeated tool-call ID cannot attach a later
+    call's arguments to an earlier result. Window/entry omissions are explicit.
+    This capture is independent of diagnostic tracing.
+    """
+    import json
+    from agentscope.message import ToolCallBlock, ToolResultBlock, TextBlock
+    allowed = frozenset(('Read','Grep','Glob','write_candidate','revise_contract','request_information'))
+    errors, issues, pending = deque(maxlen=8), [], OrderedDict()
+    def issue(code):
+        if code not in issues and len(issues) < 8:
+            issues.append(code)
+    if len(messages) > 512:
+        issue('MESSAGE_WINDOW_LIMIT')
+    if len(source_refs) > 16:
+        issue('SOURCE_REF_LIMIT')
+    for message_index, message in enumerate(messages[-512:]):
+        blocks = message.content
+        if len(blocks) > 64:
+            issue('MESSAGE_BLOCK_LIMIT')
+        for block_index, block in enumerate(blocks[:64]):
+            if isinstance(block, ToolCallBlock):
+                if block.name in allowed:
+                    pending[block.id] = block
+                    if len(pending) > 64:
+                        pending.popitem(last=False)
+                        issue('TOOL_LINK_WINDOW_LIMIT')
+                continue
+            if not isinstance(block, ToolResultBlock) or block.name not in allowed:
+                continue
+            call = pending.pop(block.id, None)
+            state = getattr(block.state, 'value', block.state)
+            if state not in ('error','denied','interrupted'):
+                continue
+            output = block.output
+            if isinstance(output, list):
+                if not all(isinstance(part, TextBlock) for part in output):
+                    issue('NON_TEXT_TOOL_RESULT')
+                    continue
+                output = '\n'.join(part.text for part in output)
+            record = {'tool':block.name, 'tool_call_id':block.id, 'state':state,
+                'message_offset':max(0,len(messages)-512)+message_index,
+                'block_index':block_index, 'arguments':None, 'result':output}
+            if call is None or call.name != block.name:
+                record['link_state'] = 'missing'
+                issue('MISSING_TOOL_CALL')
+            else:
+                try:
+                    arguments = json.loads(call.input)
+                    if not isinstance(arguments, dict):
+                        raise ValueError('arguments are not an object')
+                    record['arguments'] = arguments
+                    record['link_state'] = 'matched'
+                except (ValueError, TypeError):
+                    record['link_state'] = 'invalid_arguments'
+                    issue('INVALID_TOOL_INPUT')
+            record = json.loads(_redact(canonical_bytes(record).decode('utf-8'), secrets))
+            if len(canonical_bytes(record)) > ATOM_BYTES:
+                issue('TOOL_ERROR_TOO_LARGE')
+                continue
+            if len(errors) == errors.maxlen:
+                issue('TOOL_ERROR_LIMIT')
+            errors.append(record)
+    refs = tuple(ref for ref in source_refs[-16:] if isinstance(ref, EvidenceRef)
+        and not any(secret and secret in ref.path for secret in secrets))
+    return {'source_refs':refs, 'tool_errors':tuple(errors), 'capture_issues':tuple(issues)}
 
 
 def prepare_learning_input(store, result, context, *, secrets=(), exploration=None):
@@ -171,6 +241,15 @@ def _prepare(store, result, context, *, secrets, exploration):
         if previous is not None:
             selected.insert(0, previous)
     registered = {}
+    # Reading source may precede the first candidate; the freeze event is the
+    # original registration boundary even when no test could be published.
+    for event in events:
+        if event.kind != 'snapshot.created':
+            continue
+        snapshot = store.load_record('snapshots', event.payload['snapshot_id'])
+        if not is_within(snapshot.root, safe_child(store.root, 'snapshots')):
+            raise ValueError('snapshot escapes original collection')
+        registered.update({str(workspace_path(snapshot.root / f.path).resolve()):f.content_hash for f in snapshot.files})
     contracts = []
     files = []
     run_details = []

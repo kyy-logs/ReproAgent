@@ -68,6 +68,11 @@ class EvidenceLedger:
         self.max_line_characters = max_line_characters
         self._issued: list[EvidenceRef] = []
 
+    @property
+    def issued_refs(self) -> tuple[EvidenceRef, ...]:
+        """References actually issued to this task; consumers recheck source bytes."""
+        return tuple(self._issued)
+
     def record_visible(self, path: str, start: int, end: int) -> EvidenceRef:
         """The citation for lines *start*-*end* of the registered file *path*.
 
