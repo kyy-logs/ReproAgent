@@ -2,7 +2,7 @@
 
 状态：离线验收完成。最终完整 pytest：757 passed、5 skipped、exit 0；Node：8 passed、exit 0。
 
-实现位于隔离工作区 `experience-episodes`，分支 `codex/experience-episodes`，基线 `1c7a604`。没有合并、推送或运行付费模型；验收与独立审查未使用 Astra。
+实现位于隔离工作区 `experience-episodes`，分支 `codex/experience-episodes`，基线 `1c7a604`。该验收记录生成时尚未合并或推送；未运行付费模型，验收与独立审查未使用 Astra。
 
 ## 实现范围
 
@@ -63,3 +63,7 @@ GPT-6.1-sol 的一次新上下文只读审查发现三项 P2；全部实际复�
 ## 验证边界
 
 离线验收验证事实选择、大小、引用、生命周期和调用隔离。未证明经验语义正确或提升复现率；后者需要冻结经验库并分离学习/评测集，进行真实模型 A/B。当前材料是代表性经过，不是完整探索上下文。
+
+## 主分支集成
+
+用户随后明确授权合并并 push。2026-10-11 将 `codex/experience-episodes` 快进合并至 E 盘 `main`；代码提交为 `160f7d5`，没有冲突或源码改动。主工作区补测 53 passed、exit 0；Node 查看器 8 passed、exit 0。详细记录见 [主分支集成验收](2026-10-11-experience-episodes-main-integration.md)。原隔离工作区的测试日志与离线案例胶囊保存在 `.local/experience-episodes/`，此前相对日志路径指该目录内同名文件。
