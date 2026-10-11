@@ -11,6 +11,15 @@ class ModelProtocolError(Exception):
     """The model failed bounded correction of a structured response."""
 
 
+class ProviderRequestError(RuntimeError):
+    """A failed provider request, carrying no raw provider text or credentials."""
+    def __init__(self, *, status_code=None):
+        self.status_code = status_code
+        self.kind = 'http_error' if status_code is not None else 'network_error'
+        super().__init__(f'provider HTTP {status_code}' if status_code is not None
+                         else 'provider network failure after 3 attempts')
+
+
 # Fixed classes for an unusable provider response; only these enter events, and none
 # of them carries provider text. Truncation, an explicit filter/abort and an oversized
 # body cannot be corrected by repeating the same request; a complete but structurally
@@ -61,13 +70,15 @@ def classify_output(finish_reason, text, tool_calls=False):
 
 
 def attempt_payload(attempt, usage, cost_kind, cost_value, *, response_kind, effective_output_limit,
-                    outcome='unknown', finish_reason='', content_bytes=0, backend=None):
+                    outcome='unknown', finish_reason='', content_bytes=0, backend=None, http_status_code=None):
     """Bound what a model attempt records: no prompt, raw response, reasoning text or header."""
     record = {'attempt':attempt, 'usage':usage, 'cost_kind':cost_kind, 'cost_value':cost_value,
         'outcome':outcome if outcome in ATTEMPT_OUTCOMES else 'unknown',
         'response_kind':response_kind, 'effective_output_limit':effective_output_limit,
         'finish_reason':classify_finish_reason(finish_reason), 'content_bytes':content_bytes}
     if backend is not None: record['backend'] = backend
+    if type(http_status_code) is int and 100 <= http_status_code <= 599:
+        record['http_status_code'] = http_status_code
     return record
 
 

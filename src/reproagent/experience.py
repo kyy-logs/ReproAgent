@@ -65,6 +65,7 @@ class LearningResult:
     known_cost_subtotal: float = 0
     unknown_cost_attempts: int = 0
     event_recorded: bool = True
+    unknown_usage_attempts: int = 0
 
 
 def _normalized(text):
@@ -399,6 +400,7 @@ class ExperienceService:
         import time
         from .core.budget import Budget
         from .core.models import BudgetLimits, CallContext, TaskState
+        from .core.protocol import ProviderRequestError
         if self._learning_started:
             return self._learning_result or LearningResult("busy")
         self._learning_started = True
@@ -439,6 +441,8 @@ class ExperienceService:
         except asyncio.CancelledError:
             main_context.cancel_event.set()
             code = "skipped_cancelled"
+        except ProviderRequestError:
+            code = "provider_error"
         except (ValueError, TypeError, RuntimeError):
             code = "invalid"
         except Exception:
@@ -463,7 +467,9 @@ class ExperienceService:
             outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
                 time.monotonic() - started, len(attempts), usage,
                 sum(item["cost_value"] for item in attempts if item.get("cost_value") is not None),
-                sum(item.get("cost_value") is None for item in attempts))
+                sum(item.get("cost_value") is None for item in attempts),
+                unknown_usage_attempts=sum(any(key not in item.get("usage", {}) for key in
+                    ("prompt_tokens", "completion_tokens", "total_tokens")) for item in attempts))
         except (OSError, ValueError, TypeError):
             outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
                 duration=time.monotonic() - started)

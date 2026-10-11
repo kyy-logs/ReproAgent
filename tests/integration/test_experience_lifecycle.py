@@ -41,6 +41,13 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
             if not fail_export:
                 assert (package / "manifest.json").is_file()
             learning_calls.append(data)
+            if learning == "json_mode":
+                if not any("json" in m["content"].lower() for m in payload["messages"] if m["role"] == "system"):
+                    return httpx.Response(400, json={"error": {"message": "JSON mode requires a JSON instruction"}})
+            if learning == "http_error":
+                return httpx.Response(401, json={"error": {"message": "invalid authentication"}})
+            if learning == "network_error":
+                raise httpx.ConnectError("offline connection failed", request=http_request)
             if learning == "timeout":
                 await asyncio.Event().wait()
             if learning == "invalid":
@@ -154,6 +161,25 @@ def test_learning_starts_only_after_main_result_is_sealed(tmp_path, projects, fa
     package = controller.store.root / "artifacts/reproduction"
     assert "learning/evidence.jsonl" not in (package / "manifest.json").read_text(encoding="utf-8")
     assert "Empty input assertions need" not in (package / "report.md").read_text(encoding="utf-8")
+
+
+def test_json_mode_provider_can_write_learning_without_affecting_main_result(tmp_path, projects, facts):
+    request, controller, result, _, _, calls = run_sdk_task(tmp_path, projects, facts, learning="json_mode")
+    assert result.status == TaskState.DONE and len(calls) == 1
+    assert controller.learning_result.code == "written"
+    assert len(exp().load_experience_snapshot(request.experience_file).cards) == 2
+    assert controller.store.load_record("task", result.task_id) == result
+
+
+@pytest.mark.parametrize("learning,count", [("http_error", 1), ("network_error", 3)])
+def test_learning_provider_failure_is_not_invalid_experience(tmp_path, projects, facts, learning, count):
+    request, controller, result, _, _, calls = run_sdk_task(tmp_path, projects, facts, learning=learning)
+    assert result.status == TaskState.DONE and len(calls) == count
+    outcome = controller.learning_result
+    assert outcome.code == "provider_error" and outcome.http_attempts == count
+    assert outcome.unknown_usage_attempts == count and outcome.unknown_cost_attempts == count
+    assert len(exp().load_experience_snapshot(request.experience_file).cards) == 1
+    assert controller.store.load_record("task", result.task_id) == result
 
 
 def test_summary_load_occurs_after_analysis_before_first_explore(tmp_path, projects, facts):

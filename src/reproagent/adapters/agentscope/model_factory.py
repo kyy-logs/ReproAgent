@@ -16,9 +16,10 @@ from ..models.options import resolve_model_options
 from ...core.async_ops import bounded
 from ...core.budget import BudgetStopped
 from ...core.models import ModelRequest
-from ...core.protocol import ModelOutputError, attempt_payload, classify_output
+from ...core.protocol import ModelOutputError, ProviderRequestError, attempt_payload, classify_output
 from ...core.serialization import parse_json
 from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, capture, span, tracing_enabled
+from ...observability_content import redact
 
 #: The most of a rejected response body the trace will keep, so a preview cannot itself
 #: become the reason a run is unreadable.
@@ -77,6 +78,7 @@ class ObservedAttempt:
         self.outcome = 'unknown'
         self.finish_reason = ''
         self.content_bytes = 0
+        self.http_status_code = None
 
 
 def _failed(observation, error):
@@ -123,7 +125,7 @@ class LimitedResponseStream(httpx.AsyncByteStream):
         await self.stream.aclose()
 
 
-def _response_hook(observation, context, purpose):
+def _response_hook(observation, context, purpose, secrets=()):
     """Read the reply into the observation, and into the trace as a redacted copy.
 
     What is kept is the projection ``_capture_response`` selects, never the raw body:
@@ -131,6 +133,7 @@ def _response_hook(observation, context, purpose):
     already been through redaction.
     """
     async def observe(response):
+        observation.http_status_code = response.status_code
         if response.headers.get('content-encoding', 'identity').strip().lower() != 'identity':
             # This client always asks for identity, so asking again changes nothing.
             raise _failed(observation, ModelOutputError(
@@ -149,6 +152,7 @@ def _response_hook(observation, context, purpose):
         if response.status_code >= 300:
             # The transport reports any non-success status; a redirect is never
             # followed and its body is not a provider reply.
+            _capture_http_error(response, secrets)
             return
         try:
             data = parse_json(response.text)
@@ -186,6 +190,33 @@ def _response_hook(observation, context, purpose):
             raise _failed(observation, ModelOutputError(
                 'invalid, truncated or incompatible provider response')) from None
     return observe
+
+
+def _capture_http_error(response, secrets):
+    """Keep selected error fields only; redact before limiting each text field.
+
+    Never copy headers or arbitrary provider debug objects. This is diagnostic
+    content on the HTTP span, not material for the agent or an event payload.
+    """
+    if not tracing_enabled():
+        return
+    try:
+        try:
+            data = parse_json(response.text)
+        except (ValueError, TypeError):
+            data = None
+        error = data.get('error') if isinstance(data, dict) else None
+        selected = {k: error[k] for k in ('code', 'type', 'message')
+                    if isinstance(error, dict) and isinstance(error.get(k), str)}
+        if not selected and not isinstance(data, dict):
+            selected = {'message': response.text}
+        selected = redact(selected, secrets)
+        truncated = any(len(v) > INVALID_PREVIEW_CHARACTERS for v in selected.values())
+        capture('provider_error', {'http_status_code': response.status_code,
+                'error': {k: v[:INVALID_PREVIEW_CHARACTERS] for k, v in selected.items()},
+                'truncated': truncated}, source='provider_error')
+    except Exception:  # noqa: BLE001 - diagnostics never alter retry or task outcome
+        capture('provider_error', None, source='provider_error', availability='capture_error')
 
 
 def _capture_response(message: dict) -> None:
@@ -304,6 +335,7 @@ class _GuardedModel:
                 # must not make the untraced path do the work twice.
                 cost = self._account(reservation, kwargs)
                 http.annotate(result_code=self.observation.outcome,
+                              http_status_code=self.observation.http_status_code,
                               output_limit=effective_output_limit(self.config, kwargs),
                               usage=usage_totals(self.observation.usage),
                               cost=cost)
@@ -329,14 +361,15 @@ class _GuardedModel:
         import openai
         if isinstance(failure, openai.APIStatusError):
             self.observation.outcome = 'http_error'
+            self.observation.http_status_code = failure.status_code
             if failure.status_code in RETRYABLE_STATUS and attempt + 1 < HTTP_ATTEMPTS:
                 return _RETRY
-            raise RuntimeError(f'provider HTTP {failure.status_code}') from None
+            raise ProviderRequestError(status_code=failure.status_code) from None
         if isinstance(failure, openai.APIConnectionError):
             self.observation.outcome = 'network_error'
             if attempt + 1 < HTTP_ATTEMPTS:
                 return _RETRY
-            raise RuntimeError('provider network failure after 3 attempts') from None
+            raise ProviderRequestError() from None
         self.observation.outcome = 'INVALID_PROTOCOL'
         raise ModelOutputError('incompatible AgentScope provider response') from None
 
@@ -359,7 +392,7 @@ class _GuardedModel:
             self.attempts, self.observation.usage, 'estimated' if cost is not None else 'unknown', cost,
             response_kind=self.purpose, effective_output_limit=limit, outcome=self.observation.outcome,
             finish_reason=self.observation.finish_reason, content_bytes=self.observation.content_bytes,
-            backend='agentscope'))
+            backend='agentscope', http_status_code=self.observation.http_status_code))
         return cost
 
 
@@ -428,7 +461,7 @@ class AgentScopeModelFactory:
             timeout=min(REQUEST_TIMEOUT_SECONDS, context.budget.deadline - context.budget.clock()),
             headers={'Accept-Encoding': 'identity'}, follow_redirects=False, trust_env=False,
             event_hooks={'request': [_request_hook(purpose)],
-                         'response': [_response_hook(observation, context, purpose)]})
+                         'response': [_response_hook(observation, context, purpose, (key,))]})
         self._clients.append(client)
         return model_class(purpose=purpose, config=self.config, store=self.store, context=context,
             observation=observation, formatter=formatter_class(), stream=False, max_retries=0,

@@ -63,6 +63,12 @@
 
 用户继续审查原 report.md；限制部分只列实际成功读取的经验 ID，不复制库或新增审查文档。report.json 有 experience_read_ids，CLI 的 learning 字段单独说明 code、duration、HTTP、usage、已知费用小计与未知费用次数。学习失败不改主退出码；诊断不一定代表经验写入。
 
+学习请求明确要求一个 JSON 对象，兼容 `response_format=json_object` 的提示词约束。HTTP 拒绝或三次网络尝试耗尽返回 `provider_error`；完整回复不符合经验结构仍返回 `invalid`，两者不能混为一谈。每个 `model.attempt` 在收到 HTTP 响应时记录 `http_status_code`，没收到响应则不虚构状态码。
+
+启用 trace 时，HTTP span 附带状态码，并关联 `provider_error` 错误摘要：只选择 code/type/message，已知模型密钥先脱敏，每字段最多 512 字符，省略时标记 truncated。不复制响应头或额外 debug 字段；非 JSON 错误正文仅保存有限脱敏预览。关闭 trace 不保留错误正文，事件中始终只有受控元数据，不把这些错误预览喂回学习模型。此采集不增加模型请求。
+
+`learning.usage` 是已报告 token 的小计；`unknown_usage_attempts` 表示缺少任一 prompt/completion/total token 计数的尝试数。该字段大于 0 时，小计不能代表完整消耗，即使小计为 0 也不能断言免费。费用缺失仍通过 `unknown_cost_attempts` 表达。
+
 ## 冻结评测
 
 学习集先用普通任务生成库，评测集不学回。SWT 批量入口支持：

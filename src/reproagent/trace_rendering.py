@@ -42,6 +42,7 @@ SOURCE_LABELS = {
     "sdk_tool_result": "tool result",
     "program_artifact": "program artifact",
     "invalid_response_preview": "unparsable response (preview)",
+    "provider_error": "provider request error (redacted preview)",
     "sdk_agent_input": "SDK agent input", "sdk_agent_output": "SDK agent output",
     "sdk_model_input": "SDK model input", "sdk_model_output": "SDK model output",
 }

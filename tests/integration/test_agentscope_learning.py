@@ -16,6 +16,8 @@ def test_learning_request_has_no_tools_and_own_deadline(tmp_path):
     calls = []
     def handle(request):
         calls.append(json.loads(request.content))
+        if not any("json" in m["content"].lower() for m in calls[-1]["messages"]):
+            return httpx.Response(400, json={"error":{"message":"messages must contain JSON"}})
         return reply('{"experience":null}', usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15})
     store = TaskStore(tmp_path)
     gateway = build_gateway(handle, store)

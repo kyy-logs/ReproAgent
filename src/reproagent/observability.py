@@ -44,7 +44,7 @@ ALLOWED_ATTRIBUTES = frozenset({
     "candidate_id", "run_id", "contract_id", "contract_version", "check", "check_source",
     "permission_result", "error_category", "classification_source",
     "checks", "reason_origin", "exit_code", "stop_reason", "cleanup_ok", "health",
-    "attempt", "output_limit", "budget", "usage", "cost", "unknown",
+    "attempt", "output_limit", "budget", "usage", "cost", "unknown", "http_status_code",
 })
 
 #: The one capture mode this version has: metadata plus the content it can copy.

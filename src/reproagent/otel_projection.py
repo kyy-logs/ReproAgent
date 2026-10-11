@@ -241,11 +241,15 @@ def project_native_span(span, *, sink):
 
 
 def classify_error(exc):
-    code=getattr(getattr(exc,'response',None),'status_code',None)
+    code=getattr(exc,'status_code',None)
+    if code is None: code=getattr(getattr(exc,'response',None),'status_code',None)
     if isinstance(code,int):
         category={400:'input',422:'input',401:'authentication',403:'authentication',429:'rate_limit'}.get(code,
             'provider' if 500<=code<=599 else 'unknown')
         return dict(error_category=category,classification_source='http_status')
+    from .core.protocol import ProviderRequestError
+    if isinstance(exc,ProviderRequestError):
+        return dict(error_category='transport',classification_source='program_code')
     if getattr(exc,'code',None):
         return dict(error_category='protocol',classification_source='program_code')
     import asyncio
