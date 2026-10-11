@@ -126,3 +126,29 @@ def test_shared_wire_request_populates_each_actual_http_branch():
 def test_invalid_start_timestamp_is_unknown(value):
     doc=fixture();doc["started_at"]=value
     assert build_trace_view(doc)["header"]["started_at"] is None
+
+
+@pytest.mark.parametrize('code',['ALLOWED','DENIED','RESERVED_FOR_PUBLISHING'])
+def test_permission_filter_metadata_follows_the_unique_actual_call(code):
+    d=fixture(2);d['spans'][1]['attributes']['result_code']=code
+    before=copy.deepcopy(d);v=build_trace_view(d)
+    assert v['nodes'][2]['permission_result']==code
+    assert v['nodes'][2]['permission_origin_key']==1
+    assert v['nodes'][2]['attributes'].get('result_code') is None
+    assert d==before
+    if code=='RESERVED_FOR_PUBLISHING':
+        assert any('1 ' in h['text'] for h in v['hints'] if h['kind']=='reserved')
+
+
+def test_permission_filter_does_not_cross_phases_or_guess_conflicting_checks():
+    d=fixture(2);root=d['root_span_id']
+    first=node('3'*16,'explore',root);second=node('4'*16,'explore',root)
+    d['spans'].extend([first,second])
+    d['spans'][1]['parent_span_id']=first['span_id']
+    d['spans'][2]['parent_span_id']=second['span_id']
+    assert build_trace_view(d)['nodes'][2]['permission_result'] is None
+    assert build_trace_view(d)['nodes'][2]['content_keys']==[]
+    d['spans'][2]['parent_span_id']=first['span_id']
+    denied=node(f'point:{first["span_id"]}:99','permission',first['span_id'],kind='point',tool_call_key='call',result_code='DENIED')
+    d['spans'].append(denied)
+    assert build_trace_view(d)['nodes'][2]['permission_result'] is None

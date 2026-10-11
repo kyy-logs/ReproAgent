@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {computeVisibleRows, formatStartTime, uncitedContentKeys} from '../../src/reproagent/resources/trace_viewer.mjs';
+import {computeVisibleRows, formatStartTime, uncitedContentKeys, isFailure} from '../../src/reproagent/resources/trace_viewer.mjs';
 
 function fixture() {
  return {roots:[0],nodes:[
@@ -9,7 +9,7 @@ function fixture() {
  {key:2,label:'tool.Read',kind_tag:'TOOL',parent_key:1,child_keys:[],content_keys:[0],attributes:{},display_status:'ok'},
  {key:3,label:'tool.Read',kind_tag:'TOOL',parent_key:1,child_keys:[],content_keys:[0],attributes:{result_code:'FAIL'},display_status:'failed'}]};
 }
-function state(extra={}) { return {query:'',typeSet:new Set(),errorsOnly:false,collapsedKeys:new Set(),...extra}; }
+function state(extra={}) { return {query:'',permissionFilter:'',collapsedKeys:new Set(),...extra}; }
 const keys=rows=>rows.map(n=>n.key);
 
 test('matching_descendant_preserves_and_opens_ancestors',()=>{
@@ -22,9 +22,10 @@ test('clearing_query_restores_manual_collapses',()=>{
  assert.equal(computeVisibleRows(fixture(),s,new Set()).length,4);
  s.query=''; assert.deepEqual(keys(computeVisibleRows(fixture(),s,new Set())),[0,1]);
 });
-test('combined_filters_distinguish_expected_otel_error',()=>{
- assert.deepEqual(keys(computeVisibleRows(fixture(),state({typeSet:new Set(['TOOL']),errorsOnly:true}),new Set())),[0,1,3]);
- assert.deepEqual(keys(computeVisibleRows(fixture(),state({typeSet:new Set(['LLM']),errorsOnly:true}),new Set())),[]);
+test('retired type and failure flags cannot silently hide calls',()=>{
+ assert.deepEqual(keys(computeVisibleRows(fixture(),state({typeSet:new Set(['TOOL']),errorsOnly:true}),new Set())),[0,1,2,3]);
+ assert.equal(isFailure(fixture().nodes[1]),false);
+ assert.equal(isFailure(fixture().nodes[3]),true);
 });
 test('shared_content_matches_without_per_node_body_duplication',()=>{
  const view=fixture();
@@ -62,4 +63,28 @@ test('diagnostic target restores the actual ancestor path and rejects missing ta
  const {diagnosticTarget}=await import('../../src/reproagent/resources/trace_viewer.mjs');
  assert.deepEqual(diagnosticTarget(fixture(),2),[0,1,2]);
  assert.deepEqual(diagnosticTarget(fixture(),99),[]);
+});
+
+
+test('permission filter retains the actual failed tool and permission context',()=>{
+ const view=fixture();
+ view.nodes[2]={...view.nodes[2],label:'permission',permission_result:'ALLOWED'};
+ view.nodes[3].permission_result='ALLOWED';view.nodes[3].permission_origin_key=2;
+ assert.deepEqual(keys(computeVisibleRows(view,state({permissionFilter:'ALLOWED'}),new Set())),[0,1,2,3]);
+});
+
+test('permission refusals have no fabricated execution',()=>{
+ const view=fixture();view.nodes=view.nodes.slice(0,3);view.nodes[1].child_keys=[2];
+ view.nodes[2]={...view.nodes[2],label:'permission',permission_result:'DENIED',display_status:'ok',attributes:{result_code:'DENIED'}};
+ assert.deepEqual(keys(computeVisibleRows(view,state({permissionFilter:'DENIED'}),new Set())),[0,1,2]);
+ view.nodes[2].permission_result='RESERVED_FOR_PUBLISHING';view.nodes[2].attributes.result_code='RESERVED_FOR_PUBLISHING';
+ assert.deepEqual(keys(computeVisibleRows(view,state({permissionFilter:'RESERVED_FOR_PUBLISHING'}),new Set())),[0,1,2]);
+});
+
+
+test('search and permission retain the matching call and its source',()=>{
+ const view=fixture();view.nodes[2]={...view.nodes[2],label:'permission',permission_result:'ALLOWED'};
+ view.nodes[3].permission_result='ALLOWED';view.nodes[3].permission_origin_key=2;
+ assert.deepEqual(keys(computeVisibleRows(view,state({permissionFilter:'ALLOWED',query:'tool.Read'}),new Set())),[0,1,2,3]);
+ assert.deepEqual(keys(computeVisibleRows(view,state({permissionFilter:'DENIED',query:'tool.Read'}),new Set())),[]);
 });

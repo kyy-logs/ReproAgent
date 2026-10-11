@@ -10,24 +10,24 @@ export function diagnosticTarget(view,key) {
 // Fixed offline module. Trace values are only rendered as text.
 export function isFailure(node) {
   const a = node.attributes || {};
-  return ['error','failed'].includes(String(node.display_status).toLowerCase()) ||
+  return ['DENIED','RESERVED_FOR_PUBLISHING'].includes(node.permission_result) ||
+    ['error','failed'].includes(String(node.display_status).toLowerCase()) ||
     ['ERROR','FAIL','FAILED'].includes(String(a.result_code).toUpperCase()) ||
     ['failed','blocked'].includes(a.health);
 }
 
 export function computeVisibleRows(view, state, matchedContentKeys = new Set()) {
   const query = (state.query || '').trim().toLowerCase();
-  const filtered = !!query || !!state.typeSet?.size || state.errorsOnly || !!state.permissionFilter;
+  const filtered = !!query || !!state.permissionFilter;
   const included = new Set();
   for (const n of view.nodes) {
-    if (state.typeSet?.size && !state.typeSet.has(n.kind_tag)) continue;
-    if (state.errorsOnly && !isFailure(n)) continue;
     if (state.permissionFilter && n.permission_result !== state.permissionFilter) continue;
-    const metadata = [n.label,n.model,n.source,n.span_id,JSON.stringify(n.attributes)].join(' ').toLowerCase();
+    const metadata = [n.label,n.model,n.source,n.span_id,n.permission_result,JSON.stringify(n.attributes)].join(' ').toLowerCase();
     if (query && !metadata.includes(query) && !n.content_keys.some(k => matchedContentKeys.has(k))) continue;
-    let k = n.key;
-    while (k !== null && k !== undefined && !included.has(k)) {
-      included.add(k); k = view.nodes[k].parent_key;
+    const starts=[n.key];
+    if(Number.isInteger(n.permission_origin_key)&&view.nodes[n.permission_origin_key])starts.push(n.permission_origin_key);
+    for(let k of starts)while(k!==null&&k!==undefined&&!included.has(k)) {
+      included.add(k);k=view.nodes[k].parent_key;
     }
   }
   const rows = [], stack = [...view.roots].reverse();
@@ -69,7 +69,7 @@ function option(select, value, text) {
 
 export function mountTraceViewer(root, view) {
   const fallback = document.getElementById('trace-fallback');
-  const state = {query:'',typeSet:new Set(),errorsOnly:false,permissionFilter:'',
+  const state = {query:'',permissionFilter:'',
     collapsedKeys:new Set(view.nodes.filter(n=>n.depth>=2&&n.child_keys.length).map(n=>n.key)),selectedKey:null};
   const captures = new Map(view.contents.map(c=>[c.key,document.getElementById(c.container_id)]));
   const bodyIndex = new Map([...captures].map(([k,e])=>[k,e?.querySelector('[data-content-body]')?.textContent?.toLowerCase() || '']));
@@ -101,7 +101,7 @@ export function mountTraceViewer(root, view) {
     fragment.append(box);
   }
   const hints=el('div','trace-hints'); hints.append(el('strong','','运行提示 · 程序规则 '));
-  for(const hint of view.hints) hints.append(hint.node_key===null ? el('span','',hint.text+' · ') : button(hint.text,()=>selectNode(hint.node_key)));
+  for(const hint of view.hints) hints.append(hint.node_key===null ? el('span','',hint.text+' · ') : button(hint.text,()=>selectNode(hint.node_key,true)));
   if(!view.hints.length) hints.append(el('span','','当前保留数据无提示'));
   fragment.append(hints);
   const tabs=el('div','trace-tabs'); tabs.setAttribute('role','tablist');
@@ -121,22 +121,12 @@ export function mountTraceViewer(root, view) {
   const search=el('input',''); search.type='search'; search.placeholder='搜索名称、属性、已保留正文'; search.setAttribute('aria-label','搜索调用');
   let timer;
   search.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(()=>{state.query=search.value;drawRows();},150);});
-  const clear=button('清空筛选',()=>{clearTimeout(timer);search.value='';state.query='';state.typeSet.clear();
-    for (const cb of typeBoxes) cb.checked=false; errors.checked=false;state.errorsOnly=false;permission.value='';state.permissionFilter='';drawRows();});
-  const types=el('details','');types.append(el('summary','','类型'));
-  const typeBoxes=[];
-  for (const tag of ['ENTRY','AGENT','LLM','HTTP','TOOL','VERIFY','PROCESS','OTHER']) {
-    const label=el('label',''); const cb=el('input','');cb.type='checkbox';cb.value=tag;
-    cb.addEventListener('change',()=>{cb.checked?state.typeSet.add(tag):state.typeSet.delete(tag);drawRows();});
-    label.append(cb,document.createTextNode(tag+' '));types.append(label);typeBoxes.push(cb);
-  }
-  const errorLabel=el('label',''); const errors=el('input',''); errors.type='checkbox'; errors.id='trace-errors-only';
-  errors.addEventListener('change',()=>{state.errorsOnly=errors.checked;drawRows();});errorLabel.append(errors,document.createTextNode('仅失败 / 异常'));
+  const clear=button('清空筛选',()=>{clearTimeout(timer);search.value='';state.query='';permission.value='';state.permissionFilter='';drawRows();});
   const permission=el('select','');permission.setAttribute('aria-label','权限结果');
-  option(permission,'','全部权限结果'); option(permission,'ALLOWED','ALLOWED · 允许');
-  option(permission,'DENIED','DENIED · 拒绝');option(permission,'RESERVED_FOR_PUBLISHING','RESERVED · 发布预留');
+  option(permission,'','全部权限结果'); option(permission,'ALLOWED','允许');
+  option(permission,'DENIED','拒绝');option(permission,'RESERVED_FOR_PUBLISHING','发布预留');
   permission.addEventListener('change',()=>{state.permissionFilter=permission.value;drawRows();});
-  toolbar.append(search,clear,types,errorLabel,permission);calls.append(toolbar,unlinked);
+  toolbar.append(search,permission,clear);calls.append(toolbar,unlinked);
   const workspace=el('div','trace-workspace'), tree=el('div','trace-tree'), detail=el('aside','trace-detail'); detail.hidden=true; detail.setAttribute('aria-label','节点详情');
   const axis=el('div','axis-row');axis.append(el('span','',view.time_axis.label));
   const ticks=el('div','axis-ticks'); const extent=view.time_axis.extent_seconds;
@@ -152,8 +142,9 @@ export function mountTraceViewer(root, view) {
   function restoreCaptures() { for(const [k,item] of captures) if(item) captureHomes.get(k).append(item); }
   function closeDetail() { const key=state.selectedKey; restoreCaptures();detail.replaceChildren();detail.hidden=true;
     workspace.classList.remove('has-detail');state.selectedKey=null;drawRows();rows.querySelector('[data-select-key="'+key+'"]')?.focus(); }
-  function selectNode(key) {
+  function selectNode(key,reveal=false) {
     const n=view.nodes[key]; if(!n)return;
+    if(reveal) {clear.click();for(const ancestor of diagnosticTarget(view,key))state.collapsedKeys.delete(ancestor);}
     showTab(false);restoreCaptures();detail.replaceChildren();state.selectedKey=key;
     detail.hidden=false;workspace.classList.add('has-detail');
     const head=el('div','detail-head');head.append(el('h3','',n.label),button('关闭',closeDetail));detail.append(head);
@@ -163,6 +154,7 @@ export function mountTraceViewer(root, view) {
       ['耗时',seconds(n.duration_seconds)],['模型',figure(n.model)]];
     if(n.missing_parent)pairs.push(['父节点','parent not retained']);
     if(n.permission_result)pairs.push(['权限结果',n.permission_result]);
+    if(Number.isInteger(n.permission_origin_key)&&view.nodes[n.permission_origin_key])pairs.push(['权限依据（同调用）',view.nodes[n.permission_origin_key].span_id]);
     for(const [label,value] of pairs)fields.append(el('dt','',label),el('dd','',value));
     detail.append(fields,el('h4','','受控属性 / 程序依据'),el('pre','',JSON.stringify(n.attributes,null,2)));
     for(const k of n.content_keys) { const c=captures.get(k); if(c) {c.open=true;detail.append(c);} }
@@ -174,7 +166,11 @@ export function mountTraceViewer(root, view) {
     const q=state.query.trim().toLowerCase(), matched=new Set();
     if(q)for(const [k,text]of bodyIndex)if(text.includes(q))matched.add(k);
     const visible=computeVisibleRows(view,state,matched), frag=document.createDocumentFragment();
-    const filtered=!!q||state.typeSet.size||state.errorsOnly||!!state.permissionFilter;
+    if(state.selectedKey!==null&&!visible.some(node=>node.key===state.selectedKey)) {
+      restoreCaptures();detail.replaceChildren();detail.hidden=true;
+      workspace.classList.remove('has-detail');state.selectedKey=null;
+    }
+    const filtered=!!q||!!state.permissionFilter;
     for(const n of visible) {
       const row=el('div','trace-row node-'+n.kind_tag+(n.key===state.selectedKey?' selected':''));
       const label=el('div','node-label'); label.style.paddingLeft=Math.min(n.depth,12)*12+'px';
@@ -185,7 +181,7 @@ export function mountTraceViewer(root, view) {
       const select=button('',()=>selectNode(n.key),'node-select');select.dataset.selectKey=n.key;
       select.append(el('span','node-badge',n.kind_tag),el('span','node-name',n.label));
       if(n.model)select.append(el('span','node-meta','model: '+n.model));
-      if(isFailure(n))select.append(el('span','status-error','失败'));
+      if(isFailure(n)&&n.label!=='permission')select.append(el('span','status-error','失败'));
       if(n.permission_result)select.append(el('span',n.permission_result==='DENIED'?'permission-denied':n.permission_result==='RESERVED_FOR_PUBLISHING'?'permission-reserved':'node-meta',n.permission_result));
       if(n.missing_parent)select.append(el('span','node-meta','parent not retained'));
       label.append(toggle,select);
@@ -199,7 +195,7 @@ export function mountTraceViewer(root, view) {
       } else track.append(el('span','bar-unknown','无完整时间数据'));
       waterfall.append(track);row.append(label,waterfall);frag.append(row);
     }
-    if(!visible.length)frag.append(el('p','trace-empty','没有匹配的调用。调整或清空筛选。'));
+    if(!visible.length)frag.append(el('p','trace-empty','没有匹配的调用。清空筛选可恢复全部。'));
     rows.replaceChildren(frag);
   }
   drawRows();root.replaceChildren(fragment);

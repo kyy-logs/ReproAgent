@@ -152,7 +152,7 @@ def build_trace_view(document: dict) -> dict:
                           missing_parent=parent is not None and parent not in id_map,
                           is_point=entry.get("kind") in ("point", "event"),
                           permission_result=attrs.get("result_code") if entry.get("name")=="permission" else None,
-                          model=None))
+                          permission_origin_key=None,model=None))
     roots = []
     for n in nodes:
         if n["parent_key"] is None: roots.append(n["key"])
@@ -164,15 +164,31 @@ def build_trace_view(document: dict) -> dict:
     while stack:
         k, depth = stack.pop(); nodes[k]["depth"] = depth
         stack.extend((child, depth+1) for child in nodes[k]["child_keys"])
-    # Share captures by the actual tool call identity, without rewriting topology.
+    # Same call and actual execution scope only; legacy call IDs can repeat.
+    def call_scope(node):
+        cursor=node;seen=set()
+        while cursor['key'] not in seen:
+            seen.add(cursor['key'])
+            if cursor['missing_parent']: return ('unknown',node['key'])
+            parent=cursor['parent_key']
+            if parent is None: return ('scope',cursor['span_id'])
+            cursor=nodes[parent]
+            if cursor['kind_tag']=='AGENT': return ('scope',cursor['span_id'])
+        return ('unknown',node['key'])
     groups = {}
     for n in nodes:
         call = n["attributes"].get("tool_call_key")
         if isinstance(call, str) and call and n["kind_tag"] == "TOOL":
-            groups.setdefault(call, []).append(n)
+            groups.setdefault((call,call_scope(n)), []).append(n)
     for group in groups.values():
         refs = list(dict.fromkeys(k for n in group for k in n["content_keys"]))
-        for n in group: n["content_keys"] = list(refs)
+        permissions=[n for n in group if n['label']=='permission']
+        origin=permissions[0] if len(permissions)==1 and isinstance(permissions[0]['permission_result'],str) and permissions[0]['permission_result'] in ('ALLOWED','DENIED','RESERVED_FOR_PUBLISHING') else None
+        for n in group:
+            n['content_keys']=list(refs)
+            if n['label']!='permission' and origin is not None:
+                n['permission_result']=origin['permission_result']
+                n['permission_origin_key']=origin['key']
     http_by_content = {}
     for n in nodes:
         if n["kind_tag"] == "HTTP":
@@ -235,7 +251,7 @@ def build_trace_view(document: dict) -> dict:
         if k is not None: attempts.setdefault(k, []).append(n["key"])
     for k, children in attempts.items():
         if len(children)>1: hints.append(dict(kind="retry",node_key=k,text=f"同一逻辑调用保留 {len(children)} 次 HTTP 尝试"))
-    reserved = sum(n["permission_result"]=="RESERVED_FOR_PUBLISHING" for n in nodes)
+    reserved = sum(n["label"]=="permission" and n["permission_result"]=="RESERVED_FOR_PUBLISHING" for n in nodes)
     if reserved: hints.append(dict(kind="reserved",node_key=None,text=f"RESERVED_FOR_PUBLISHING: {reserved} 次发布预留"))
     for n in nodes:
         if n["display_status"].lower() in ("error","failed") or str(n["attributes"].get("result_code", "")).upper() in ("ERROR","FAIL","FAILED") or n["attributes"].get("health") in ("failed","blocked"):
