@@ -105,14 +105,16 @@ export function mountTraceViewer(root, view) {
   if(!view.hints.length) hints.append(el('span','','当前保留数据无提示'));
   fragment.append(hints);
   const tabs=el('div','trace-tabs'); tabs.setAttribute('role','tablist');
-  const callsTab=button('调用树',()=>showTab(false)), decisionsTab=button('验收',()=>showTab(true));
+  const businessTab=button('业务步骤',()=>showTab('business')), callsTab=button('调用树',()=>showTab(false)), decisionsTab=button('验收',()=>showTab(true));
+  businessTab.setAttribute('role','tab');businessTab.setAttribute('aria-selected','true');
   callsTab.setAttribute('role','tab'); decisionsTab.setAttribute('role','tab');
-  callsTab.setAttribute('aria-selected','true'); decisionsTab.setAttribute('aria-selected','false');
-  tabs.append(callsTab,decisionsTab); fragment.append(tabs);
+  callsTab.setAttribute('aria-selected','false'); decisionsTab.setAttribute('aria-selected','false');
+  tabs.append(businessTab,callsTab,decisionsTab); fragment.append(tabs);
   const unlinked=el('details','trace-uncited');const uncited=uncitedContentKeys(view);
   unlinked.append(el('summary','','未关联到保留节点的正文 · '+uncited.length));unlinked.hidden=!uncited.length;
   for(const k of uncited)captureHomes.set(k,unlinked);
-  const calls=el('section',''); calls.id='trace-calls-panel';
+  const business=el('section','');business.id='trace-business-panel';businessTab.setAttribute('aria-controls',business.id);
+  const calls=el('section',''); calls.id='trace-calls-panel';calls.hidden=true;
   const acceptance=el('section',''); acceptance.id='trace-acceptance-panel'; acceptance.hidden=true;
   callsTab.setAttribute('aria-controls',calls.id); decisionsTab.setAttribute('aria-controls',acceptance.id);
   const toolbar=el('div','trace-toolbar');
@@ -141,10 +143,12 @@ export function mountTraceViewer(root, view) {
   for(const fraction of [0,.25,.5,.75,1]) ticks.append(el('span','',extent===null?'—':seconds(extent*fraction)));
   axis.append(ticks);tree.append(axis);
   const rows=el('div',''); rows.id='trace-rows'; tree.append(rows);workspace.append(tree,detail);calls.append(workspace);
-  fragment.append(calls,acceptance,el('p','trace-footer','本地离线查看 · 无新增模型调用 / token · 仅展示已记录正文与程序验收，不补写思考过程'));
+  fragment.append(business,calls,acceptance,el('p','trace-footer','本地离线查看 · 无新增模型调用 / token · 仅展示已记录正文与程序验收，不补写思考过程'));
 
-  function showTab(decisions) { calls.hidden=decisions;acceptance.hidden=!decisions;
-    callsTab.setAttribute('aria-selected',String(!decisions));decisionsTab.setAttribute('aria-selected',String(decisions)); }
+  function showTab(mode) {
+    const steps=mode==='business',decisions=mode===true;business.hidden=!steps;calls.hidden=steps||decisions;acceptance.hidden=!decisions;
+    businessTab.setAttribute('aria-selected',String(steps));callsTab.setAttribute('aria-selected',String(!steps&&!decisions));decisionsTab.setAttribute('aria-selected',String(decisions));
+  }
   function restoreCaptures() { for(const [k,item] of captures) if(item) captureHomes.get(k).append(item); }
   function closeDetail() { const key=state.selectedKey; restoreCaptures();detail.replaceChildren();detail.hidden=true;
     workspace.classList.remove('has-detail');state.selectedKey=null;drawRows();rows.querySelector('[data-select-key="'+key+'"]')?.focus(); }
@@ -201,9 +205,10 @@ export function mountTraceViewer(root, view) {
   drawRows();root.replaceChildren(fragment);
   for(const k of uncited)if(captures.get(k))unlinked.append(captures.get(k));
   // Move the static acceptance section, preserving a single set of check elements.
+  const steps=fallback.querySelector('#business-steps');if(steps)business.append(steps);
   const decisions=fallback.querySelector('#decisions'); if(decisions)acceptance.append(decisions);
-  for(const link of acceptance.querySelectorAll('[data-diagnostic-node]'))link.addEventListener('click',event=>{
-    event.preventDefault();const key=Number(link.dataset.diagnosticNode);
+  for(const link of root.querySelectorAll('[data-diagnostic-node],[data-business-node]'))link.addEventListener('click',event=>{
+    event.preventDefault();const key=Number(link.dataset.diagnosticNode ?? link.dataset.businessNode);
     const path=diagnosticTarget(view,key);if(!path.length)return;
     clear.click();for(const k of path)state.collapsedKeys.delete(k);
     selectNode(key);rows.querySelector('[data-select-key="'+key+'"]')?.scrollIntoView({block:'nearest'});
@@ -216,7 +221,7 @@ if (typeof document !== 'undefined') {
   try { mountTraceViewer(root,JSON.parse(document.getElementById('trace-view-data').textContent)); }
   catch (error) {
     // Failed enhancement must leave the original static report available.
-    const decisions=document.getElementById('decisions');if(decisions&&!fallback.contains(decisions))fallback.append(decisions);
+    for(const id of ['business-steps','decisions']){const section=document.getElementById(id);if(section&&!fallback.contains(section))fallback.append(section);}
     const registry=fallback.querySelector('#calls');
     for(const capture of document.querySelectorAll('.capture'))if(registry&&!fallback.contains(capture))registry.append(capture);
     root.hidden=true;fallback.hidden=false;

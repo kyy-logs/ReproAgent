@@ -240,5 +240,6 @@ def build_trace_view(document: dict) -> dict:
     for n in nodes:
         if n["display_status"].lower() in ("error","failed") or str(n["attributes"].get("result_code", "")).upper() in ("ERROR","FAIL","FAILED") or n["attributes"].get("health") in ("failed","blocked"):
             hints.append(dict(kind="failure",node_key=n["key"],text=f"失败位置: {n['label']}"))
-    return dict(view_version=1,header=header,diagnostics=build_diagnostic_chain(document),nodes=nodes,roots=roots,contents=contents,hints=hints,
+    from .trace_business_steps import build_business_steps
+    return dict(view_version=1,business_steps=build_business_steps(document,nodes),header=header,diagnostics=build_diagnostic_chain(document),nodes=nodes,roots=roots,contents=contents,hints=hints,
                 time_axis=dict(extent_seconds=extent,label="总耗时" if total is not None else "已记录时间范围" if extent is not None else "无时间数据"))

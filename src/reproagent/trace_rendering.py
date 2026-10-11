@@ -375,6 +375,31 @@ def _render_diagnostics(view):
     return ''.join(parts)+'</section>'
 
 
+def _render_business_steps(view):
+    business=view['business_steps']
+    parts=['<section id="business-steps"><h2>业务步骤</h2><p class="meta">按真实执行顺序排列；循环保留每次尝试。耗时属于各自span，不相加。</p><div class="business-summary">']
+    for step in business['steps']:
+        latest=business['occurrences'][step['occurrence_keys'][-1]] if step['occurrence_keys'] else None
+        label='Step '+str(step['number'])+' · '+step['label']
+        title=('<a data-business-node="'+str(latest['node_key'])+'" href="#trace-node-'+str(latest['node_key'])+'">'+_esc(label)+'</a>') if latest else _esc(label)
+        status=('最近：' if latest else '')+step['status']
+        duration=' · '+_seconds(latest['duration_seconds']) if latest else ''
+        parts.append('<div class="business-step"><strong>'+title+'</strong><p>'+_esc(status)+duration+' · '+_esc(step['count'])+'次已记录</p></div>')
+    parts.append('</div><ol class="business-occurrences">')
+    for o in business['occurrences']:
+        key=o['node_key']
+        label='Step '+str(o['step'])+' · '+o['label']+' · 第'+str(o['ordinal'])+'次'
+        parts.append('<li class="business-occurrence"><a data-business-node="'+str(key)+'" href="#trace-node-'+str(key)+'">'+_esc(label)+'</a> · '+_esc(o['status'])+' · '+_seconds(o['duration_seconds'])+
+                     (' · '+_esc(o['variant']) if o['variant'] else '')+
+                     (' · '+_esc(o['result']) if o['result'] else '')+
+                     (' · 候选 '+_esc(o['candidate_id']) if o['candidate_id'] else '')+
+                     (' · 契约 '+('v'+_esc(o['previous_contract_version'])+' → ' if o['previous_contract_version'] is not None else '')+'v'+_esc(o['contract_version']) if o['contract_version'] is not None else '')+'</li>')
+    parts.append('</ol>')
+    if not business['coverage_complete']:
+        parts.append('<p class="unknown">缺少完整的阶段边界或任务尚未结束；未记录不代表未执行，旧记录不会补写重跑结论。</p>')
+    return ''.join(parts)+'</section>'
+
+
 def _render_body(document: dict, view: dict | None = None) -> str:
     parts = [
         '<section id="overview"><h1>ReproAgent activity trace</h1>',
@@ -398,6 +423,7 @@ def _render_body(document: dict, view: dict | None = None) -> str:
     parts.append(_render_stats(document.get("summary") or {}))
     parts.append(_render_timeline(document.get("spans") or ()))
     parts.append("</section>")
+    parts.append(_render_business_steps(view))
     parts.append(f'<section id="calls">{_render_contents(document, view)}</section>')
     parts.append(f'<section id="decisions">{_render_diagnostics(view)}{_render_decisions(document)}</section>')
     return "\n".join(parts)

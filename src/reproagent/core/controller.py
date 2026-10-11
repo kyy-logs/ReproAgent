@@ -255,8 +255,10 @@ class Controller:
         with Step(self, 'run_candidate', parameters, context, contract) as step:
             try:
                 result = self.state(result, TaskState.EXECUTING)
-                run = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
-                self.check_execution(run)
+                with span('run_candidate', attributes={'candidate_id':candidate.candidate_id,
+                          'contract_id':contract.contract_id,'contract_version':contract.version}):
+                    run = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
+                    self.check_execution(run)
                 result = self.state(result, TaskState.VERIFYING)
                 verdict = await self.verifier.evaluate(contract, candidate, (run,), context)
             except ModelOutputError as exc:
@@ -277,7 +279,8 @@ class Controller:
             result = self.state(result, TaskState.VERIFYING, evidence_level=EvidenceLevel.SINGLE_OBSERVATION,
                                 accepted_candidate_id=candidate.candidate_id)
 
-        with Step(self, 'submit_candidate', parameters, context, contract) as step:
+        with span('replay', attributes={'candidate_id':candidate.candidate_id,
+                  'contract_id':contract.contract_id,'contract_version':contract.version}), Step(self, 'submit_candidate', parameters, context, contract) as step:
             try:
                 result = self.state(result, TaskState.REPLAYING)
                 second = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
@@ -345,7 +348,8 @@ class Controller:
                       'reason_hash':canonical_hash(phase.reason)}
         originals = {relative_name(lifecycle.snapshot.root / entry.path, self.store.root): entry.content_hash
                      for entry in lifecycle.snapshot.files}
-        with Step(self, 'revise_contract', parameters, context, contract) as step:
+        with span('revise_contract', attributes={'contract_id':contract.contract_id,
+                  'contract_version':contract.version}), Step(self, 'revise_contract', parameters, context, contract) as step:
             try:
                 for ref in phase.source_refs:
                     self.cite_original(ref, originals)
@@ -422,7 +426,7 @@ class Controller:
         run inside this call, and a trace that stopped at the phase would quietly omit
         the part of the run the user is most likely asking about.
         """
-        with span("task"):
+        with span("task", attributes={"purpose":"business_steps_v1"}):
             return await self._run(request, context, fixed)
 
     async def _run(self, request, context, fixed=None):
@@ -456,11 +460,11 @@ class Controller:
             with span("analyze"):
                 contract = await self.explorer.analyze(IssueDescription(issue_text, issue_hash),
                                                        EvidenceContext((source,), (issue_text,)))
-            for evidence in contract.sources:
-                self.verifier.resolve(evidence)
-            self.store.save_contract(contract)
-            observe_decision('contract.established',attributes={'contract_id':contract.contract_id,
-                'contract_version':contract.version},content=lambda:contract_snapshot(contract),context=context)
+                for evidence in contract.sources:
+                    self.verifier.resolve(evidence)
+                self.store.save_contract(contract)
+                observe_decision('contract.established',attributes={'contract_id':contract.contract_id,
+                    'contract_version':contract.version},content=lambda:contract_snapshot(contract),context=context)
             experience_summaries = self.experience_service.summaries(IssueDescription(issue_text, issue_hash)) if self.experience_service is not None else ()
             lifecycle = Lifecycle(request, fixed, snapshot, environment)
             feedback = self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else ''

@@ -57,7 +57,8 @@ class Verifier:
         # The full ordered list goes on the span before any check runs, so a reader can
         # see which of them the program never reached rather than inferring it from the
         # ones that happen to be there.
-        with span('verify', attributes={'checks': list(VERIFIER_CHECKS)}):
+        with span('verify', attributes={'checks': list(VERIFIER_CHECKS),
+                  'candidate_id':candidate.candidate_id,'contract_id':contract.contract_id,'contract_version':contract.version}):
             return await self._evaluate(contract, candidate, executions, context)
 
     async def _evaluate(self, contract, candidate, executions, context):

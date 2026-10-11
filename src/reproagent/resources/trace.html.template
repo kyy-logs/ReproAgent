@@ -121,6 +121,15 @@
   @media(max-width:900px) { body {padding:.75rem;} .trace-workspace.has-detail {grid-template-columns:minmax(0,1fr);} .trace-detail {position:static;max-height:none;} .node-duration {width:50px;} .axis-ticks {margin-left:50px;} }
   .diagnostic-row { padding: .5rem; border-left: 3px solid var(--line); margin: .4rem 0; overflow-wrap: anywhere; }
   .trace-health { overflow-wrap: anywhere; }
+  .business-summary { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:.5rem; margin:1rem 0; }
+  .business-step { border:1px solid var(--line); border-radius:8px; padding:.7rem; background:var(--panel); overflow-wrap:anywhere; font-size:12px; }
+  .business-step p { color:var(--muted); margin:.6rem 0 0; }
+  .business-occurrences { padding-left:1.5rem; }
+  .business-occurrence { padding:.65rem .25rem; border-bottom:1px dotted var(--line); overflow-wrap:anywhere; }
+  .business-occurrence a { display:inline-block; padding:.2rem 0; }
+  @media(max-width:1100px) { .business-summary {grid-template-columns:repeat(3,minmax(0,1fr));} }
+  @media(max-width:650px) { .business-summary {grid-template-columns:repeat(2,minmax(0,1fr));} }
+  @media(max-width:400px) { .business-summary {grid-template-columns:minmax(0,1fr);} }
 </style>
 </head>
 <body>

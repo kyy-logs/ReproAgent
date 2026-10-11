@@ -82,6 +82,10 @@ def test_successful_revision_and_candidate_keep_the_business_result(tmp_path,pro
     revised=[s for s in doc['spans'] if s['name']=='contract.revised']
     assert len(revised)==1 and revised[0]['attributes']['contract_version']==2
     assert any(s['name']=='verify' for s in doc['spans'])
+    assert [s['name'] for s in doc['spans']].count('replay')==1
+    b=build_trace_view(doc)['business_steps']
+    assert [o['step'] for o in b['occurrences']]==[1,2,3,2,3,4,5,6,7]
+    assert b['steps'][5]['status']=='已确认'
     assert ctx.budget.steps_used==3
     plain=run_case(tmp_path/'plain',projects,facts,revision=True,trace=False)
     assert plain[1].status==result.status and plain[1].evidence_level==result.evidence_level
