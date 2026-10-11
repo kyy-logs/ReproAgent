@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from .models import Candidate, EvidenceRef, ExecutionResult, FileEntry, IssueContract
 from .protocol import verdict_schema
-from .serialization import bytes_hash, canonical_bytes
+from .serialization import bytes_hash, canonical_bytes, parse_json
 
 # Stable marker for the run root: necessary paths stay readable without exporting the
 # machine-specific absolute prefix that made the recorded observation overflow.
@@ -28,7 +28,17 @@ SUMMARIZED_FIELDS = ('observations.target_origins', 'observations.target_calls')
 
 
 class ReviewContextTooLarge(Exception):
-    """The core evidence does not fit the reviewer budget and must not be truncated."""
+    """The core evidence does not fit the reviewer budget and must not be truncated.
+
+    The measurement is carried as data as well as in the message: the verdict this turns
+    into has to state how far over budget the evidence was, or the caller is told to
+    narrow the candidate without being told by how much.
+    """
+
+    def __init__(self, needed_bytes: int, budget_bytes: int):
+        self.needed_bytes = needed_bytes
+        self.budget_bytes = budget_bytes
+        super().__init__(f'review evidence needs {needed_bytes} bytes; budget is {budget_bytes}')
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +190,41 @@ def _observation_view(run, run_root, phases):
     }
 
 
+def _reference_duplicate_details(payload, run, run_root):
+    """Reference checked probe lines instead of sending their details twice.
+
+    Only exact matches from this run's single-line test_phase records qualify.
+    The source/hash/line references and their complete text stay in failure_evidence;
+    assertion comparisons remain directly visible in the structured observation.
+    """
+    fields = ('longrepr', 'exception_frames', 'crash')
+    for index, evidence in enumerate(payload['failure_evidence']):
+        if evidence['start_line'] != evidence['end_line']:
+            continue
+        try:
+            record = parse_json(evidence['text'])
+        except ValueError:
+            continue
+        if (record.get('event') != 'test_phase' or record.get('run_id') != run.run_id
+                or not isinstance(record.get('payload'), dict)):
+            continue
+        recorded = _phase(record['payload'], run_root)
+        # Runner normalizes pytest nodeids relative to this run's code copy.
+        # Apply that same run-specific normalization before matching its probe.
+        recorded['nodeid'] = recorded['nodeid'].replace('\\', '/').split(run.run_id + '/code/', 1)[-1]
+        for phase in payload['observation']['tests']:
+            if any(phase.get(key) != recorded.get(key) for key in ('nodeid', 'when', 'outcome')):
+                continue
+            present = [key for key in fields if key in phase]
+            if not present or any(phase[key] != recorded.get(key) for key in present):
+                continue
+            for key in present:
+                del phase[key]
+            phase['failure_evidence_ref'] = index
+            phase['referenced_fields'] = present
+    payload['projection']['referenced_fields'] = list(fields)
+
+
 def build_review_context(contract: IssueContract, candidate: Candidate, run: ExecutionResult, *,
         read_ref: Callable[[EvidenceRef], str], read_file: Callable[[FileEntry], bytes],
         max_bytes: int, protocol_error: str = '') -> ReviewContext:
@@ -223,5 +268,8 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         payload['protocol_error'] = protocol_error
     output_bytes = len(canonical_bytes(payload))
     if output_bytes > max_bytes:
-        raise ReviewContextTooLarge(f'review evidence needs {output_bytes} bytes; budget is {max_bytes}')
+        _reference_duplicate_details(payload, run, run_root)
+        output_bytes = len(canonical_bytes(payload))
+    if output_bytes > max_bytes:
+        raise ReviewContextTooLarge(output_bytes, max_bytes)
     return ReviewContext(payload, tuple(available), input_bytes, output_bytes, SUMMARIZED_FIELDS)

@@ -11,7 +11,7 @@ from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
 VERIFIER_CHECKS = ("execution_evidence_present", "binding_and_integrity_ok",
                    "no_non_origin_framework_errors", "framework_not_blocked",
                    "tests_executed_and_valid", "candidate_reproduced",
-                   "expectation_is_grounded", "provider_semantic_claims",
+                   "expectation_is_grounded", "review_context_fits", "provider_semantic_claims",
                    "citations_cover_expectation_and_failure")
 from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
@@ -23,6 +23,18 @@ from .protocol import ModelOutputError, validate_verdict
 
 class CandidateFileChanged(ValueError):
     """A stored candidate file no longer matches its published hash."""
+
+
+def _overflow_reason(needed_bytes: int, budget_bytes: int) -> str:
+    """A refusal that cannot be acted on is a defect: it has to carry its own magnitude.
+
+    The recovery this design prescribes is to narrow the candidate, and ``reason`` is the
+    only channel that reaches the model or a reader -- ``Verdict.next_action`` is declared
+    and never consumed.  The projected size is already measured at every site that refuses,
+    so the measurement is kept instead of being replaced by a sentence with no number in it.
+    """
+    return (f'semantic evidence exceeds bounded context (review evidence needs {needed_bytes} bytes; '
+            f'budget is {budget_bytes} bytes); narrow candidate')
 
 
 class Verifier:
@@ -62,12 +74,12 @@ class Verifier:
 
     async def _evaluate(self, contract, candidate, executions, context):
         context.budget.check()
-        def verdict(classification, reason, refs=(), uncertainty=(), origin='program'):
+        def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore'):
             mark('verdict', attributes={'result_code': classification.value if classification else 'UNCLASSIFIED',
                                         'reason_origin': origin})
             return Verdict(classification, reason, refs, uncertainties=uncertainty, candidate_id=candidate.candidate_id,
                 manifest_hash=candidate.manifest_hash, contract_id=contract.contract_id, contract_version=contract.version,
-                run_ids=tuple(run.run_id for run in executions))
+                run_ids=tuple(run.run_id for run in executions), next_action=next_action)
         if not record_check('execution_evidence_present', bool(executions)):
             return verdict(None, 'no execution evidence')
         run = executions[-1]
@@ -104,11 +116,16 @@ class Verifier:
             review = project()
         except CandidateFileChanged:
             return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
-        except ReviewContextTooLarge:
-            return verdict(None, 'semantic evidence exceeds bounded context; narrow candidate', uncertainty=('evidence omitted rather than silently truncated',))
+        except ReviewContextTooLarge as error:
+            record_check('review_context_fits', False)
+            mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
+            return verdict(None, _overflow_reason(error.needed_bytes, error.budget_bytes), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate')
         except (ValueError, OSError, UnicodeError):
             return verdict(None, 'evidence source is unavailable or altered')
         sources = tuple(EvidenceRef(s.path, s.content_hash, s.start_line, s.end_line) for s in contract.sources)
+        record_check('review_context_fits', True)
+        mark('review.context', attributes={'input_bytes':review.input_bytes, 'output_bytes':review.output_bytes,
+            'budget_bytes':cap})
         prompt = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
         error = ''
         for attempt in range(3):
@@ -118,8 +135,11 @@ class Verifier:
             text = canonical_bytes(review.payload).decode()
             for secret in self.secrets:
                 text = text.replace(secret, '[REDACTED]')
-            if len(text.encode()) > cap:
-                return verdict(None, 'semantic evidence exceeds bounded context; narrow candidate', uncertainty=('evidence omitted rather than silently truncated',))
+            size = len(text.encode())
+            if size > cap:
+                record_check('review_context_fits', False)
+                mark('review.context', attributes={'output_bytes':size, 'budget_bytes':cap, 'stage':'redaction'})
+                return verdict(None, _overflow_reason(size, cap), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate')
             try:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt}, {'role':'user','content':text}), 'verdict'), context)
             except ModelOutputError as exc:
@@ -169,8 +189,14 @@ class Verifier:
                 review = project(error[:512])
             except CandidateFileChanged:
                 return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
-            except ReviewContextTooLarge:
-                return verdict(None, 'semantic evidence exceeds bounded context; narrow candidate', uncertainty=('evidence omitted rather than silently truncated',))
+            except ReviewContextTooLarge as error:
+                record_check('review_context_fits', False)
+                mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes,
+                    'stage':'protocol_correction', 'reason_code':'MODEL_PROTOCOL_ERROR'})
+                # The initial evidence fit. A failed answer's correction envelope
+                # is not proof that the candidate can never be reviewed.
+                return verdict(None, f'semantic verdict invalid: correction context needs {error.needed_bytes} bytes; '
+                    f'budget is {error.budget_bytes} bytes; initial evidence fit', uncertainty=('MODEL_PROTOCOL_ERROR',))
             except (ValueError, OSError, UnicodeError):
                 return verdict(None, 'evidence source is unavailable or altered')
         return verdict(None, 'semantic verdict invalid after 3 attempts: ' + error[:512], uncertainty=('MODEL_PROTOCOL_ERROR',))

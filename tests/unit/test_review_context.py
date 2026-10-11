@@ -52,6 +52,52 @@ def candidate_reader(candidate):
     return read
 
 
+def test_repeated_failure_details_fit_without_losing_citable_body(tmp_path, projects, facts):
+    text = ('import pytest\n'
+            '@pytest.mark.parametrize("index", range(5))\n'
+            'def test_failure(index):\n'
+            '    from example.parser import parse\n'
+            '    parse([1])\n'
+            '    raise ValueError("detail-" + "x" * 1000)\n')
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, text)
+    before = asdict(run.observation)
+    review = build_review_context(contract, candidate, run, read_ref=verifier.resolve,
+        read_file=candidate_reader(candidate), max_bytes=32768)
+    assert review.output_bytes <= 32768
+    failed = [phase for phase in review.payload['observation']['tests'] if phase['outcome'] == 'failed']
+    assert len(failed) == 5
+    for phase in failed:
+        ref = phase['failure_evidence_ref']
+        evidence = review.payload['failure_evidence'][ref]
+        recorded = json.loads(evidence['text'])['payload']
+        assert recorded['nodeid'].replace('\\', '/').endswith(phase['nodeid'])
+        assert recorded['when'] == phase['when']
+        assert 'detail-' + 'x' * 1000 in recorded['longrepr']
+        assert recorded['exception_type'] == 'builtins.ValueError'
+        assert recorded['exception_frames']
+        assert recorded['crash']
+        assert 'longrepr' not in phase
+    assert asdict(run.observation) == before
+    # Integrity checking still happens before the projection can use its references.
+    path = verifier.store.root / run.observation.failure_refs[0].path
+    path.write_bytes(path.read_bytes() + b'#')
+    with pytest.raises(ValueError, match='hash mismatch'):
+        build_review_context(contract, candidate, run, read_ref=verifier.resolve,
+            read_file=candidate_reader(candidate), max_bytes=32768)
+
+
+def test_failure_details_that_disagree_with_cited_record_are_not_deduplicated(tmp_path, projects, facts):
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts)
+    changed = replace(run, observation=replace(run.observation, tests=tuple(
+        dict(phase, longrepr='a different failure') if phase['outcome'] == 'failed' else phase
+        for phase in run.observation.tests)))
+    review = build_review_context(contract, candidate, changed, read_ref=verifier.resolve,
+        read_file=candidate_reader(candidate), max_bytes=32768)
+    failed = next(phase for phase in review.payload['observation']['tests'] if phase['outcome'] == 'failed')
+    assert failed['longrepr'] == 'a different failure'
+    assert 'failure_evidence_ref' not in failed
+
+
 def sphinx_scale_origins(run_root):
     return {f'sphinx.ext.autodoc._generated.mock_{index:03d}':
             f'{run_root}/code/sphinx/ext/autodoc/_generated/mock_{index:03d}/handlers.py'

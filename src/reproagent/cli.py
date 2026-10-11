@@ -10,6 +10,7 @@ from .app import LEGACY_BACKENDS, create_controller
 from .core.budget import Budget
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
+from .experience import default_experience_path
 from .observability import trace_session, write_trace
 from .trace_rendering import read_trace, write_trace_html
 from .paths import display_path
@@ -50,10 +51,14 @@ def _write_trace_or_warn(task_dir, document) -> bool:
 
 def load_request(path):
     path = Path(path).resolve()
-    request = decode_record('request', parse_json(path.read_text(encoding='utf-8')))
+    data = parse_json(path.read_text(encoding='utf-8'))
+    request = decode_record('request', data)
     def resolved(value): return (path.parent / value).resolve() if not value.is_absolute() else value.resolve()
+    # A config that names no library gets the default one: reading and writing experience
+    # is the product's default, and naming a path is how it stays explicit in the record.
     return replace(request, repo=resolved(request.repo), output_dir=resolved(request.output_dir), issue_file=resolved(request.issue_file),
-        experience_file=resolved(request.experience_file) if request.experience_file is not None else None)
+        experience_file=(resolved(request.experience_file) if request.experience_file is not None
+                         else None if 'experience_file' in data else default_experience_path()))
 
 
 def run_command(args):

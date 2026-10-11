@@ -15,6 +15,21 @@ from .paths import directory_path, workspace_path, is_within
 from .store import atomic_write
 
 LIBRARY_BYTES = 1024 * 1024
+
+#: Experience is on by default, and a library is a file, so "by default" needs a path to
+#: name.  A task config that sets its own ``experience_file`` replaces this one, and one
+#: that sets ``learn_experience: false`` still reads it without writing.  The environment
+#: override exists so an experiment can keep its library out of the user's home; the
+#: evaluation harness deliberately composes its own requests and is not affected here,
+#: because a round requires the library it measured against to stay unchanged.
+EXPERIENCE_ENV = "REPROAGENT_EXPERIENCE"
+DEFAULT_EXPERIENCE_PATH = Path.home() / ".reproagent" / "experiences.json"
+
+
+def default_experience_path() -> Path:
+    """The library a run uses when its own configuration names none."""
+    override = os.environ.get(EXPERIENCE_ENV, "").strip()
+    return (Path(override).expanduser() if override else DEFAULT_EXPERIENCE_PATH).resolve()
 CARD_BYTES = 2048
 VISIBLE_BYTES = 2048
 INPUT_BYTES = 8192

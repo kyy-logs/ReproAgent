@@ -206,3 +206,61 @@ def test_deeply_nested_library_is_nonfatal_and_never_overwritten(tmp_path):
     assert exp().load_experience_snapshot(path).state == "store_error"
     assert exp().append_experience(path, card(), None) == "store_error"
     assert path.read_bytes() == content
+
+
+def test_a_run_that_names_no_library_uses_the_default_one(tmp_path, monkeypatch):
+    """Experience is on unless a task says otherwise, and that needs a path to name.
+
+    The CLI is where a product default belongs: the evaluation harness composes its own
+    requests on purpose, because a round requires the library it measured against to stay
+    unchanged for the whole round.  Naming the path in the resolved request is also how
+    the default stays visible in the task record instead of happening invisibly.
+    """
+    from reproagent import cli
+    from reproagent.core.serialization import parse_json
+
+    monkeypatch.delenv(exp().EXPERIENCE_ENV, raising=False)
+    assert exp().default_experience_path() == Path.home() / ".reproagent" / "experiences.json"
+
+    scratch = tmp_path / "scratch.json"
+    monkeypatch.setenv(exp().EXPERIENCE_ENV, str(scratch))
+    assert exp().default_experience_path() == scratch
+
+    (tmp_path / "issue.md").write_text("empty input raises\n", encoding="utf-8")
+    (tmp_path / "repo").mkdir()
+    config = tmp_path / "task.json"
+    config.write_text(json.dumps({"schema_version": 1, "repo": "repo", "output_dir": "out",
+        "issue_file": "issue.md", "language": {"python": sys.executable, "target_modules": ["example"],
+        "source_roots": ["."], "candidate_parent": "tests"}}), encoding="utf-8")
+
+    resolved = cli.load_request(config)
+    assert resolved.experience_file == scratch
+    assert resolved.learn_experience is True
+    # A config that names its own library still wins.
+    config.write_text(json.dumps({**parse_json(config.read_text(encoding="utf-8")),
+        "experience_file": "own.json"}), encoding="utf-8")
+    assert cli.load_request(config).experience_file == (tmp_path / "own.json").resolve()
+
+
+def test_explicit_null_disables_default_experience(tmp_path, monkeypatch):
+    from reproagent.cli import load_request
+    monkeypatch.setenv(exp().EXPERIENCE_ENV, str(tmp_path / 'shared.json'))
+    config = tmp_path / 'task.json'
+    config.write_text(json.dumps({'schema_version': 1, 'repo': 'repo', 'output_dir': 'out',
+        'issue_file': 'issue.md', 'experience_file': None}), encoding='utf-8')
+    assert load_request(config).experience_file is None
+
+
+def test_relative_environment_library_is_frozen_at_request_loading(tmp_path, monkeypatch):
+    from reproagent.cli import load_request
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(exp().EXPERIENCE_ENV, 'shared/experiences.json')
+    config = tmp_path / 'task.json'
+    config.write_text(json.dumps({'schema_version': 1, 'repo': 'repo', 'output_dir': 'out',
+        'issue_file': 'issue.md'}), encoding='utf-8')
+    request = load_request(config)
+    assert request.experience_file == tmp_path / 'shared/experiences.json'
+    elsewhere = tmp_path / 'elsewhere'
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert request.experience_file == tmp_path / 'shared/experiences.json'

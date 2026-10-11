@@ -304,6 +304,30 @@ def test_a_phase_loop_stops_at_the_exploration_step_budget(tmp_path, projects, f
     assert not (request.output_dir / 'artifacts/reproduction').exists()
 
 
+def test_identical_candidate_after_context_overflow_is_not_executed_again(tmp_path, projects, facts):
+    model = ScriptedModel()
+    request, controller, ctx = controller_for(tmp_path, projects, facts, model,
+        BudgetLimits(tool_response_bytes=1024),
+        plan=[publish(), publish(hypothesis='same test, new description'), ask('stop')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 1
+    assert len(list((request.output_dir / 'candidates').glob('*/manifest.json'))) == 2
+    assert 'verdict' not in model.kinds
+    assert ('candidate', 'DUPLICATE_CANDIDATE') in phase_results(controller.store.read_events()[0])
+    verdict = next((request.output_dir / 'verdicts').glob('*.json'))
+    assert json.loads(verdict.read_text(encoding='utf-8'))['next_action'] == 'narrow_candidate'
+
+
+def test_changed_test_after_context_overflow_is_executed(tmp_path, projects, facts):
+    request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(),
+        BudgetLimits(tool_response_bytes=1024),
+        plan=[publish(), publish(content=PASSING), ask('stop')])
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2
+
+
 def test_a_candidate_published_with_the_last_step_is_still_confirmed(tmp_path, projects, facts):
     # The step budget bounds exploration, never the confirmation of what was explored.
     request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(), BudgetLimits(agent_steps=1),

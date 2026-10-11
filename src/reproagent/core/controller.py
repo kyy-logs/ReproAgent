@@ -37,7 +37,7 @@ from reproagent.store import atomic_write
 # with a rejected argument, a model failure or an internal error.
 ACTION_RESULT_CODES = frozenset({'OK', 'INVALID_ARGUMENT', 'MISSING_FILE', 'INVALID_ENCODING', 'UNKNOWN_CANDIDATE',
     'STALE_CANDIDATE', 'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF',
-    'REVISION_BUDGET_EXCEEDED', 'REPLAY_UNCONFIRMED', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR',
+    'REVISION_BUDGET_EXCEEDED', 'REPLAY_UNCONFIRMED', 'DUPLICATE_CANDIDATE', 'REVIEW_CONTEXT_TOO_LARGE', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR',
     'MODEL_PROTOCOL_ERROR', 'INTERNAL_ERROR'})
 
 # What the Controller made of one phase result, in the same closed vocabulary: the phase's
@@ -81,6 +81,7 @@ class Lifecycle:
     environment: EnvironmentSnapshot
     executions: dict = field(default_factory=dict)
     verdicts: dict = field(default_factory=dict)
+    context_blocked: dict = field(default_factory=dict)
 
 
 class Step:
@@ -244,8 +245,31 @@ class Controller:
         """
         parameters = {'candidate_id':candidate.candidate_id, 'manifest_hash':candidate.manifest_hash,
                       'contract_version':contract.version}
+        # Only a program-proven context overflow is reusable. Ordinary semantic
+        # refusals, successful candidates and external-state tests still execute.
+        execution_key = canonical_hash({
+            'snapshot_id':candidate.snapshot_id, 'contract':asdict(contract),
+            'environment':asdict(lifecycle.environment),
+            'files':sorted((entry.path, entry.role, entry.content_hash) for entry in candidate.files),
+            'language_id':candidate.language_id, 'selectors':candidate.selectors,
+            'run_options':candidate.run_options, 'expectation_sources':candidate.expectation_sources,
+            'fixture_refs':candidate.fixture_refs, 'preconditions':candidate.preconditions})
         with Step(self, 'run_candidate', parameters, context, contract) as step:
             try:
+                previous = lifecycle.context_blocked.get(execution_key)
+                if previous is not None and not candidate.preconditions:
+                    original, previous_run, previous_verdict = previous
+                    self.workspace.validate_candidate(candidate)
+                    self.workspace.validate_candidate(original)
+                    for ref in (*contract.sources, *previous_run.observation.failure_refs):
+                        self.verifier.resolve(ref)
+                    step.rejected('DUPLICATE_CANDIDATE')
+                    self.store.append_event('candidate.duplicate', (candidate.candidate_id, original.candidate_id, previous_run.run_id),
+                        {'result_code':'DUPLICATE_CANDIDATE', 'prior_result_code':'REVIEW_CONTEXT_TOO_LARGE',
+                         'contract_version':contract.version})
+                    return result, self.feedback({'result_code':'DUPLICATE_CANDIDATE',
+                        'previous_verdict':asdict(previous_verdict),
+                        'instruction':'The same test and execution settings still exceed the review context. Narrow the test or request information; changing the hypothesis alone does not change evidence.'}), 'DUPLICATE_CANDIDATE', False
                 result = self.state(result, TaskState.EXECUTING)
                 run = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
                 self.check_execution(run)
@@ -260,6 +284,11 @@ class Controller:
                 return result, self.feedback({'error':str(exc)}), code, False
             self.store.save_record('verdicts', 'verdict-' + run.run_id, verdict)
             lifecycle.executions[candidate.candidate_id], lifecycle.verdicts[candidate.candidate_id] = run, verdict
+            if verdict.next_action == 'narrow_candidate':
+                if not candidate.preconditions:
+                    lifecycle.context_blocked[execution_key] = (candidate, run, verdict)
+                step.rejected('REVIEW_CONTEXT_TOO_LARGE')
+                return result, self.feedback(asdict(verdict)), 'REVIEW_CONTEXT_TOO_LARGE', False
             if verdict.classification == CandidateClass.ENVIRONMENT_BLOCKED:
                 result = self.state(result, TaskState.BLOCKED, stop_reason='ENVIRONMENT_BLOCKED',
                                     uncertainties=(*result.uncertainties, verdict.reason))
@@ -366,6 +395,7 @@ class Controller:
             # The new contract version has observed nothing: evidence from another version
             # cannot be carried into it, and no accepted candidate survives the revision.
             lifecycle.executions.clear(); lifecycle.verdicts.clear()
+            lifecycle.context_blocked.clear()
             result = self.state(result, TaskState.GENERATING, evidence_level=EvidenceLevel.NONE, accepted_candidate_id='')
             feedback = self.feedback({'contract_version':revised.version, 'missing_information':revised.missing_information})
         return revised, result, feedback, 'REVISION_REQUESTED'
