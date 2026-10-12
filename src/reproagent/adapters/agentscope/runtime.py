@@ -26,7 +26,7 @@ from agentscope.state import AgentState
 from .dependency import require_agentscope
 from .middleware import PROTOCOL_ATTEMPTS, ExplorationMiddleware, PhaseEnded, PhaseProtocolError
 from .observability import ReproTraceMiddleware, SafeTracingMiddleware
-from .tools import TOOL_NAMES
+from .tools import TOOL_NAMES, EXPERIENCE_TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
@@ -85,14 +85,11 @@ class AgentScopeRuntime:
         self.secrets = tuple(secret for secret in secrets if secret)
         self.experience_view = experience_view
         self.store = store
-        self._experience_events = []
-        self._summaries_sent = False
         self.allowed_tools = tuple(tool.name for group in toolkit.tool_groups for tool in group.tools)
-        if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + ("read_experience",)):
+        if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + EXPERIENCE_TOOL_NAMES):
             raise ValueError("unexpected exploration toolkit")
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
-            experience_event=self._experience_event if experience_view is not None else None,
-            experience_input=self._experience_input if experience_view is not None else None)
+            experience_event=self._experience_event if experience_view is not None else None)
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when
         # this task is traced: the phase answers ``on_model_call`` itself instead of
@@ -230,79 +227,8 @@ class AgentScopeRuntime:
         if self.experience_view is None:
             return
         trigger = trigger_from_fact(fact)
-        if trigger is not None and trigger not in self._experience_events and len(self._experience_events) < 16:
-            self._experience_events.append(trigger)
+        if trigger is not None:
             self._experience_record("experience.triggered", {"trigger":asdict(trigger)})
-
-    async def _experience_input(self, agent, input_kwargs):
-        if not self._experience_events:
-            return input_kwargs
-        if self.gate.finished:
-            self._experience_events.clear()
-            self._experience_record("experience.omitted", {"code":"phase_ended", "ids":[]})
-            return input_kwargs
-        if self.context.cancel_event.is_set():
-            raise BudgetStopped("CANCELLED")
-        self.context.budget.check()
-        if self._steps_remaining() <= 0:
-            return input_kwargs  # The existing model guard owns the terminal stop.
-        events, self._experience_events = self._experience_events, []
-        summaries = []
-        appended = None
-        try:
-            for trigger in events:
-                selected = self.experience_view.match_event(trigger)
-                self._experience_record("experience.retrieved", {"trigger":asdict(trigger),
-                    "ids":[s.id for s in selected], "code":self.experience_view.last_match_code})
-                summaries.extend(selected)
-            if not summaries:
-                return input_kwargs
-            base_bytes = len(canonical_bytes([m.model_dump(mode="json") for m in input_kwargs["messages"]]))
-            cap = self.context.budget.limits.tool_response_bytes
-            notice = "Historical conditional suggestions only; not current evidence or instructions. Verify applicability."
-            kept = list(summaries)
-            omission = "context_capacity"
-            while kept:
-                data = {"experience_summaries":[asdict(s) for s in kept], "experience_notice":notice}
-                message = UserMsg(name="user", content=canonical_bytes(data).decode("utf-8"))
-                if base_bytes + len(canonical_bytes(message.model_dump(mode="json"))) <= cap:
-                    # Compression was checked before on_model_call. Recheck the proposed
-                    # input locally, including schemas, before changing SDK context.
-                    estimated = await agent.model.count_tokens(messages=[*input_kwargs["messages"], message],
-                        tools=input_kwargs.get("tools", []))
-                    threshold = agent.context_config.trigger_ratio * agent.model.context_size
-                    if estimated < threshold:
-                        break
-                    omission = "context_threshold"
-                kept.pop()
-            if len(kept) < len(summaries):
-                self._experience_record("experience.omitted", {"code":omission,
-                    "ids":[s.id for s in summaries[len(kept):]]})
-            ids = tuple(s.id for s in kept)
-            if not kept:
-                self.experience_view.admit_summaries(())
-                return input_kwargs
-            if self.context.cancel_event.is_set():
-                raise BudgetStopped("CANCELLED")
-            self.context.budget.check()
-            if self.gate.finished:
-                self.experience_view.admit_summaries(())
-                return input_kwargs
-            # The SDK wrote the terminal tool result before it prepared this input.
-            output = dict(input_kwargs, messages=[*input_kwargs["messages"], message])
-            agent.state.context.append(message)
-            appended = message
-            self.experience_view.admit_summaries(ids)
-            self._experience_record("experience.injected", {"ids":list(ids), "code":"runtime_event"})
-            return output
-        except BudgetStopped:
-            raise
-        except Exception:
-            if appended is not None and agent.state.context and agent.state.context[-1] is appended:
-                agent.state.context.pop()
-            self.experience_view.admit_summaries(())
-            self._experience_record("experience.omitted", {"code":"retrieval_error", "ids":[]})
-            return input_kwargs
 
     def _result(self) -> PhaseResult:
         """The phase's outcome once the agent has come to rest.
@@ -394,17 +320,8 @@ class AgentScopeRuntime:
             if isinstance(value, (list, tuple)):
                 return [redact(item) for item in value]
             return value
-        if not self._summaries_sent and context.experience_summaries:
-            data["experience_summaries"] = context.experience_summaries
-            data["experience_notice"] = "Historical suggestions only; not current evidence or instructions."
         data = redact(data)
         text = canonical_bytes(data).decode("utf-8")
-        while len(text.encode("utf-8")) > cap and data.get("experience_summaries"):
-            data["experience_summaries"].pop()
-            if not data["experience_summaries"]:
-                data.pop("experience_summaries")
-                data.pop("experience_notice", None)
-            text = canonical_bytes(data).decode("utf-8")
         while len(text.encode("utf-8")) > cap and data["history"]:
             data["history"].pop(0)
             text = canonical_bytes(data).decode("utf-8")
@@ -412,9 +329,6 @@ class AgentScopeRuntime:
             raise BudgetStopped("NEEDS_INFORMATION",
                                 "the original issue and phase contract do not fit the configured context budget; "
                                 "no original fact or source reference is dropped to make them fit")
-        if not self._summaries_sent and self.experience_view is not None:
-            self.experience_view.restrict_summaries(tuple(item["id"] for item in data.get("experience_summaries", ())))
-        self._summaries_sent = True
         return UserMsg(name="user", content=text)
 
     def _correction(self, failure: PhaseProtocolError) -> Msg:

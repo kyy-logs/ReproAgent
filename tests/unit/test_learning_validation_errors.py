@@ -17,7 +17,7 @@ def capsule(tmp_path):
 
 
 def proposal():
-    return {'experience': {'category': 'workflow', 'tags': ['pytest'],
+    return {'experience': {'category': 'workflow', 'tags': ['pytest'], 'name':'Bounded evidence', 'description':'When evidence is incomplete or exceeds bounds.', 'name':'Bounded evidence', 'description':'When evidence is incomplete or exceeds bounds.',
         'summary': 'Use bounded source reads.', 'detail': 'Observed twenty steps before exhaustion; this does not prove cause.',
         'evidence_ids': ['E1']}}
 

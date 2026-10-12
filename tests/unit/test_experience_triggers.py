@@ -24,7 +24,7 @@ def learning_fixture(tmp_path, *, code="SOURCE_RANGE_NOT_DISPLAYED", cited=True)
     refs = {e["id"]: EvidenceRef("learning/evidence.jsonl", bytes_hash(raw), i+1, i+1)
             for i, e in enumerate((entry, issue))}
     material = exp.LearningInput({"evidence": [entry, issue]}, refs, "task@hash", 0)
-    proposal = {"experience": {"category": "workflow", "tags": ["revise_contract", "logging"],
+    proposal = {"experience": {"category": "workflow", "tags": ["revise_contract", "logging"], "name":"Source citations", "description":"When current citations are rejected.", "name":"Source citations", "description":"When current citations are rejected.",
         "summary": "When a source range is rejected, obtain the displayed range.",
         "detail": "Observed rejection; recovery remains unverified.",
         "evidence_ids": ["E1" if cited else "E2"]}}
@@ -112,7 +112,7 @@ def test_small_controlled_error_fact_keeps_trigger_without_large_arguments():
 
 
 def test_exact_legacy_card_boundary_survives_read_and_append(tmp_path):
-    legacy = asdict(card(detail=""))
+    legacy = exp._card_record(card(detail=""))
     legacy.pop("triggers", None)
     overhead = len(canonical_bytes(legacy))
     legacy['detail'] = 'x'*(2048-overhead)

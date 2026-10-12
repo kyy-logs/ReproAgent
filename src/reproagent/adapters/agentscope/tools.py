@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.permission import PermissionBehavior, PermissionDecision
@@ -46,6 +46,7 @@ from ...paths import relative_name
 FILE_TOOL_NAMES = ("Read", "Grep", "Glob")
 DOMAIN_TOOL_NAMES = ("write_candidate", "revise_contract", "request_information")
 TOOL_NAMES = FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES
+EXPERIENCE_TOOL_NAMES = ('list_experiences', 'read_experience')
 
 #: Appended when a response had to be cut to fit the tool budget.  Marked in the response
 #: itself, because a response that looks complete is read as complete.
@@ -573,7 +574,7 @@ class RequestInformation(_DomainTool):
 
 class _ExperienceParams(ParamsBase):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1, description="An id from the supplied experience summaries.")
+    id: str = Field(min_length=1, description="An id from a catalog page displayed in this task.")
 
 
 class ReadExperience(ToolBase):
@@ -599,9 +600,61 @@ class ReadExperience(ToolBase):
             raise BudgetStopped("CANCELLED")
         params = _ExperienceParams(**kwargs)
         data = self.view.read(params.id, max_bytes=self.context.budget.limits.tool_response_bytes)
-        self.store.append_event("experience.read", (), {"id": params.id})
+        if 'code' in data:
+            return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode('utf-8'))], state=ToolResultState.ERROR, is_last=True)
+        _experience_event(self.store, 'experience.read', {'id': params.id})
         return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode("utf-8"))],
                          state=ToolResultState.SUCCESS, is_last=True)
+
+
+def _experience_event(store, kind, payload):
+    from ...observability import mark
+    try:
+        store.append_event(kind, (), payload)
+    except (OSError, ValueError, RuntimeError):
+        pass
+    try:
+        mark(kind, attributes={'result_code': payload.get('code', 'ready'),
+            'experience_ids': payload.get('ids', [payload['id']] if 'id' in payload else [])})
+    except (OSError, ValueError, RuntimeError):
+        pass
+
+
+class _CatalogParams(ParamsBase):
+    model_config = ConfigDict(extra='forbid')
+    category: Literal['framework', 'model', 'workflow']
+    cursor: str | None = None
+
+
+class ListExperiences(ToolBase):
+    name = 'list_experiences'
+    description = 'Browse id/name/description in one historical category. Load an applicable id using read_experience; no current source evidence.'
+    input_schema = _CatalogParams.model_json_schema()
+    is_read_only = True
+    is_concurrency_safe = False
+    is_mcp = False
+    is_external_tool = False
+    is_state_injected = False
+
+    def __init__(self, view, store, context):
+        super().__init__()
+        self.view, self.store, self.context = view, store, context
+
+    async def check_permissions(self, tool_input, context):
+        return PermissionDecision(behavior=PermissionBehavior.ALLOW, message='fixed catalog is read-only')
+
+    async def call(self, **kwargs):
+        self.context.budget.check()
+        if self.context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+        params = _CatalogParams(**kwargs)
+        data = self.view.list(params.category, params.cursor, max_bytes=self.context.budget.limits.tool_response_bytes)
+        success = data['code'] in ('ready', 'empty')
+        _experience_event(self.store, 'experience.catalog', {'category': data['category'],
+            'ids': [item['id'] for item in data['items']] if success else [], 'code': data['code'],
+            'bytes': len(canonical_bytes(data)) if success else 0, 'has_more': data['next_cursor'] is not None})
+        if not success: data = {'code': data['code']}
+        return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode('utf-8'))],
+            state=ToolResultState.SUCCESS if success else ToolResultState.ERROR, is_last=True)
 
 
 def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *, experience_view=None, evidence_views=None) -> Toolkit:
@@ -629,10 +682,11 @@ def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService,
         RequestInformation(gate, context),
     ]
     if experience_view is not None:
+        tools.append(ListExperiences(experience_view, candidates.workspace.store, context))
         tools.append(ReadExperience(experience_view, candidates.workspace.store, context))
     toolkit = Toolkit(tools=tools)
     registered = tuple(tool.name for tool in toolkit.tool_groups[0].tools)
-    expected = TOOL_NAMES + (("read_experience",) if experience_view is not None else ())
+    expected = TOOL_NAMES + (EXPERIENCE_TOOL_NAMES if experience_view is not None else ())
     if registered != expected:
         raise ValueError(f"the phase toolkit must register exactly {TOOL_NAMES}; got {registered}")
     return toolkit

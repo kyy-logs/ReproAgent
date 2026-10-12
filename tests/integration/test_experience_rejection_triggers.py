@@ -25,7 +25,7 @@ def learn(env, fact):
     path.write_bytes(raw)
     material = exp.LearningInput({"evidence":[entry]},
         {"E1":EvidenceRef('learning/evidence.jsonl',bytes_hash(raw),1,1)},'offline@hash',0)
-    proposal = {"experience":{"category":"workflow","tags":["pytest"],
+    proposal = {"experience":{"category":"workflow","tags":["pytest"], "name":"Prerequisites", "description":"When a grounded contract is required.", "name":"Prerequisites", "description":"When a grounded contract is required.",
         "summary":"When the corresponding refusal occurs, repair its missing prerequisites.",
         "detail":"Observed pitfall; recovery benefit remains unverified.","evidence_ids":["E1"]}}
     return exp.validate_experience(proposal,material,env.store)
@@ -61,11 +61,14 @@ def test_grounded_capture_learning_and_next_task_wire_injection(tmp_path, projec
     second = configured(tmp_path/'second',projects,facts,memory=memory)
     second.service.bind_contract(replace(second.service.contract,sources=()))
     second.answers.extend([tool_reply('write_candidate',write_payload(),call_id='ungrounded'),
+        tool_reply('list_experiences',{'category':'workflow'},call_id='catalog'),
+        tool_reply('read_experience',{'id':learned.id},call_id='memory'),
         tool_reply('request_information',{'question':'missing source'},call_id='stop')])
     run(second)
     assert second.initial == () and injected(second.requests[0]) == []
-    assert injected(second.requests[1]) == [learned.id]
-    assert second.context.budget.steps_used == len(second.requests) == 2
+    assert injected(second.requests[1]) == []
+    assert learned.detail in json.dumps(second.requests[3]["messages"])
+    assert second.context.budget.steps_used == len(second.requests) == 4
     assert candidate_ids(second) == [] and library.read_bytes() == frozen
 
 
@@ -94,7 +97,7 @@ def test_controller_overflow_fact_is_citable_and_reaches_next_sdk_phase(tmp_path
         and json.loads(e['text']).get('code')=='REVIEW_CONTEXT_TOO_LARGE'
         and json.loads(e['text']).get('kind')=='action.rejected')
     assert json.loads(entry['text'])['action'] == 'run_candidate'
-    proposal = {'experience':{'category':'workflow','tags':['pytest'],
+    proposal = {'experience':{'category':'workflow','tags':['pytest'], 'name':'Review overflow', 'description':'When program review evidence exceeds bounds.', 'name':'Review overflow', 'description':'When program review evidence exceeds bounds.',
         'summary':'When review evidence overflows, narrow the candidate.',
         'detail':'Actual program overflow; advice not yet validated.','evidence_ids':[entry['id']]}}
     learned = exp.validate_experience(proposal,material,controller.store)
@@ -104,6 +107,8 @@ def test_controller_overflow_fact_is_citable_and_reaches_next_sdk_phase(tmp_path
     frozen = library.read_bytes()
     env = configured(tmp_path/'sdk',projects,facts,memory=exp.load_experience_snapshot(library).cards[0])
     env.answers.extend([tool_reply('write_candidate',write_payload(),call_id='candidate'),
+        tool_reply('list_experiences',{'category':'workflow'},call_id='catalog'),
+        tool_reply('read_experience',{'id':learned.id},call_id='memory'),
         tool_reply('request_information',{'question':'narrow candidate'},call_id='stop')])
     async def go():
         try:
@@ -115,8 +120,9 @@ def test_controller_overflow_fact_is_citable_and_reaches_next_sdk_phase(tmp_path
             await env.factory.aclose()
     asyncio.run(go())
     assert env.initial == () and injected(env.requests[0]) == []
-    assert injected(env.requests[1]) == [learned.id]
-    assert env.context.budget.steps_used == len(env.requests) == 2
+    assert injected(env.requests[1]) == []
+    assert learned.detail in json.dumps(env.requests[3]["messages"])
+    assert env.context.budget.steps_used == len(env.requests) == 4
     assert library.read_bytes() == frozen
 
 

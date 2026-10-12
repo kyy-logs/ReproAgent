@@ -24,13 +24,19 @@ LIBRARY_BYTES = 1024 * 1024
 #: evaluation harness deliberately composes its own requests and is not affected here,
 #: because a round requires the library it measured against to stay unchanged.
 EXPERIENCE_ENV = "REPROAGENT_EXPERIENCE"
-DEFAULT_EXPERIENCE_PATH = Path.home() / ".reproagent" / "experiences.json"
+DEFAULT_EXPERIENCE_PATH = Path.home() / ".reproagent" / "experiences"
+LEGACY_EXPERIENCE_PATH = Path.home() / '.reproagent' / 'experiences.json'
 
 
 def default_experience_path() -> Path:
     """The library a run uses when its own configuration names none."""
     override = os.environ.get(EXPERIENCE_ENV, "").strip()
-    return (Path(override).expanduser() if override else DEFAULT_EXPERIENCE_PATH).resolve()
+    if override:
+        return Path(override).expanduser().resolve()
+    default = DEFAULT_EXPERIENCE_PATH
+    if not workspace_path(default).exists() and workspace_path(LEGACY_EXPERIENCE_PATH).is_file():
+        default = LEGACY_EXPERIENCE_PATH
+    return default.resolve()
 CARD_BYTES = 2048
 VISIBLE_BYTES = 2048
 INPUT_BYTES = 8192
@@ -197,7 +203,12 @@ def validate_experience_path(path, request, fixed):
     protected = [request.repo, request.output_dir]
     if fixed is not None:
         protected.append(fixed.repo)
-    if any(is_within(candidate, root) for candidate in (path, lock) for root in protected):
+    from .experience_storage import directory_mode, _paths
+    candidates = [path, lock]
+    if directory_mode(path):
+        _paths(path)
+        candidates += [(path / c / name).resolve() for c in CATEGORIES for name in ('experiences.json', 'index.json')]
+    if any(is_within(candidate, root) for candidate in candidates for root in protected):
         raise ValueError("experience library must be outside repository, task output and fixed repository")
     return path
 
@@ -510,18 +521,19 @@ class ExperienceService:
         if self.request.experience_file is None:
             return
         self.path = validate_experience_path(self.request.experience_file, self.request, fixed)
-        self.snapshot = load_experience_snapshot(self.path, secrets=self.secrets)
+        self.snapshot = load_experience_snapshot(self.path, secrets=self.secrets, diagnostic=self._index_diagnostic)
         if self.snapshot.state != "store_error":
-            self.view = ExperienceView(self.snapshot, secrets=self.secrets)
+            from .experience_catalog import ExperienceCatalogView
+            self.view = ExperienceCatalogView(self.snapshot, secrets=self.secrets)
         self.store.append_event("experience.loaded", (), {"state": self.snapshot.state,
             "content_hash": self.snapshot.content_hash, "count": len(self.snapshot.cards)})
 
     def summaries(self, issue):
-        if self.view is None:
-            return ()
-        values = self.view.select(issue.text, self.request.language.target_modules)
-        self.store.append_event("experience.matched", (), {"ids": [v.id for v in values]})
-        return values
+        return ()  # Compatibility entry point: catalog loading is exclusively agent-driven.
+
+    def _index_diagnostic(self, category, code):
+        try: self.store.append_event('experience.index', (), {'category': category, 'code': code})
+        except (OSError, ValueError, RuntimeError): pass
 
     async def learn(self, result, main_context):
         # Learning runs inside the task's own trace scope, on its own budget: the span
@@ -572,7 +584,7 @@ class ExperienceService:
                     _check(context)
                     gateway = self.learning_gateway_factory(self.store)
                     card = await extract_experience(material, gateway, context, self.store, secrets=self.secrets)
-                    code = append_experience(self.path, card, context) if card is not None else "empty"
+                    code = append_experience(self.path, card, context, diagnostic=self._index_diagnostic) if card is not None else "empty"
         except BudgetStopped as exc:
             code = "skipped_cancelled" if exc.reason == "CANCELLED" else "timeout"
         except asyncio.CancelledError:

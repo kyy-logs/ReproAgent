@@ -475,7 +475,7 @@ class Controller:
             for evidence in contract.sources:
                 self.verifier.resolve(evidence)
             self.store.save_contract(contract)
-            experience_summaries = self.experience_service.summaries(IssueDescription(issue_text, issue_hash)) if self.experience_service is not None else ()
+            experience_summaries = ()
             lifecycle = Lifecycle(request, fixed, snapshot, environment)
             feedback = self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else ''
             history = []

@@ -52,7 +52,7 @@ PROTOCOL_ATTEMPTS = 3
 #: The tools that only read.  They are the ones a phase can spend its whole budget on: the
 #: SDK's ReAct loop has no reason to stop reading a large repository, and the fixed-point
 #: run spent 20 of 20 decisions on Read/Grep/Glob without ever publishing a candidate.
-READER_TOOLS = ("Read", "Grep", "Glob", "read_experience")
+READER_TOOLS = ("Read", "Grep", "Glob", "list_experiences", "read_experience")
 
 #: Steps kept for publishing and its bounded protocol corrections.  The controller runs,
 #: repeats and submits the candidate itself, so those steps cost no budget of their own.

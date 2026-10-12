@@ -22,9 +22,10 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
     seen, main_calls, learning_calls = [], [], []
     holder = {}
     read = False
+    listed = False
     file_calls = 0
     async def handle(http_request):
-        nonlocal read, file_calls
+        nonlocal read, listed, file_calls
         payload = json.loads(http_request.content)
         seen.append(payload)
         data = json.loads(payload["messages"][-1]["content"]) if not payload.get("tools") else None
@@ -53,7 +54,7 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
             if learning == "invalid":
                 return text_response('{"experience":{"category":"unknown"}}')
             if learning == "missing_evidence":
-                return text_response('{"experience":{"category":"workflow","tags":["pytest"],"summary":"Steps exhausted.","detail":"E1 describes the observation."}}')
+                return text_response('{"experience":{"category":"workflow","tags":["pytest"],"name":"Steps","description":"When steps are exhausted.","summary":"Steps exhausted.","detail":"E1 describes the observation."}}')
             if learning == "invalid_json":
                 return text_response('{"experience":')
             if learning == "invalid_structure":
@@ -70,25 +71,20 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
                 return text_response('{"experience":null}')
             ids = [data["evidence"][0]["id"]]
             if learning == "surrogate":
-                return text_response(json.dumps({'experience': {'category':'workflow', 'tags':['pytest'],
+                return text_response(json.dumps({'experience': {'category':'workflow', 'tags':['pytest'], 'name':'Invalid text', 'description':'When validating generated text.',
                     'summary':'\ud800', 'detail':'invalid Unicode', 'evidence_ids':ids}}))
-            return text_response(json.dumps({"experience": {"category": "model", "tags": ["pytest"],
+            return text_response(json.dumps({"experience": {"category": "model", "tags": ["pytest"], "name":"Empty input assertions", "description":"When checking empty input behaviour.",
                 "summary": "Empty input assertions need original behaviour evidence.",
                 "detail": "Condition: empty input. Observation: the original test raised IndexError. Check current source before choosing exception assertions.",
                 "evidence_ids": ids}}))
         if payload.get("tools"):
             main_calls.append("exploration")
+            if seed and not listed:
+                listed = True
+                return tool_response("list_experiences", {"category":"model"}, "catalog")
             if seed and not read:
-                summaries = []
-                for message in payload["messages"]:
-                    if message["role"] == "user":
-                        try:
-                            summaries = json.loads(message["content"]).get("experience_summaries", summaries)
-                        except (ValueError, TypeError):
-                            pass
-                if summaries:
-                    read = True
-                    return tool_response("read_experience", {"id": summaries[0]["id"]}, "memory")
+                read = True
+                return tool_response("read_experience", {"id":card(summary="empty input advice").id}, "memory")
             if pitfalls and file_calls < 2:
                 file_calls += 1
                 path = 'absent.py' if file_calls == 1 else 'example/parser.py'
@@ -202,9 +198,11 @@ def test_learning_provider_failure_is_not_invalid_experience(tmp_path, projects,
 def test_summary_load_occurs_after_analysis_before_first_explore(tmp_path, projects, facts):
     _, controller, result, seen, main, learning = run_sdk_task(tmp_path, projects, facts, learn=False)
     assert result.status == TaskState.DONE and not learning
-    assert main == ["contract", "exploration", "exploration", "verdict", "verdict"]
+    assert main == ["contract", "exploration", "exploration", "exploration", "verdict", "verdict"]
     assert "HISTORICAL_HINT" not in json.dumps(seen[0])
-    assert "experience_summaries" in json.dumps(seen[1])
+    assert "experience_summaries" not in json.dumps(seen[1])
+    assert "HISTORICAL_HINT" not in json.dumps(seen[2])
+    assert "HISTORICAL_HINT" in json.dumps(seen[3])
     verdicts = [p for p in seen if not p.get("tools") and "available_refs" in json.loads(p["messages"][-1]["content"])]
     assert all("HISTORICAL_HINT" not in json.dumps(p) for p in verdicts)
     assert controller.learning_result.code == "skipped_read_only"
