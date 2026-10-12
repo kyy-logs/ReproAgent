@@ -1,6 +1,6 @@
 # 经验写入与情境检索验收
 
-状态：关键链路及审查问题修复验证完成；最终完整回归进行中。没有真实 provider 请求、没有解密密钥、没有 Astra 验收。
+状态：实现、独立审查修复和最终完整回归完成。没有真实 provider 请求、没有解密密钥、没有 Astra 验收。
 
 基线 da7ac47，隔离分支 codex/experience-triggers。设计和计划分别为 docs/superpowers/specs/2026-10-12-experience-trigger-retrieval-design.md 与 docs/superpowers/plans/2026-10-12-experience-trigger-retrieval.md。
 
@@ -26,6 +26,8 @@
 | Viewer | 8 passed |
 | 审查修复/旧库/SDK/launcher | 74 passed / 1 skipped，12.11s |
 | wheel 安装与资源预检 | 3 passed，33.64s |
+| 仓库外 SWT 对照/来源复核 | 17 passed，30.23s |
+| 最终完整 pytest（f828a79，仓库外 basetemp） | 827 passed / 5 skipped，690.76s，exit 0 |
 
 两项边界先 RED 再 GREEN：空白标签不能冒充保留检索命名空间；上下文 append 失败不能提前开放详情。trace 白名单缺失及小型受控事实保留也分别复现后修复。
 
@@ -43,6 +45,8 @@ GPT-6.1-sol 新上下文只读审查 da7ac47..9b4216d，发现三项 Important�
 
 初次完整验收在源修复前停止；其中六项 launcher 失败是新工作区缺 .venv，已建立私有 Python 并复用既有本地依赖，无下载。后续 launcher 和 wheel 预检通过，不将环境缺失计为产品修复。
 
+修复后首次完整运行因把 basetemp 放在 E:/ReproAgent 内，得到 8 failed / 819 passed / 5 skipped（767.82s）。七项 SWT 对照临时项目继承外层 pytest 配置，节点 ID 多出仓库路径前缀；一项来源测试继承外层 Git。实际 buggy/fixed 调用结果正确，不修改产品来适配测试目录。改用 C:/Users/Dell/AppData/Local/Temp/reproagent-experience-triggers-verification/swt 后，相关 17 项全部通过。完整回归使用该仓库外目录下独立 full 子目录；原失败记录保留，不当作通过证据。
+
 真实 SDK 离线闭环：实际 revise_contract 失败 -> ToolResponse metadata -> capture_exploration -> 冻结证据 EID -> 五字段提案程序校验 -> 追加经验库 -> 新任务加载同卡 -> 对应真实拒绝 -> 下一 wire 请求含摘要。前一请求没有过程摘要，原始 tool result 完整保留；库字节不变。
 
 ## 限制和后续评测
@@ -53,4 +57,6 @@ GPT-6.1-sol 新上下文只读审查 da7ac47..9b4216d，发现三项 Important�
 
 A/B 必须保持相同工具表、模型/环境/预算及冻结库。过程卡允许首轮零匹配，在对应事件后核对实际 wire 注入；整个任务没有注入时不宣称卡片效果。不要继续使用只在首轮 zero_natural_matches 就停止的旧运行器验证过程卡。每臂两次仅小样本，不能证明稳定收益或泛化。
 
-完整验证日志位于 E:/ReproAgent/.local/experience-triggers/；最终完整回归结果随后补齐。未 push 或合并到 main。
+完整验证日志位于 E:/ReproAgent/.local/experience-triggers/；最终日志 full-outside.log，退出码 full-outside.exit=0。计划执行账本和审查包备份在该目录的 execution-ledger.md、review-da7ac47..9b4216d.diff。当前分支 codex/experience-triggers 保留，未 push 或合并到 main。
+
+收尾决策：用户已要求直接执行，本计划明确保留分支且不 push/合并，因此按该已定范围完成，没有再次要求选择集成方式。测试代码及运行源码在最终完整回归期间保持 f828a79；后续仅更新计划和验收文档。没有遗留 Minor 修复项；真实模型收益和旧 reader 读取新卡仍属于上述边界。

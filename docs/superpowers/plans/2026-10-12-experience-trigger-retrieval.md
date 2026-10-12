@@ -1,6 +1,6 @@
 # Experience Trigger Retrieval Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 用户已要求计划完成后直接执行，不再等待二次确认。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. 用户已要求计划完成后直接执行，不再等待二次确认。
 
 **Goal:** 让可靠写入的过程经验通过实际发生的情境找回，并保持旧库及主复现流程兼容。
 
@@ -38,12 +38,12 @@ Status: complete; RED 5 failures, GREEN 81 passed / 1 skipped. See acceptance le
 
 **Interfaces:** `ExperienceTrigger(kind: str, tool: str, code: str)` frozen dataclass; `trigger_from_fact(fact: dict) -> ExperienceTrigger | None`; `evidence_triggers(entry: dict) -> tuple[ExperienceTrigger,...]`. `ExperienceCard.triggers: tuple[ExperienceTrigger,...] = ()`; `_identifier(..., triggers=())` preserves legacy identity when empty. Metadata key `reproagent_error_code` is produced by product tools only. Parser validates closed kind/tool/code combinations, never parses free result text.
 
-- [ ] Write tests: legacy card JSON missing triggers loads with identical ID; learned card derives conditions from cited frozen structured error only; uncited error and summary guess create no conditions; unsupported metadata and altered evidence are rejected/no match; different conditions change IDs; limits remain enforced.
-- [ ] Run new tests: expected RED for absent trigger contract.
-- [ ] Implement pure trigger validators, optional card serialization validation, program derivation after EID validation, normative bounded tags. Capture safe error metadata in tool_error atoms; existing notes retain actual allowed action under tool.
-- [ ] Update prompt: applicability is conditional; only supported evidence; five-field schema unchanged. Derived metadata is not verified success.
-- [ ] Run unit store/learning/trigger/material/capture tests: expected GREEN.
-- [ ] Commit `feat: derive experience triggers from cited task facts` and record evidence in ledger.
+- [x] Write tests: legacy card JSON missing triggers loads with identical ID; learned card derives conditions from cited frozen structured error only; uncited error and summary guess create no conditions; unsupported metadata and altered evidence are rejected/no match; different conditions change IDs; limits remain enforced.
+- [x] Run new tests: expected RED for absent trigger contract.
+- [x] Implement pure trigger validators, optional card serialization validation, program derivation after EID validation, normative bounded tags. Capture safe error metadata in tool_error atoms; existing notes retain actual allowed action under tool.
+- [x] Update prompt: applicability is conditional; only supported evidence; five-field schema unchanged. Derived metadata is not verified success.
+- [x] Run unit store/learning/trigger/material/capture tests: expected GREEN.
+- [x] Commit `feat: derive experience triggers from cited task facts` and record evidence in ledger.
 
 ### Task 2: Cumulative view and event matching
 
@@ -53,10 +53,10 @@ Status: complete; RED 7 failures, GREEN 13 passed.
 
 **Interfaces:** `ExperienceView.match_event(trigger) -> summaries` yields only unshown exact matches within remaining total count/bytes; no library reads. `admit_summaries(ids)` marks actual display; `restrict_summaries(ids)` keeps first-phase compatibility and excludes dropped suggestions. `read` remains one successful lookup of actually admitted ID. View keeps proposed and admitted cards separately and reserves consumed detail bytes.
 
-- [ ] RED tests: trigger card withheld at startup; exact event returns related card; different tool/code returns none; no substring matching; stable ties; repeated event and phase do not repeat admitted summary; total three cards and 2048 bytes across initial/dynamic/detail; omitted cards cannot be read.
-- [ ] Implement compatible initial selection, additive exact event selection, admission and cumulative byte accounting. Skip over large cards without dropping others; no eviction of already shown/read advice.
-- [ ] GREEN existing view plus new trigger view tests.
-- [ ] Commit `feat: retrieve pitfall experience on matching runtime events` and ledger.
+- [x] RED tests: trigger card withheld at startup; exact event returns related card; different tool/code returns none; no substring matching; stable ties; repeated event and phase do not repeat admitted summary; total three cards and 2048 bytes across initial/dynamic/detail; omitted cards cannot be read.
+- [x] Implement compatible initial selection, additive exact event selection, admission and cumulative byte accounting. Skip over large cards without dropping others; no eviction of already shown/read advice.
+- [x] GREEN existing view plus new trigger view tests.
+- [x] Commit `feat: retrieve pitfall experience on matching runtime events` and ledger.
 
 ### Task 3: SDK event capture and bounded next-round injection
 
@@ -66,18 +66,20 @@ Status: complete; SDK regression 66 passed; compact facts, trace and learning/ca
 
 **Interfaces:** Tool refusal chunks carry `metadata={"reproagent_error_code": CODE}` for the two citation checks only, preserving ERROR state/text. Middleware accepts optional experience callback; successful permission results never match; reserved/denied use final code. on_acting observes only final ToolResponse ERROR metadata and closes generator. Runtime queues validated triggers (deduplicated, max 16) and injects one bounded advisory UserMsg on next on_model_call, with actual admission only after byte capacity and SDK local count_tokens threshold checks. The input callback is async for this local estimate; protocol errors use same queue before existing correction. Empty trigger serialization uses `_card_record` to preserve legacy sizes.
 
-- [ ] RED real SDK + mock HTTP tests: first request no process advice; actual citation refusal triggers next wire request with summary and intact tool result; wrong error/success does not; repeated failures inject once; trace off works; one detail lookup remains possible; no extra requests or steps.
-- [ ] Implement metadata at source using narrow handled citation refusal; add exact event callback to existing hooks without changing handler call count, permissions or gate.
-- [ ] Before next model dispatch validate cancellation/gate/budget; match queued facts, limit new message plus relevant prior input by tool_response_bytes; admit only retained summaries and save safe `experience.retrieved`/`experience.injected`/`experience.omitted` events and mark. Diagnostic exceptions are isolated.
-- [ ] GREEN SDK tests plus runtime/domain experience regressions. Tests cover small caps, reserved publishing, protocol correction, phase end, shared detail bytes, and callback faults.
-- [ ] Commit `feat: inject contextual experience through AgentScope hooks` and ledger.
+- [x] RED real SDK + mock HTTP tests: first request no process advice; actual citation refusal triggers next wire request with summary and intact tool result; wrong error/success does not; repeated failures inject once; trace off works; one detail lookup remains possible; no extra requests or steps.
+- [x] Implement metadata at source using narrow handled citation refusal; add exact event callback to existing hooks without changing handler call count, permissions or gate.
+- [x] Before next model dispatch validate cancellation/gate/budget; match queued facts, limit new message plus relevant prior input by tool_response_bytes; admit only retained summaries and save safe `experience.retrieved`/`experience.injected`/`experience.omitted` events and mark. Diagnostic exceptions are isolated.
+- [x] GREEN SDK tests plus runtime/domain experience regressions. Tests cover small caps, reserved publishing, protocol correction, phase end, shared detail bytes, and callback faults.
+- [x] Commit `feat: inject contextual experience through AgentScope hooks` and ledger.
 
 ### Task 4: Documentation and whole-branch acceptance
 
+Status: complete; fresh GPT-6.1-sol review findings fixed RED -> GREEN, final full pytest 827 passed / 5 skipped (690.76s, exit 0), Node viewer 8 passed. No real provider/Astra.
+
 **Files:** Modify docs/experience.md, prompts/explore.md; create docs/reviews/2026-10-12-experience-trigger-retrieval-acceptance.md. Integration learning lifecycle tests as needed.
 
-- [ ] Document write/read timing, evidence-backed conditions, precise supported event list, legacy fallback, cumulative limits and A/B actual-injection gates. Prompt explains later advisory messages, no extra authority.
-- [ ] Offline integration from validated error evidence -> learned new card -> frozen library -> SDK corresponding error -> actual next wire injection; verify only five learning keys, empty library equal tool surface, and no manual tag/card manipulation.
-- [ ] Run full pytest with E:/ReproAgent/.local/experience-triggers/full as basetemp and Node trace viewer tests. Expected all pass; no external provider or Astra.
-- [ ] Fresh-context whole-branch review, fix important findings RED->GREEN, then required regressions; capture review limitations and deviations.
-- [ ] Commit acceptance/plan progress and preserve branch/worktree. Report plan path, implementation result, tests and outstanding real A/B.
+- [x] Document write/read timing, evidence-backed conditions, precise supported event list, legacy fallback, cumulative limits and A/B actual-injection gates. Prompt explains later advisory messages, no extra authority.
+- [x] Offline integration from validated error evidence -> learned new card -> frozen library -> SDK corresponding error -> actual next wire injection; verify only five learning keys, empty library equal tool surface, and no manual tag/card manipulation.
+- [x] Run full pytest with C:/Users/Dell/AppData/Local/Temp/reproagent-experience-triggers-verification/full as basetemp and Node trace viewer tests. Basetemp must be outside Git and project pytest configuration; the original in-repository path contaminated SWT fixture node IDs/provenance. No external provider or Astra. Viewer 8 passed; final pytest 827 passed / 5 skipped, exit 0.
+- [x] Fresh-context whole-branch review, fix important findings RED->GREEN, then required regressions; capture review limitations and deviations.
+- [x] Commit acceptance/plan progress and preserve branch/worktree. Report plan path, implementation result, tests and outstanding real A/B.
