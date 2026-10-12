@@ -63,7 +63,25 @@
 
 用户继续审查原 report.md；限制部分只列实际成功读取的经验 ID，不复制库或新增审查文档。report.json 有 experience_read_ids，CLI 的 learning 字段单独说明 code、duration、HTTP、usage、已知费用小计与未知费用次数。学习失败不改主退出码；诊断不一定代表经验写入。
 
-学习请求明确要求一个 JSON 对象，兼容 `response_format=json_object` 的提示词约束。HTTP 拒绝或三次网络尝试耗尽返回 `provider_error`；完整回复不符合经验结构仍返回 `invalid`，两者不能混为一谈。每个 `model.attempt` 在收到 HTTP 响应时记录 `http_status_code`，没收到响应则不虚构状态码。
+学习请求明确要求一个 JSON 对象，兼容 `response_format=json_object` 的提示词约束。非空 experience 必须有 category、tags、summary、detail、evidence_ids 五个字段；正文提到 EID 不能替代 evidence_ids 数组，程序不从正文猜引用或自动补字段。HTTP 拒绝或三次网络尝试耗尽返回 `provider_error`。每个 `model.attempt` 在收到 HTTP 响应时记录 `http_status_code`，没收到响应则不虚构状态码。
+
+校验失败单独诊断，保留主任务结果，不写入坏卡、不追加纠错请求：
+
+| learning.code | 含义 |
+| --- | --- |
+| invalid_missing_fields | 缺少必填字段，missing_fields 列出固定 schema 内的字段名 |
+| invalid_extra_fields | 多出未允许的字段，不把任意额外字段名写进日志 |
+| invalid_structure | 顶层/experience 对象结构错误 |
+| invalid_json | 无法解析为严格 JSON 对象 |
+| invalid_fields | 分类、标签、摘要或详情类型/取值无效 |
+| invalid_evidence_ids | 引用 ID 不存在、重复、数量或类型不合法 |
+| invalid_evidence_changed | 冻结证据文件、哈希、行号或 ID 无法再验证 |
+| invalid_card_size | 最终卡片超过 2048 字节 |
+| invalid_model_output | 模型回复截断、空输出或协议不兼容，具体协议码见 model.attempt |
+| provider_error | HTTP/网络请求失败，状态码见 model.attempt |
+| internal_error | 未归入上述校验原因的参数/运行时异常，不假称经验格式错误 |
+
+CLI learning、experience.learning 事件及 trace 学习汇总共享 code/missing_fields；learn span 也记录最终结果码。只记录受控诊断，不保存原始异常文本或任意模型字段。
 
 启用 trace 时，HTTP span 附带状态码，并关联 `provider_error` 错误摘要：只选择 code/type/message，已知模型密钥先脱敏，每字段最多 512 字符，省略时标记 truncated。不复制响应头或额外 debug 字段；非 JSON 错误正文仅保存有限脱敏预览。关闭 trace 不保留错误正文，事件中始终只有受控元数据，不把这些错误预览喂回学习模型。此采集不增加模型请求。
 
@@ -82,5 +100,9 @@ python -m evals.swt_bench run ... --experience-file path/to/experiences.json
 HTTP/token/费用总计已经包含真实学习尝试一次，learning 分项只用于拆解，不再叠加。缺计价或缺 usage 的费用仍为 unknown。
 
 离线测试验证真实 SDK + MockTransport + pytest 的调用、时序、引用和交付。提高复现率的结论必须来自固定模型/预算/环境、学习集与评测集分离、冻结库的关闭/开启对照；当前未执行真实模型 A/B。
+
+A/B 的有效性不能只看库的 ready/count：必须检查开启臂实际模型请求包含非空 experience_summaries，关闭臂未注入经验，并核对每次运行前后冻结库哈希不变。experience.matched 表示选中，不保证随后通过上下文容量检查而进入模型；read_experience 则表示是否进一步读详情。同用例生成的卡也可能因关键词零分而未匹配，不能强行注入后还称为当前匹配策略的自然效果。每臂至少两次只能作为小样本试验；同一 Issue 的学习后重跑衡量重复任务帮助，不能证明跨 Issue 泛化。
+
+开启经验功能，即使匹配结果为空，也可能增加 read_experience 工具。因此零命中不能推出两个运行的全部输入相同。若要测卡片内容的作用，可让控制臂读取有效空库、两臂都禁止写回并保留相同工具表；另外检查实际 wire request 的工具集一致。完全禁用经验与开启经验的对照则衡量整个功能开关，不能把差异单独归因于卡片内容。
 
 CLI learning.event_recorded=false 表示学习汇总事件未保存；已收集的 HTTP、token、费用和经验 ID 仍保留在内存返回结果中，stderr 提示保存失败，主退出码保持原值。过深或损坏的库 JSON 按 store_error 关闭本任务的经验功能，不停止主复现，也不覆盖旧库。

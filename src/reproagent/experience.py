@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .core.budget import BudgetStopped
 from .core.models import EvidenceRef
-from .core.serialization import canonical_bytes, canonical_hash, parse_json, bytes_hash
+from .core.serialization import canonical_bytes, canonical_hash, parse_json, bytes_hash, ObjectRootError
 from .observability import span
 from .paths import directory_path, workspace_path, is_within
 from .store import atomic_write
@@ -66,6 +66,26 @@ class LearningResult:
     unknown_cost_attempts: int = 0
     event_recorded: bool = True
     unknown_usage_attempts: int = 0
+    missing_fields: tuple[str, ...] = ()
+
+
+PROPOSAL_FIELDS = frozenset({'category', 'tags', 'summary', 'detail', 'evidence_ids'})
+LEARNING_VALIDATION_CODES = frozenset({'invalid_json', 'invalid_structure', 'invalid_missing_fields',
+    'invalid_extra_fields', 'invalid_evidence_ids', 'invalid_evidence_changed', 'invalid_fields', 'invalid_card_size'})
+
+
+class LearningValidationError(ValueError):
+    """A bounded validation reason; never carries raw model fields or text."""
+    def __init__(self, code, *, missing_fields=()):
+        if code not in LEARNING_VALIDATION_CODES:
+            raise ValueError('unknown learning validation code')
+        self.code = code
+        self.missing_fields = tuple(sorted(set(missing_fields) & PROPOSAL_FIELDS))
+        super().__init__(code + (': ' + ', '.join(self.missing_fields) if self.missing_fields else ''))
+
+
+class _CardTooLarge(ValueError):
+    """Internal size failure, still a ValueError for existing library readers."""
 
 
 def _normalized(text):
@@ -109,7 +129,7 @@ def _card(data):
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
         data["summary"], data["detail"], data["source_task_id"], tuple(checked))
     if len(canonical_bytes(asdict(card))) > CARD_BYTES:
-        raise ValueError("experience card exceeds byte limit")
+        raise _CardTooLarge("experience card exceeds byte limit")
     return card
 
 
@@ -306,39 +326,51 @@ def build_learning_input(store, result, context, *, secrets=(), exploration=None
 def validate_experience(response, material, store, *, secrets=()):
     from .store import safe_child
     if not isinstance(response, dict) or set(response) != {"experience"}:
-        raise ValueError("invalid learning response fields")
+        raise LearningValidationError('invalid_structure')
     proposed = response["experience"]
     if proposed is None:
         return None
-    fields = {"category", "tags", "summary", "detail", "evidence_ids"}
-    if not isinstance(proposed, dict) or set(proposed) != fields:
-        raise ValueError("invalid experience proposal fields")
+    if not isinstance(proposed, dict):
+        raise LearningValidationError('invalid_structure')
+    missing = PROPOSAL_FIELDS - set(proposed)
+    if missing:
+        raise LearningValidationError('invalid_missing_fields', missing_fields=missing)
+    if set(proposed) - PROPOSAL_FIELDS:
+        raise LearningValidationError('invalid_extra_fields')
     ids = proposed["evidence_ids"]
     if not isinstance(ids, list) or not 1 <= len(ids) <= 3 or any(
         type(i) is not str or i not in material.evidence_map for i in ids) or len(set(ids)) != len(ids):
-        raise ValueError("invalid learning evidence ids")
+        raise LearningValidationError('invalid_evidence_ids')
     refs = []
     for identity in ids:
         ref = material.evidence_map[identity]
-        content = safe_child(store.root, ref.path).read_bytes()
-        lines = content.splitlines()
-        if bytes_hash(content) != ref.content_hash or not 1 <= ref.start_line == ref.end_line <= len(lines):
-            raise ValueError("learning evidence hash or lines changed")
-        if parse_json(lines[ref.start_line - 1].decode("utf-8")).get("id") != identity:
-            raise ValueError("learning evidence identity changed")
+        try:
+            content = safe_child(store.root, ref.path).read_bytes()
+            lines = content.splitlines()
+            if bytes_hash(content) != ref.content_hash or not 1 <= ref.start_line == ref.end_line <= len(lines):
+                raise ValueError('changed evidence')
+            if parse_json(lines[ref.start_line - 1].decode("utf-8")).get("id") != identity:
+                raise ValueError('changed evidence identity')
+        except (OSError, ValueError, TypeError, UnicodeError):
+            raise LearningValidationError('invalid_evidence_changed') from None
         refs.append(ref)
     summary = proposed["summary"]
     detail = proposed["detail"]
     tags = proposed["tags"]
     if type(summary) is not str or type(detail) is not str or not isinstance(tags, list) or any(type(t) is not str for t in tags):
-        raise ValueError("invalid learning text")
+        raise LearningValidationError('invalid_fields')
     summary, detail = _redact(summary, secrets), _redact(detail, secrets)
     tags = [_redact(tag, secrets) for tag in tags]
     category = proposed["category"]
-    data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
-        "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
-        "evidence_refs": [asdict(ref) for ref in refs]}
-    return _card(data)
+    try:
+        data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
+            "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
+            "evidence_refs": [asdict(ref) for ref in refs]}
+        return _card(data)
+    except _CardTooLarge:
+        raise LearningValidationError('invalid_card_size') from None
+    except (ValueError, TypeError):
+        raise LearningValidationError('invalid_fields') from None
 
 
 async def extract_experience(material, gateway, context, store, *, secrets=()):
@@ -352,7 +384,13 @@ async def extract_experience(material, gateway, context, store, *, secrets=()):
     response = await gateway.complete(ModelRequest(({"role": "system", "content": prompt},
         {"role": "user", "content": _redact(text, secrets)}), response_kind="learning"), context)
     _check(context)
-    return validate_experience(parse_json(response.text), material, store, secrets=secrets)
+    try:
+        proposed = parse_json(response.text)
+    except ObjectRootError:
+        raise LearningValidationError('invalid_structure') from None
+    except (ValueError, TypeError, RecursionError):
+        raise LearningValidationError('invalid_json') from None
+    return validate_experience(proposed, material, store, secrets=secrets)
 
 class ExperienceService:
     """System-owned task lifecycle; the explorer only receives its advisory view."""
@@ -392,20 +430,23 @@ class ExperienceService:
     async def learn(self, result, main_context):
         # Learning runs inside the task's own trace scope, on its own budget: the span
         # shows it without its seconds ever being folded into the task's duration.
-        with span('learn'):
-            return await self._learn(result, main_context)
+        with span('learn') as handle:
+            outcome = await self._learn(result, main_context)
+            handle.annotate(result_code=outcome.code)
+            return outcome
 
     async def _learn(self, result, main_context):
         import asyncio
         import time
         from .core.budget import Budget
         from .core.models import BudgetLimits, CallContext, TaskState
-        from .core.protocol import ProviderRequestError
+        from .core.protocol import ProviderRequestError, ModelOutputError
         if self._learning_started:
             return self._learning_result or LearningResult("busy")
         self._learning_started = True
         started = time.monotonic()
         gateway, card, code = None, None, "skipped_no_evidence"
+        missing_fields = ()
         context = CallContext(Budget(BudgetLimits(task_timeout_seconds=LEARNING_SECONDS)), cancel_event=main_context.cancel_event)
         try:
             if self.request.experience_file is None:
@@ -443,10 +484,14 @@ class ExperienceService:
             code = "skipped_cancelled"
         except ProviderRequestError:
             code = "provider_error"
-        except (ValueError, TypeError, RuntimeError):
-            code = "invalid"
-        except Exception:
+        except LearningValidationError as exc:
+            code, missing_fields = exc.code, exc.missing_fields
+        except ModelOutputError:
+            code = "invalid_model_output"
+        except OSError:
             code = "store_error"
+        except Exception:
+            code = "internal_error"
         finally:
             if gateway is not None:
                 close = getattr(gateway, "aclose", None)
@@ -469,10 +514,11 @@ class ExperienceService:
                 sum(item["cost_value"] for item in attempts if item.get("cost_value") is not None),
                 sum(item.get("cost_value") is None for item in attempts),
                 unknown_usage_attempts=sum(any(key not in item.get("usage", {}) for key in
-                    ("prompt_tokens", "completion_tokens", "total_tokens")) for item in attempts))
+                    ("prompt_tokens", "completion_tokens", "total_tokens")) for item in attempts),
+                missing_fields=missing_fields)
         except (OSError, ValueError, TypeError):
             outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
-                duration=time.monotonic() - started)
+                duration=time.monotonic() - started, missing_fields=missing_fields)
         try:
             self.store.append_event("experience.learning", (), asdict(outcome))
         except (OSError, ValueError, TypeError):

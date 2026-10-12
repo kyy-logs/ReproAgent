@@ -29,12 +29,16 @@ def _pairs(pairs):
     return result
 
 
+class ObjectRootError(ValueError):
+    """Valid JSON whose root is not the object the caller requires."""
+
+
 def parse_json(text: str) -> dict[str, Any]:
     def invalid(value):
         raise ValueError(f"non-finite JSON value: {value}")
     data = json.loads(text, object_pairs_hook=_pairs, parse_constant=invalid)
     if not isinstance(data, dict):
-        raise ValueError("JSON root must be an object")
+        raise ObjectRootError("JSON root must be an object")
     return data
 
 

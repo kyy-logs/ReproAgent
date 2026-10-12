@@ -52,9 +52,26 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
                 await asyncio.Event().wait()
             if learning == "invalid":
                 return text_response('{"experience":{"category":"unknown"}}')
+            if learning == "missing_evidence":
+                return text_response('{"experience":{"category":"workflow","tags":["pytest"],"summary":"Steps exhausted.","detail":"E1 describes the observation."}}')
+            if learning == "invalid_json":
+                return text_response('{"experience":')
+            if learning == "invalid_structure":
+                return text_response('{"experience":[]}')
+            if learning == "root_array":
+                return text_response('[]')
+            if learning == "root_null":
+                return text_response('null')
+            if learning == "truncated":
+                body = text_response('{}').json()
+                body['choices'][0]['finish_reason'] = 'length'
+                return httpx.Response(200, json=body)
             if learning == "empty":
                 return text_response('{"experience":null}')
             ids = [data["evidence"][0]["id"]]
+            if learning == "surrogate":
+                return text_response(json.dumps({'experience': {'category':'workflow', 'tags':['pytest'],
+                    'summary':'\ud800', 'detail':'invalid Unicode', 'evidence_ids':ids}}))
             return text_response(json.dumps({"experience": {"category": "model", "tags": ["pytest"],
                 "summary": "Empty input assertions need original behaviour evidence.",
                 "detail": "Condition: empty input. Observation: the original test raised IndexError. Check current source before choosing exception assertions.",
@@ -193,13 +210,45 @@ def test_summary_load_occurs_after_analysis_before_first_explore(tmp_path, proje
     assert controller.learning_result.code == "skipped_read_only"
 
 
-@pytest.mark.parametrize("learning,code", [("invalid", "invalid"), ("empty", "empty")])
+@pytest.mark.parametrize("learning,code", [("invalid", "invalid_missing_fields"), ("empty", "empty"),
+    ("missing_evidence", "invalid_missing_fields"), ("invalid_json", "invalid_json"),
+    ("invalid_structure", "invalid_structure"), ("root_array", "invalid_structure"),
+    ("root_null", "invalid_structure"), ("truncated", "invalid_model_output"),
+    ("surrogate", "invalid_fields")])
 def test_learning_failure_preserves_task_and_package(tmp_path, projects, facts, learning, code):
     request, controller, result, _, _, calls = run_sdk_task(tmp_path, projects, facts, learning=learning)
     assert result.status == TaskState.DONE
     assert controller.learning_result.code == code and len(calls) == 1
     assert controller.store.load_record("task", result.task_id) == result
     assert len(exp().load_experience_snapshot(request.experience_file).cards) == 1
+    if learning == "missing_evidence":
+        assert controller.learning_result.missing_fields == ("evidence_ids",)
+        events, _ = controller.store.read_events()
+        saved = next(e.payload for e in events if e.kind == 'experience.learning')
+        assert saved['code'] == 'invalid_missing_fields' and saved['missing_fields'] == ['evidence_ids']
+
+
+def test_unexpected_learning_exception_is_internal_not_storage_failure(tmp_path, projects, facts, monkeypatch):
+    def fail(*args, **kwargs):
+        raise KeyError('synthetic-private-runtime-key')
+    monkeypatch.setattr(exp(), 'extract_experience', fail)
+    request, controller, result, _, _, _ = run_sdk_task(tmp_path, projects, facts)
+    assert result.status == TaskState.DONE and controller.learning_result.code == 'internal_error'
+    assert controller.store.load_record('task', result.task_id) == result
+    assert len(exp().load_experience_snapshot(request.experience_file).cards) == 1
+    events, _ = controller.store.read_events()
+    summary = next(e.payload for e in events if e.kind == 'experience.learning')
+    assert 'synthetic-private-runtime-key' not in json.dumps(summary)
+
+
+def test_learning_validation_outcome_is_visible_on_its_trace_span(tmp_path, projects, facts):
+    from reproagent.observability import trace_session
+    with trace_session() as recorder:
+        _, controller, result, _, _, calls = run_sdk_task(tmp_path, projects, facts, learning='missing_evidence')
+        document = recorder.finish(task_id=result.task_id, status=result.status.value, main_duration=result.duration)
+    assert result.status == TaskState.DONE and len(calls) == 1
+    learning = next(s for s in document['spans'] if s['name']=='learn')
+    assert learning['attributes']['result_code']=='invalid_missing_fields'
 
 
 def test_export_failure_still_learns_original_observation(tmp_path, projects, facts):
