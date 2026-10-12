@@ -21,7 +21,7 @@
 
 准备阶段只读取并冻结库，不把所有正文送入模型。探索 Agent 根据当前情境自主选择分类，调用 `list_experiences(category, cursor?)` 浏览类似 Skill 的简短目录。每条只包含 `id/name/description`，description 说明什么时候需要加载；无需先出现错误码，无关键词硬过滤。模型从目录选择适用的 ID，再调用 `read_experience(id)` 读取 name/description/summary/detail。不强制探索阶段，不再自动匹配注入摘要。
 
-三个分类是 framework（框架/环境条件）、model（断言或生成错误）、workflow（探索与操作教训）。每页最多 12 条、完整 UTF-8 JSON 最多 4096 字节；更多条目通过 next_cursor 分页。每任务最多成功浏览 6 页，目录响应累计最多 8192 字节；正文最多成功读取一条，完整响应最多 2048 字节。重复浏览同页也计入配额，契约修订不重置。目录完整成功返回过的 ID 才有正文读取权限；超限明确返回原因，不静默截断或授权不可见 ID。
+三个分类是 framework（框架/环境条件）、model（断言或生成错误）、workflow（探索与操作教训）。每页最多 12 条、完整 UTF-8 JSON 最多 4096 字节；更多条目通过 next_cursor 分页。每任务最多成功浏览 6 页，目录响应累计最多 8192 字节；正文最多成功读取一条，完整响应最多 4096 字节。重复浏览同页也计入配额，契约修订不重置。目录完整成功返回过的 ID 才有正文读取权限；超限明确返回原因，不静默截断或授权不可见 ID。
 
 目录码 ready/empty 表示成功；invalid_category/invalid_cursor/catalog_limit/catalog_budget/response_capacity 表示未成功加载。正文拒绝码 unknown_id/not_displayed/read_limit/response_capacity。两个工具仍遵守原动作预算、取消、SDK 权限和保留发布步骤；没有额外模型预算。本地浏览和读取不发模型请求，但 Agent 选择工具的轮次和返回文本消耗模型步骤与 token。
 
@@ -60,7 +60,7 @@ experiences/
 experiences.lock
 ```
 
-每分类正文是一个 JSON 对象 `{"schema_version":2,"category":"workflow","items":[...]}`，合并存储多条卡，不为每坑创建文件。每卡保留 id/category/tags/summary/detail/source_task_id/evidence_refs 和可选 triggers，新卡增加 name（1–64 字符）/description（1–160 字符）。完整卡最多 2048 字节，三个正文总计最多 1 MiB。
+每分类正文是一个 JSON 对象 `{"schema_version":2,"category":"workflow","items":[...]}`，合并存储多条卡，不为每坑创建文件。每卡保留 id/category/tags/summary/detail/source_task_id/evidence_refs 和可选 triggers，新卡增加 name（1–64 字符）/description（1–160 字符）。完整卡最多 4096 字节，三个正文总计最多 1 MiB。
 
 index.json 为可丢弃缓存，包含 schema_version=1/category/source_hash/items，items 只有 id/name/description。正文是唯一事实源，索引由程序生成，不由模型独立维护。缺失、过期、损坏或与正文投影不符时在内存重建，记录 experience.index；只读任务不修写缓存。正文已写入但缓存失败仍返回 written，同时记录 index_update_failed；后续任务从正文恢复。缓存总上限 1 MiB。
 
@@ -105,7 +105,7 @@ reproagent experience migrate path/to/old.json path/to/experiences
 | invalid_fields | 分类、标签、摘要或详情类型/取值无效 |
 | invalid_evidence_ids | 引用 ID 不存在、重复、数量或类型不合法 |
 | invalid_evidence_changed | 冻结证据文件、哈希、行号或 ID 无法再验证 |
-| invalid_card_size | 最终卡片超过 2048 字节 |
+| invalid_card_size | 最终卡片超过 4096 字节；needed_bytes/limit_bytes/exceeded_bytes 给出实际大小、上限和超出量 |
 | invalid_model_output | 模型回复截断、空输出或协议不兼容，具体协议码见 model.attempt |
 | provider_error | HTTP/网络请求失败，状态码见 model.attempt |
 | internal_error | 未归入上述校验原因的参数/运行时异常，不假称经验格式错误 |
@@ -135,3 +135,5 @@ A/B 必须检查目录工具结果和下一轮 wire request：有库不等于已
 CLI learning.event_recorded=false 表示学习汇总事件未保存；已收集的 HTTP、token、费用和经验 ID 仍保留在内存返回结果中，stderr 提示保存失败，主退出码保持原值。过深或损坏的库 JSON 按 store_error 关闭本任务的经验功能，不停止主复现，也不覆盖旧库。
 
 证据等级 NONE 表示没有被认可的复现证据，不代表没有生成候选或执行测试；判断探索进度应同时核对候选数、original 执行数和验收结果。SINGLE_OBSERVATION 表示单次复现已被认可，仍需独立重跑确认。
+
+卡片落盘与正文加载上限已从 2 KiB 调至 4 KiB，目录累计预算仍为 8192 字节、学习材料仍为 8192 字节，模型总上下文和步骤上限不变。超限数字在规范化标签、受控 triggers 和证据引用全部补齐后，按最终 UTF-8 JSON 计算；非大小错误的三个字段为 null。学习失败不改变主退出码，不自动追加格式修复或重试请求。

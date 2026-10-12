@@ -37,7 +37,7 @@ def default_experience_path() -> Path:
     if not workspace_path(default).exists() and workspace_path(LEGACY_EXPERIENCE_PATH).is_file():
         default = LEGACY_EXPERIENCE_PATH
     return default.resolve()
-CARD_BYTES = 2048
+CARD_BYTES = 4096
 VISIBLE_BYTES = 2048
 INPUT_BYTES = 8192
 LEARNING_SECONDS = 30
@@ -88,6 +88,9 @@ class LearningResult:
     event_recorded: bool = True
     unknown_usage_attempts: int = 0
     missing_fields: tuple[str, ...] = ()
+    needed_bytes: int | None = None
+    limit_bytes: int | None = None
+    exceeded_bytes: int | None = None
 
 
 PROPOSAL_FIELDS = frozenset({'category', 'tags', 'name', 'description', 'summary', 'detail', 'evidence_ids'})
@@ -97,16 +100,22 @@ LEARNING_VALIDATION_CODES = frozenset({'invalid_json', 'invalid_structure', 'inv
 
 class LearningValidationError(ValueError):
     """A bounded validation reason; never carries raw model fields or text."""
-    def __init__(self, code, *, missing_fields=()):
+    def __init__(self, code, *, missing_fields=(), needed_bytes=None, limit_bytes=None):
         if code not in LEARNING_VALIDATION_CODES:
             raise ValueError('unknown learning validation code')
         self.code = code
         self.missing_fields = tuple(sorted(set(missing_fields) & PROPOSAL_FIELDS))
+        self.needed_bytes = needed_bytes
+        self.limit_bytes = limit_bytes
+        self.exceeded_bytes = needed_bytes - limit_bytes if needed_bytes is not None and limit_bytes is not None else None
         super().__init__(code + (': ' + ', '.join(self.missing_fields) if self.missing_fields else ''))
 
 
 class _CardTooLarge(ValueError):
     """Internal size failure, still a ValueError for existing library readers."""
+    def __init__(self, needed_bytes, limit_bytes):
+        self.needed_bytes, self.limit_bytes = needed_bytes, limit_bytes
+        super().__init__('experience card exceeds byte limit')
 
 
 def _normalized(text):
@@ -121,7 +130,7 @@ def _identifier(category, tags, summary, triggers=()):
     return "exp_" + canonical_hash(data)
 
 
-def _card(data):
+def _card(data, *, check_size=True):
     fields = {"id", "category", "tags", "summary", "detail", "source_task_id", "evidence_refs"}
     if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}, fields | {'name', 'description'}, fields | {'triggers', 'name', 'description'}):
         raise ValueError("invalid experience fields")
@@ -157,8 +166,10 @@ def _card(data):
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
         data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers, catalog_name, description)
-    if len(canonical_bytes(_card_record(card))) > CARD_BYTES:
-        raise _CardTooLarge("experience card exceeds byte limit")
+    if check_size:
+        needed_bytes = len(canonical_bytes(_card_record(card)))
+        if needed_bytes > CARD_BYTES:
+            raise _CardTooLarge(needed_bytes, CARD_BYTES)
     return card
 
 
@@ -470,14 +481,14 @@ def validate_experience(response, material, store, *, secrets=()):
             "evidence_refs": [asdict(ref) for ref in refs],
             'name': _redact(proposed['name'], secrets) if type(proposed['name']) is str else proposed['name'],
             'description': _redact(proposed['description'], secrets) if type(proposed['description']) is str else proposed['description']}
-        _card(data)
+        _card(data, check_size=False)
         triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
         tags = normative_tags(tags, triggers)
         data.update(id=_identifier(category, tags, summary, triggers), tags=tags,
             triggers=[asdict(t) for t in triggers])
         return _card(data)
-    except _CardTooLarge:
-        raise LearningValidationError('invalid_card_size') from None
+    except _CardTooLarge as exc:
+        raise LearningValidationError('invalid_card_size', needed_bytes=exc.needed_bytes, limit_bytes=exc.limit_bytes) from None
     except (ValueError, TypeError):
         raise LearningValidationError('invalid_fields') from None
 
@@ -543,6 +554,9 @@ class ExperienceService:
         with span('learn') as handle:
             outcome = await self._learn(result, main_context)
             handle.annotate(result_code=outcome.code)
+            if outcome.needed_bytes is not None:
+                handle.annotate(budget={'needed_bytes':outcome.needed_bytes,
+                    'limit_bytes':outcome.limit_bytes, 'exceeded_bytes':outcome.exceeded_bytes})
             return outcome
 
     async def _learn(self, result, main_context):
@@ -557,6 +571,7 @@ class ExperienceService:
         started = time.monotonic()
         gateway, card, code = None, None, "skipped_no_evidence"
         missing_fields = ()
+        size_diagnostics = {}
         context = CallContext(Budget(BudgetLimits(task_timeout_seconds=LEARNING_SECONDS)), cancel_event=main_context.cancel_event)
         try:
             if self.request.experience_file is None:
@@ -596,6 +611,8 @@ class ExperienceService:
             code = "provider_error"
         except LearningValidationError as exc:
             code, missing_fields = exc.code, exc.missing_fields
+            size_diagnostics = {'needed_bytes':exc.needed_bytes,
+                'limit_bytes':exc.limit_bytes, 'exceeded_bytes':exc.exceeded_bytes}
         except ModelOutputError:
             code = "invalid_model_output"
         except OSError:
@@ -625,10 +642,10 @@ class ExperienceService:
                 sum(item.get("cost_value") is None for item in attempts),
                 unknown_usage_attempts=sum(any(key not in item.get("usage", {}) for key in
                     ("prompt_tokens", "completion_tokens", "total_tokens")) for item in attempts),
-                missing_fields=missing_fields)
+                missing_fields=missing_fields, **size_diagnostics)
         except (OSError, ValueError, TypeError):
             outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
-                duration=time.monotonic() - started, missing_fields=missing_fields)
+                duration=time.monotonic() - started, missing_fields=missing_fields, **size_diagnostics)
         try:
             self.store.append_event("experience.learning", (), asdict(outcome))
         except (OSError, ValueError, TypeError):

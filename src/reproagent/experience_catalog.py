@@ -6,7 +6,7 @@ from .core.serialization import canonical_bytes
 
 CATALOG_BYTES = 8192
 PAGE_BYTES = 4096
-DETAIL_BYTES = 2048
+DETAIL_BYTES = 4096
 CATALOG_CALLS = 6
 PAGE_ITEMS = 12
 
