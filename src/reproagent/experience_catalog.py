@@ -1,5 +1,14 @@
 """Compact advisory catalog metadata; never current source evidence."""
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from secrets import token_hex
+
+from .core.serialization import canonical_bytes
+
+CATALOG_BYTES = 8192
+PAGE_BYTES = 4096
+DETAIL_BYTES = 2048
+CATALOG_CALLS = 6
+PAGE_ITEMS = 12
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,3 +25,70 @@ def _short(text: str, limit: int) -> str:
 def entry_from_card(card) -> CatalogEntry:
     return CatalogEntry(card.id, card.name or _short(card.summary, 64),
                         card.description or _short(card.summary, 160))
+
+
+class ExperienceCatalogView:
+    """One frozen task catalog. Successful complete pages authorize detail reads."""
+    def __init__(self, snapshot, *, secrets=()):
+        self.snapshot = snapshot
+        self.secrets = tuple(s for s in secrets if s)
+        self._cards = {card.id: card for card in snapshot.cards}
+        self._shown = set()
+        self._cursors = {}
+        self._read_ids = ()
+        self.catalog_bytes = 0
+        self.catalog_calls = 0
+
+    @property
+    def read_ids(self):
+        return self._read_ids
+
+    def _safe(self, text):
+        for secret in self.secrets: text = text.replace(secret, '[REDACTED]')
+        return text
+
+    def list(self, category: str, cursor: str | None = None, *, max_bytes: int = PAGE_BYTES) -> dict:
+        from .experience import CATEGORIES
+        def result(code, items=(), next_cursor=None):
+            return {'code': code, 'category': category if category in CATEGORIES else '',
+                    'items': list(items), 'next_cursor': next_cursor}
+        if category not in CATEGORIES: return result('invalid_category')
+        start = 0
+        if cursor is not None:
+            location = self._cursors.get(cursor) if type(cursor) is str else None
+            if location is None or location[0] != category: return result('invalid_cursor')
+            start = location[1]
+        if self.catalog_calls >= CATALOG_CALLS: return result('catalog_limit')
+        remaining = CATALOG_BYTES - self.catalog_bytes
+        cap = min(PAGE_BYTES, max_bytes, remaining)
+        cards = sorted((c for c in self._cards.values() if c.category == category), key=lambda c: c.id)
+        items, next_cursor = [], None
+        code = 'ready' if cards[start:] else 'empty'
+        for position, card in enumerate(cards[start:start + PAGE_ITEMS], start=start):
+            entry = asdict(entry_from_card(card))
+            entry.update(name=self._safe(entry['name']), description=self._safe(entry['description']))
+            proposed_cursor = token_hex(16) if position + 1 < len(cards) else None
+            draft = result(code, (*items, entry), proposed_cursor)
+            if len(canonical_bytes(draft)) > cap: break
+            items.append(entry)
+            next_cursor = proposed_cursor
+        page = result(code, items, next_cursor)
+        if (cards[start:] and not items) or len(canonical_bytes(page)) > cap:
+            return result('catalog_budget' if remaining < min(PAGE_BYTES, max_bytes) else 'response_capacity')
+        if next_cursor is not None: self._cursors[next_cursor] = (category, start + len(items))
+        self._shown.update(item['id'] for item in items)
+        self.catalog_calls += 1
+        self.catalog_bytes += len(canonical_bytes(page))
+        return page
+
+    def read(self, identifier: str, *, max_bytes: int = DETAIL_BYTES) -> dict:
+        if self._read_ids: return {'code': 'read_limit'}
+        card = self._cards.get(identifier)
+        if card is None: return {'code': 'unknown_id'}
+        if identifier not in self._shown: return {'code': 'not_displayed'}
+        entry = entry_from_card(card)
+        data = {'id': card.id, 'name': self._safe(entry.name), 'description': self._safe(entry.description),
+                'summary': self._safe(card.summary), 'detail': self._safe(card.detail)}
+        if len(canonical_bytes(data)) > min(DETAIL_BYTES, max_bytes): return {'code': 'response_capacity'}
+        self._read_ids = (identifier,)
+        return data
