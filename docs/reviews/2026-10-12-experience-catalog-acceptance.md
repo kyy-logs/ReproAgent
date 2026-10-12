@@ -14,7 +14,7 @@
 
 ## 测试记录
 
-完整日志在本工作区 `.superpowers/sdd/2026-10-12-experience-catalog/`，最终清理前将复制到持久验收目录。
+完整日志与账本归档到 `E:/ReproAgent/.local/experience-catalog-acceptance/2026-10-12-final/`。最终验收源码提交为 27681a0390186c4aca587c30b5889bf232ba02cc；之后仅更新文档。
 
 | 检查 | 结果 |
 | --- | --- |
@@ -30,7 +30,7 @@
 | 学习生命周期/CLI/元数据/观测 | 52 passed |
 | 关闭经验时提示词不宣告工具 | 1 failed -> 16 passed（含原 Agent 策略和目录闭环） |
 | 首次全量 | 863 passed / 6 skipped / 1 failed；失败是离线夹具写死旧卡 ID，已改为按实际目录结果选择并通过端到端复测 |
-| 最终全量与查看器 | 待最终复跑记录，当前不宣告整分支验收通过 |
+| 最终全量与查看器 | **876 passed / 6 skipped，exit 0，701.90 秒；查看器 8 passed / 0 failed** |
 
 ## 独立审查与修复
 
@@ -50,3 +50,17 @@ Minor 暂缓：直接调用经验 SDK 工具且 tool_response_bytes=10 时，受
 保留旧 ExperienceView 作为显式兼容 API，但产品 Service 与 SDK 工具链只用 ExperienceCatalogView；旧自动匹配注入不再执行。当前仍只允许成功读取一个正文，可浏览六页目录。旧卡兼容描述只从原 summary 派生，并不代表新推断了触发情境。索引持久化只是便于检查的缓存，读取不依靠它篡改正文。
 
 未执行真实 provider 或付费 A/B，未开启 thinking，验收不用 Astra。本地检索不调用模型服务，但模型工具轮次和经验文本仍占现有步骤/token。离线闭环验证机制，不证明真实复现率提高。此分支尚未 push/合并。
+
+## 最终通过标准
+
+2026-10-12 本地 Windows 最终完整验收通过。命令：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-catalog-final-full
+node --test tests/frontend/trace_viewer.test.mjs
+git diff --check 627b375..HEAD
+```
+
+6 项跳过保留既有平台/权限条件；相关 native symlink 权限不足，但本次目录跳转回归使用实际 Windows junction，未跳过。目录正文/索引/只读工具/独立学习/迁移/观测/冻结评测功能与边界通过；独立审查两项 Important 已修复。未执行真实模型 A/B，不据此声称复现率提高。
+
+执行取舍：PowerShell-native 账本替代 POSIX 脚本，没有产品行为变化；旧显式 ExperienceView 保留兼容，成本是额外维护，产品不走自动检索；审查安排在最终长回归前，验收没有放宽。平台锁压力/电源故障/同时攻击操作内部竞态未验证，保留既有锁实现，保证范围以已运行的顺序跳转回归为准。
