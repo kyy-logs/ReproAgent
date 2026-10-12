@@ -53,3 +53,21 @@ def test_error_does_not_auto_inject_detail_or_summary(tmp_path, projects, facts)
     assert asyncio.run(run()).kind == 'request_information'
     assert fixed.read_ids == ()
     assert all('experience_summaries' not in json.dumps(r['messages']) for r in env.requests)
+
+
+def test_the_phase_is_told_history_exists_and_never_what_it_says(tmp_path, projects, facts):
+    env, fixed = catalog_environment(tmp_path, projects, facts, [
+        tool_reply('request_information', {'question': 'Need source'}, call_id='stop')])
+    context = replace(agent_context(env), experience_catalog=fixed.notice())
+    async def run():
+        try: return await env.runtime.explore(context)
+        finally:
+            await env.runtime.aclose()
+            await env.factory.aclose()
+    assert asyncio.run(run()).kind == 'request_information'
+
+    envelope = next(json.loads(m['content']) for m in env.requests[0]['messages'] if m.get('role') == 'user')
+    assert envelope['experience_catalog'] == {'count': 2, 'categories': ['model']}
+    # The notice is a pointer: the names and bodies it points at stay unloaded.
+    assert 'UNIQUE_LOADED_DETAIL' not in json.dumps(env.requests[0]['messages'])
+    assert 'UNREAD_DETAIL' not in json.dumps(env.requests[0]['messages'])

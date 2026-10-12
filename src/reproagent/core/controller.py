@@ -476,6 +476,9 @@ class Controller:
                 self.verifier.resolve(evidence)
             self.store.save_contract(contract)
             experience_summaries = ()
+            catalog_notice = (self.experience_service.view.notice()
+                              if self.experience_service is not None and self.experience_service.view is not None
+                              else None)
             lifecycle = Lifecycle(request, fixed, snapshot, environment)
             feedback = self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else ''
             history = []
@@ -492,7 +495,7 @@ class Controller:
                                                      "contract_version": contract.version}):
                         phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
                             issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries,
-                            experience_events=phase_events))
+                            experience_events=phase_events, experience_catalog=catalog_notice))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:

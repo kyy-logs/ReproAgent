@@ -2,6 +2,7 @@
 from dataclasses import dataclass, asdict
 from secrets import token_hex
 
+from .core.models import ExperienceCatalogNotice
 from .core.serialization import canonical_bytes
 
 CATALOG_BYTES = 8192
@@ -47,12 +48,12 @@ class ExperienceCatalogView:
         for secret in self.secrets: text = text.replace(secret, '[REDACTED]')
         return text
 
-    def list(self, category: str, cursor: str | None = None, *, max_bytes: int = PAGE_BYTES) -> dict:
+    def list(self, category: str | None = None, cursor: str | None = None, *, max_bytes: int = PAGE_BYTES) -> dict:
         from .experience import CATEGORIES
         def result(code, items=(), next_cursor=None):
             return {'code': code, 'category': category if category in CATEGORIES else '',
                     'items': list(items), 'next_cursor': next_cursor}
-        if category not in CATEGORIES: return result('invalid_category')
+        if category is not None and category not in CATEGORIES: return result('invalid_category')
         start = 0
         if cursor is not None:
             location = self._cursors.get(cursor) if type(cursor) is str else None
@@ -61,12 +62,14 @@ class ExperienceCatalogView:
         if self.catalog_calls >= CATALOG_CALLS: return result('catalog_limit')
         remaining = CATALOG_BYTES - self.catalog_bytes
         cap = min(PAGE_BYTES, max_bytes, remaining)
-        cards = sorted((c for c in self._cards.values() if c.category == category), key=lambda c: c.id)
+        cards = sorted((c for c in self._cards.values() if category is None or c.category == category),
+                       key=lambda c: c.id)
         items, next_cursor = [], None
         code = 'ready' if cards[start:] else 'empty'
         for position, card in enumerate(cards[start:start + PAGE_ITEMS], start=start):
             entry = asdict(entry_from_card(card))
-            entry.update(name=self._safe(entry['name']), description=self._safe(entry['description']))
+            entry.update(name=self._safe(entry['name']), description=self._safe(entry['description']),
+                         category=card.category)
             proposed_cursor = token_hex(16) if position + 1 < len(cards) else None
             draft = result(code, (*items, entry), proposed_cursor)
             if len(canonical_bytes(draft)) > cap: break
@@ -80,6 +83,13 @@ class ExperienceCatalogView:
         self.catalog_calls += 1
         self.catalog_bytes += len(canonical_bytes(page))
         return page
+
+    def notice(self) -> ExperienceCatalogNotice | None:
+        """What a phase is told up front: that there is history, and nothing it says."""
+        if not self._cards:
+            return None
+        return ExperienceCatalogNotice(len(self._cards),
+                                       tuple(sorted({card.category for card in self._cards.values()})))
 
     def read(self, identifier: str, *, max_bytes: int = DETAIL_BYTES) -> dict:
         if self._read_ids: return {'code': 'read_limit'}
