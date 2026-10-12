@@ -24,13 +24,19 @@ LIBRARY_BYTES = 1024 * 1024
 #: evaluation harness deliberately composes its own requests and is not affected here,
 #: because a round requires the library it measured against to stay unchanged.
 EXPERIENCE_ENV = "REPROAGENT_EXPERIENCE"
-DEFAULT_EXPERIENCE_PATH = Path.home() / ".reproagent" / "experiences.json"
+DEFAULT_EXPERIENCE_PATH = Path.home() / ".reproagent" / "experiences"
+LEGACY_EXPERIENCE_PATH = Path.home() / '.reproagent' / 'experiences.json'
 
 
 def default_experience_path() -> Path:
     """The library a run uses when its own configuration names none."""
     override = os.environ.get(EXPERIENCE_ENV, "").strip()
-    return (Path(override).expanduser() if override else DEFAULT_EXPERIENCE_PATH).resolve()
+    if override:
+        return Path(override).expanduser().resolve()
+    default = DEFAULT_EXPERIENCE_PATH
+    if not workspace_path(default).exists() and workspace_path(LEGACY_EXPERIENCE_PATH).is_file():
+        default = LEGACY_EXPERIENCE_PATH
+    return default.resolve()
 CARD_BYTES = 2048
 VISIBLE_BYTES = 2048
 INPUT_BYTES = 8192
@@ -48,6 +54,8 @@ class ExperienceCard:
     source_task_id: str
     evidence_refs: tuple[EvidenceRef, ...]
     triggers: tuple[ExperienceTrigger, ...] = ()
+    name: str = ''
+    description: str = ''
 
 
 def _card_record(card):
@@ -55,6 +63,9 @@ def _card_record(card):
     data = asdict(card)
     if not card.triggers:
         data.pop("triggers")
+    if not card.name and not card.description:
+        data.pop('name')
+        data.pop('description')
     return data
 
 
@@ -79,7 +90,7 @@ class LearningResult:
     missing_fields: tuple[str, ...] = ()
 
 
-PROPOSAL_FIELDS = frozenset({'category', 'tags', 'summary', 'detail', 'evidence_ids'})
+PROPOSAL_FIELDS = frozenset({'category', 'tags', 'name', 'description', 'summary', 'detail', 'evidence_ids'})
 LEARNING_VALIDATION_CODES = frozenset({'invalid_json', 'invalid_structure', 'invalid_missing_fields',
     'invalid_extra_fields', 'invalid_evidence_ids', 'invalid_evidence_changed', 'invalid_fields', 'invalid_card_size'})
 
@@ -112,8 +123,12 @@ def _identifier(category, tags, summary, triggers=()):
 
 def _card(data):
     fields = {"id", "category", "tags", "summary", "detail", "source_task_id", "evidence_refs"}
-    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}):
+    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}, fields | {'name', 'description'}, fields | {'triggers', 'name', 'description'}):
         raise ValueError("invalid experience fields")
+    catalog_name, description = data.get('name', ''), data.get('description', '')
+    if 'name' in data and (catalog_name, description) != ('', '') and any(type(value) is not str or not value.strip() or len(value) > limit
+                             for value, limit in ((catalog_name, 64), (description, 160))):
+        raise ValueError('invalid catalog metadata')
     for name in ("id", "category", "summary", "detail", "source_task_id"):
         if type(data[name]) is not str or not data[name].strip():
             raise ValueError("invalid experience text")
@@ -141,7 +156,7 @@ def _card(data):
     if data["id"] != _identifier(data["category"], tags, data["summary"], triggers):
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
-        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers)
+        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers, catalog_name, description)
     if len(canonical_bytes(_card_record(card))) > CARD_BYTES:
         raise _CardTooLarge("experience card exceeds byte limit")
     return card
@@ -160,7 +175,7 @@ def _read_library(path):
         root = parse_json(content.decode("utf-8"))
     except RecursionError as exc:
         raise ValueError("invalid experience library nesting") from exc
-    if set(root) != {"schema_version", "items"} or type(root["schema_version"]) is not int or root["schema_version"] != 1 or not isinstance(root["items"], list):
+    if set(root) != {"schema_version", "items"} or type(root["schema_version"]) is not int or root["schema_version"] not in (1, 2) or not isinstance(root["items"], list):
         raise ValueError("invalid experience library schema")
     cards = tuple(_card(item) for item in root["items"])
     if len({card.id for card in cards}) != len(cards):
@@ -168,8 +183,12 @@ def _read_library(path):
     return content, cards
 
 
-def load_experience_snapshot(path: Path, *, secrets=()) -> ExperienceSnapshot:
+def load_experience_snapshot(path: Path, *, secrets=(), diagnostic=None) -> ExperienceSnapshot:
     try:
+        from .experience_storage import directory_mode, load_directory_snapshot, approved_location
+        path = approved_location(Path(path))
+        if directory_mode(Path(path)):
+            return load_directory_snapshot(path, secrets=secrets, diagnostic=diagnostic)
         content, cards = _read_library(path)
         if any(secret and secret in canonical_bytes(asdict(card)).decode("utf-8")
                for card in cards for secret in secrets):
@@ -185,7 +204,12 @@ def validate_experience_path(path, request, fixed):
     protected = [request.repo, request.output_dir]
     if fixed is not None:
         protected.append(fixed.repo)
-    if any(is_within(candidate, root) for candidate in (path, lock) for root in protected):
+    from .experience_storage import directory_mode, _paths
+    candidates = [path, lock]
+    if directory_mode(path):
+        _paths(path)
+        candidates += [(path / c / name).resolve() for c in CATEGORIES for name in ('experiences.json', 'index.json')]
+    if any(is_within(candidate, root) for candidate in candidates for root in protected):
         raise ValueError("experience library must be outside repository, task output and fixed repository")
     return path
 
@@ -230,9 +254,16 @@ def _check(context):
             raise BudgetStopped("CANCELLED")
 
 
-def append_experience(path: Path, card: ExperienceCard, context) -> str:
+def append_experience(path: Path, card: ExperienceCard, context, *, diagnostic=None) -> str:
+    from .experience_storage import directory_mode, append_directory_experience, approved_location
     try:
-        checked = _card(asdict(card))
+        path = approved_location(Path(path))
+        if directory_mode(Path(path)):
+            return append_directory_experience(path, card, context, diagnostic=diagnostic)
+    except (ValueError, OSError):
+        return 'store_error'
+    try:
+        checked = _card(_card_record(card))
     except (ValueError, TypeError):
         return "invalid"
     try:
@@ -241,7 +272,7 @@ def append_experience(path: Path, card: ExperienceCard, context) -> str:
             _, cards = _read_library(path)
             if any(old.id == checked.id for old in cards):
                 return "duplicate"
-            content = canonical_bytes({"schema_version": 1, "items": [_card_record(c) for c in (*cards, checked)]})
+            content = canonical_bytes({"schema_version": 2, "items": [_card_record(c) for c in (*cards, checked)]})
             if len(content) > LIBRARY_BYTES:
                 return "store_error"
             _check(context)
@@ -430,11 +461,15 @@ def validate_experience(response, material, store, *, secrets=()):
     summary, detail = _redact(summary, secrets), _redact(detail, secrets)
     tags = [_redact(tag, secrets) for tag in tags]
     category = proposed["category"]
+    if any(type(proposed[key]) is not str or not proposed[key].strip() for key in ('name', 'description')):
+        raise LearningValidationError('invalid_fields')
     try:
-        # Validate the original five-field proposal before adding program metadata.
+        # Validate the proposal before adding program metadata.
         data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
             "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
-            "evidence_refs": [asdict(ref) for ref in refs]}
+            "evidence_refs": [asdict(ref) for ref in refs],
+            'name': _redact(proposed['name'], secrets) if type(proposed['name']) is str else proposed['name'],
+            'description': _redact(proposed['description'], secrets) if type(proposed['description']) is str else proposed['description']}
         _card(data)
         triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
         tags = normative_tags(tags, triggers)
@@ -488,18 +523,19 @@ class ExperienceService:
         if self.request.experience_file is None:
             return
         self.path = validate_experience_path(self.request.experience_file, self.request, fixed)
-        self.snapshot = load_experience_snapshot(self.path, secrets=self.secrets)
+        self.snapshot = load_experience_snapshot(self.path, secrets=self.secrets, diagnostic=self._index_diagnostic)
         if self.snapshot.state != "store_error":
-            self.view = ExperienceView(self.snapshot, secrets=self.secrets)
+            from .experience_catalog import ExperienceCatalogView
+            self.view = ExperienceCatalogView(self.snapshot, secrets=self.secrets)
         self.store.append_event("experience.loaded", (), {"state": self.snapshot.state,
             "content_hash": self.snapshot.content_hash, "count": len(self.snapshot.cards)})
 
     def summaries(self, issue):
-        if self.view is None:
-            return ()
-        values = self.view.select(issue.text, self.request.language.target_modules)
-        self.store.append_event("experience.matched", (), {"ids": [v.id for v in values]})
-        return values
+        return ()  # Compatibility entry point: catalog loading is exclusively agent-driven.
+
+    def _index_diagnostic(self, category, code):
+        try: self.store.append_event('experience.index', (), {'category': category, 'code': code})
+        except (OSError, ValueError, RuntimeError): pass
 
     async def learn(self, result, main_context):
         # Learning runs inside the task's own trace scope, on its own budget: the span
@@ -550,7 +586,7 @@ class ExperienceService:
                     _check(context)
                     gateway = self.learning_gateway_factory(self.store)
                     card = await extract_experience(material, gateway, context, self.store, secrets=self.secrets)
-                    code = append_experience(self.path, card, context) if card is not None else "empty"
+                    code = append_experience(self.path, card, context, diagnostic=self._index_diagnostic) if card is not None else "empty"
         except BudgetStopped as exc:
             code = "skipped_cancelled" if exc.reason == "CANCELLED" else "timeout"
         except asyncio.CancelledError:

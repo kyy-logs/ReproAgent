@@ -136,8 +136,17 @@ def main(argv=None):
     # The trace viewer takes the task directory and nothing else: the two files it may
     # touch are fixed, so it cannot be pointed at the sealed package or anywhere else.
     trace = sub.add_parser('trace'); trace.add_argument('task_dir')
+    experience = sub.add_parser('experience')
+    experience_sub = experience.add_subparsers(dest='experience_command', required=True)
+    migrate = experience_sub.add_parser('migrate')
+    migrate.add_argument('source', type=Path); migrate.add_argument('target', type=Path)
     try:
         args = parser.parse_args(argv)
+        if args.command == 'experience':
+            from .experience_storage import migrate_experience_library
+            result = migrate_experience_library(args.source, args.target)
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result['code'] == 'migrated' else 2
         if args.command == 'trace':
             return trace_command(args)
         if args.command == 'inspect':

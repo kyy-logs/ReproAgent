@@ -21,6 +21,17 @@ from .budget import BudgetStopped
 from .models import CallContext, Candidate, CandidateDraft, CodeSnapshot, IssueContract, ProjectView
 
 
+class GroundedContractRequired(ValueError):
+    """A publication refusal with fixed, program-owned missing prerequisite names."""
+    code = "GROUNDED_CONTRACT_REQUIRED"
+
+    def __init__(self, contract):
+        super().__init__("candidate requires a grounded contract: expected behaviour, at least one source, and no missing information")
+        self.missing = tuple(name for name, absent in (
+            ("expected", not contract.expected), ("sources", not contract.sources),
+            ("missing_information", bool(contract.missing_information))) if absent)
+
+
 class CandidateService:
     """Publishes candidates for one phase, under the phase's contract and snapshot."""
 
@@ -75,7 +86,7 @@ class CandidateService:
         if draft.snapshot_id != self.snapshot.snapshot_id:
             raise ValueError(f"candidate was built against snapshot {draft.snapshot_id!r}, not the bound {self.snapshot.snapshot_id!r}")
         if not contract.expected or not contract.sources or contract.missing_information:
-            raise ValueError("candidate requires a grounded contract: expected behaviour, at least one source, and no missing information")
+            raise GroundedContractRequired(contract)
         candidate = self.workspace.publish(draft, self.snapshot)
         self.workspace.validate_candidate(candidate)
         stored = self.workspace.store.load_record("candidates", candidate.candidate_id)
@@ -85,4 +96,4 @@ class CandidateService:
         return candidate
 
 
-__all__ = ["CandidateService"]
+__all__ = ["CandidateService", "GroundedContractRequired"]

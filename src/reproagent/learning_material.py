@@ -21,7 +21,7 @@ CONTROLLED = frozenset(('UNKNOWN_TOOL', 'MULTIPLE_TOOL_CALLS', 'INVALID_TOOL_INP
     'OUTPUT_TRUNCATED', 'OUTPUT_FILTERED', 'EMPTY_OUTPUT', 'RESPONSE_TOO_LARGE', 'INVALID_PROTOCOL',
     'MODEL_OUTPUT_ERROR', 'MODEL_PROTOCOL_ERROR', 'EXHAUSTED', 'DENIED', 'RESERVED_FOR_PUBLISHING',
     'REVIEW_CONTEXT_TOO_LARGE', 'DUPLICATE_CANDIDATE', 'INVALID_ARGUMENT', 'MISSING_FILE',
-    'SOURCE_RANGE_NOT_DISPLAYED', 'SOURCE_HASH_MISMATCH'))
+    'SOURCE_RANGE_NOT_DISPLAYED', 'SOURCE_HASH_MISMATCH', 'GROUNDED_CONTRACT_REQUIRED'))
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,7 +214,10 @@ def _prepare(store, result, context, *, secrets, exploration):
             if run.execution_role == 'original':
                 originals.append(run)
     notes = [{'seq':event.seq, 'kind':event.kind, 'code':event.payload.get('result_code'),
-        'tool':event.payload.get('action') if event.payload.get('action') in TOOLS else ''}
+        'tool':event.payload.get('action') if event.payload.get('action') in TOOLS else '',
+        **({'action':'run_candidate'} if event.kind == 'action.rejected'
+            and event.payload.get('action') == 'run_candidate'
+            and event.payload.get('result_code') == 'REVIEW_CONTEXT_TOO_LARGE' else {})}
         for event in events if event.kind in ('exploration.protocol_error', 'exploration.action', 'exploration.tool_error',
             'exploration.phase_error', 'phase.error', 'phase.result', 'action.rejected')
         and event.payload.get('result_code') in CONTROLLED]

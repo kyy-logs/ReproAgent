@@ -96,7 +96,29 @@ def test_run_case_reads_frozen_library_with_actual_sdk(tmp_path, projects, facts
     assert result.learning["http_attempts"] == 0
     assert result.experience_library_hash == exp().load_experience_snapshot(path).content_hash
     assert path.read_bytes() == before
-    assert any("experience_summaries" in json.dumps(p) for p in seen if p.get("tools"))
+    assert all("experience_summaries" not in json.dumps(p) for p in seen if p.get("tools"))
+    assert any('list_experiences' in json.dumps(p['tools']) for p in seen if p.get('tools'))
+
+
+def test_frozen_directory_round_ignores_cache_but_detects_body_change(tmp_path, projects):
+    catalog, manifest, bindings = inputs(tmp_path, projects)
+    bindings['fixture__repo-2'] = {**bindings['fixture__repo-1'], 'instance_id':'fixture__repo-2'}
+    path = tmp_path / 'memory'
+    assert exp().append_experience(path, card(), None) == 'written'
+    calls = []
+    async def run_one(case, model, output, **kwargs):
+        calls.append(case.case_id)
+        (path / 'model/index.json').write_bytes(b'broken cache')
+        return EvalResult(case.case_id, status='EXHAUSTED', duration=1)
+    result = asyncio.run(run_batch(catalog, manifest, bindings, ModelConfig(), tmp_path / 'batch', run_one=run_one, experience_file=path))
+    assert len(calls) == 2 and result['source_comparison_status'] != 'changed'
+    calls.clear()
+    async def change(case, model, output, **kwargs):
+        calls.append(case.case_id)
+        assert exp().append_experience(path, card('new'), None) == 'written'
+        return EvalResult(case.case_id, status='EXHAUSTED', duration=1)
+    result = asyncio.run(run_batch(catalog, manifest, bindings, ModelConfig(), tmp_path / 'changed', run_one=change, experience_file=path))
+    assert len(calls) == 1 and result['source_comparison_status'] == 'changed'
 
 
 def test_round_rejects_library_in_target_before_output(tmp_path, projects):

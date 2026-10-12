@@ -24,7 +24,7 @@ def learning_fixture(tmp_path, *, code="SOURCE_RANGE_NOT_DISPLAYED", cited=True)
     refs = {e["id"]: EvidenceRef("learning/evidence.jsonl", bytes_hash(raw), i+1, i+1)
             for i, e in enumerate((entry, issue))}
     material = exp.LearningInput({"evidence": [entry, issue]}, refs, "task@hash", 0)
-    proposal = {"experience": {"category": "workflow", "tags": ["revise_contract", "logging"],
+    proposal = {"experience": {"category": "workflow", "tags": ["revise_contract", "logging"], "name":"Source citations", "description":"When current citations are rejected.", "name":"Source citations", "description":"When current citations are rejected.",
         "summary": "When a source range is rejected, obtain the displayed range.",
         "detail": "Observed rejection; recovery remains unverified.",
         "evidence_ids": ["E1" if cited else "E2"]}}
@@ -112,7 +112,7 @@ def test_small_controlled_error_fact_keeps_trigger_without_large_arguments():
 
 
 def test_exact_legacy_card_boundary_survives_read_and_append(tmp_path):
-    legacy = asdict(card(detail=""))
+    legacy = exp._card_record(card(detail=""))
     legacy.pop("triggers", None)
     overhead = len(canonical_bytes(legacy))
     legacy['detail'] = 'x'*(2048-overhead)
@@ -127,3 +127,24 @@ def test_exact_legacy_card_boundary_survives_read_and_append(tmp_path):
     stored = json.loads(path.read_text(encoding='utf-8'))['items']
     assert canonical_bytes(stored[0]) == canonical_bytes(legacy)
     assert all(len(canonical_bytes(item)) <= 2048 for item in stored)
+
+
+@pytest.mark.parametrize("fact", [
+    {"kind":"exploration.tool_error","tool":"write_candidate","code":"GROUNDED_CONTRACT_REQUIRED"},
+    {"tool":"write_candidate","state":"error","link_state":"matched","arguments":{"files":[]},"error_code":"GROUNDED_CONTRACT_REQUIRED"},
+])
+def test_grounded_frozen_fact_derives_exact_condition(fact):
+    from reproagent.experience_triggers import evidence_triggers
+    assert [asdict(t) for t in evidence_triggers({"kind":"tool_error","text":json.dumps(fact)})] == [
+        {"kind":"tool_error","tool":"write_candidate","code":"GROUNDED_CONTRACT_REQUIRED"}]
+
+
+@pytest.mark.parametrize('action,expected',[('run_candidate',True),('submit_candidate',False),('Read',False)])
+def test_only_actual_initial_review_overflow_action_is_triggerable(action,expected):
+    from reproagent.experience_triggers import evidence_triggers
+    entry = {'kind':'tool_error','text':json.dumps({'kind':'action.rejected','action':action,
+        'code':'REVIEW_CONTEXT_TOO_LARGE'})}
+    result = evidence_triggers(entry)
+    assert bool(result) is expected
+    if expected:
+        assert [asdict(t) for t in result] == [{'kind':'controller_error','tool':'','code':'REVIEW_CONTEXT_TOO_LARGE'}]

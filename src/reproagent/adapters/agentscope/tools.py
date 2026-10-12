@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.permission import PermissionBehavior, PermissionDecision
@@ -34,7 +34,7 @@ from .dependency import require_agentscope
 from .evidence import READ_LINE_CHARACTERS, EvidenceLedger, original_lines
 from .snapshot_backend import SnapshotRefusal, UnverifiedContent
 from ...core.budget import BudgetStopped
-from ...core.candidate_service import CandidateService
+from ...core.candidate_service import CandidateService, GroundedContractRequired
 from ...core.models import CandidateDraft, DraftFile, EvidenceRef
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import canonical_bytes
@@ -46,6 +46,7 @@ from ...paths import relative_name
 FILE_TOOL_NAMES = ("Read", "Grep", "Glob")
 DOMAIN_TOOL_NAMES = ("write_candidate", "revise_contract", "request_information")
 TOOL_NAMES = FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES
+EXPERIENCE_TOOL_NAMES = ('list_experiences', 'read_experience')
 
 #: Appended when a response had to be cut to fit the tool budget.  Marked in the response
 #: itself, because a response that looks complete is read as complete.
@@ -491,7 +492,13 @@ class WriteCandidate(_DomainTool):
             tuple(DraftFile(item.path, item.content.encode("utf-8"), item.role) for item in params.files),
             self.candidates.snapshot.snapshot_id, contract.contract_id, contract.version, params.hypothesis,
             expectation_sources=contract.sources)
-        candidate = self.candidates.publish(draft)
+        try:
+            candidate = self.candidates.publish(draft)
+        except GroundedContractRequired as exc:
+            payload = {"code": exc.code, "message": str(exc), "missing": list(exc.missing),
+                "next_action": "Resolve missing information and obtain original source evidence before revise_contract; use request_information if required facts are unavailable."}
+            return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],
+                state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
         self.gate.finish(PhaseResult("candidate", candidate_id=candidate.candidate_id))
         return self._result({"status": "candidate_published", "candidate_id": candidate.candidate_id,
                              "contract_id": candidate.contract_id, "contract_version": candidate.contract_version,
@@ -567,7 +574,7 @@ class RequestInformation(_DomainTool):
 
 class _ExperienceParams(ParamsBase):
     model_config = ConfigDict(extra="forbid")
-    id: str = Field(min_length=1, description="An id from the supplied experience summaries.")
+    id: str = Field(min_length=1, description="An id from a catalog page displayed in this task.")
 
 
 class ReadExperience(ToolBase):
@@ -593,9 +600,61 @@ class ReadExperience(ToolBase):
             raise BudgetStopped("CANCELLED")
         params = _ExperienceParams(**kwargs)
         data = self.view.read(params.id, max_bytes=self.context.budget.limits.tool_response_bytes)
-        self.store.append_event("experience.read", (), {"id": params.id})
+        if 'code' in data:
+            return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode('utf-8'))], state=ToolResultState.ERROR, is_last=True)
+        _experience_event(self.store, 'experience.read', {'id': params.id})
         return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode("utf-8"))],
                          state=ToolResultState.SUCCESS, is_last=True)
+
+
+def _experience_event(store, kind, payload):
+    from ...observability import mark
+    try:
+        store.append_event(kind, (), payload)
+    except (OSError, ValueError, RuntimeError):
+        pass
+    try:
+        mark(kind, attributes={'result_code': payload.get('code', 'ready'),
+            'experience_ids': payload.get('ids', [payload['id']] if 'id' in payload else [])})
+    except (OSError, ValueError, RuntimeError):
+        pass
+
+
+class _CatalogParams(ParamsBase):
+    model_config = ConfigDict(extra='forbid')
+    category: Literal['framework', 'model', 'workflow']
+    cursor: str | None = None
+
+
+class ListExperiences(ToolBase):
+    name = 'list_experiences'
+    description = 'Browse id/name/description in one historical category. Load an applicable id using read_experience; no current source evidence.'
+    input_schema = _CatalogParams.model_json_schema()
+    is_read_only = True
+    is_concurrency_safe = False
+    is_mcp = False
+    is_external_tool = False
+    is_state_injected = False
+
+    def __init__(self, view, store, context):
+        super().__init__()
+        self.view, self.store, self.context = view, store, context
+
+    async def check_permissions(self, tool_input, context):
+        return PermissionDecision(behavior=PermissionBehavior.ALLOW, message='fixed catalog is read-only')
+
+    async def call(self, **kwargs):
+        self.context.budget.check()
+        if self.context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
+        params = _CatalogParams(**kwargs)
+        data = self.view.list(params.category, params.cursor, max_bytes=self.context.budget.limits.tool_response_bytes)
+        success = data['code'] in ('ready', 'empty')
+        _experience_event(self.store, 'experience.catalog', {'category': data['category'],
+            'ids': [item['id'] for item in data['items']] if success else [], 'code': data['code'],
+            'bytes': len(canonical_bytes(data)) if success else 0, 'has_more': data['next_cursor'] is not None})
+        if not success: data = {'code': data['code']}
+        return ToolChunk(content=[TextBlock(text=canonical_bytes(data).decode('utf-8'))],
+            state=ToolResultState.SUCCESS if success else ToolResultState.ERROR, is_last=True)
 
 
 def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *, experience_view=None, evidence_views=None) -> Toolkit:
@@ -623,10 +682,11 @@ def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService,
         RequestInformation(gate, context),
     ]
     if experience_view is not None:
+        tools.append(ListExperiences(experience_view, candidates.workspace.store, context))
         tools.append(ReadExperience(experience_view, candidates.workspace.store, context))
     toolkit = Toolkit(tools=tools)
     registered = tuple(tool.name for tool in toolkit.tool_groups[0].tools)
-    expected = TOOL_NAMES + (("read_experience",) if experience_view is not None else ())
+    expected = TOOL_NAMES + (EXPERIENCE_TOOL_NAMES if experience_view is not None else ())
     if registered != expected:
         raise ValueError(f"the phase toolkit must register exactly {TOOL_NAMES}; got {registered}")
     return toolkit

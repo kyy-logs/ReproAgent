@@ -475,21 +475,24 @@ class Controller:
             for evidence in contract.sources:
                 self.verifier.resolve(evidence)
             self.store.save_contract(contract)
-            experience_summaries = self.experience_service.summaries(IssueDescription(issue_text, issue_hash)) if self.experience_service is not None else ()
+            experience_summaries = ()
             lifecycle = Lifecycle(request, fixed, snapshot, environment)
             feedback = self.feedback({'missing_information':contract.missing_information}) if contract.missing_information else ''
             history = []
+            experience_events = ()
             while True:
                 context.budget.check()
                 if context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
                 result = self.state(result, TaskState.GENERATING)
+                phase_events, experience_events = experience_events, ()
                 try:
                     # The contract this phase worked from: without it a reader cannot tell
                     # which version of the task the phase's decisions were made against.
                     with span("explore", attributes={"contract_id": contract.contract_id,
                                                      "contract_version": contract.version}):
                         phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
-                            issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries))
+                            issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries,
+                            experience_events=phase_events))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:
@@ -538,6 +541,8 @@ class Controller:
                 project = replace(project, candidates=(*project.candidates, candidate))
                 result, feedback, code, done = await self.confirm_candidate(lifecycle, candidate, contract, context, result)
                 self.phase_end(phase, code, context)
+                if code == 'REVIEW_CONTEXT_TOO_LARGE':
+                    experience_events = ({'kind':'controller_error', 'tool':'', 'code':code},)
                 history.append({'phase':'candidate', 'candidate_id':candidate.candidate_id, 'result_code':code})
                 if done:
                     break

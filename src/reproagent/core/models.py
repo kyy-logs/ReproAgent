@@ -447,6 +447,7 @@ class AgentContext:
     feedback: str = ""
     issue: IssueDescription | None = None
     experience_summaries: tuple[ExperienceSummary, ...] = ()
+    experience_events: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
