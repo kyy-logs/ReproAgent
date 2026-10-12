@@ -273,6 +273,6 @@ def project_sdk_messages(value):
         # Call correlation lives in controlled span fields, never the provider's ID.
         value={k:v for k,v in value.items() if k not in ('id','tool_call_id')}
         if 'name' in value:
-            from .adapters.agentscope.tools import TOOL_NAMES
-            if value['name'] not in (*TOOL_NAMES,'read_experience'): value['name']='unknown'
+            from .adapters.agentscope.tools import TOOL_NAMES, EXPERIENCE_TOOL_NAMES
+            if value['name'] not in (*TOOL_NAMES, *EXPERIENCE_TOOL_NAMES): value['name']='unknown'
     return {k:project_sdk_messages(v) for k,v in value.items()}
