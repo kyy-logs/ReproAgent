@@ -79,3 +79,14 @@ def test_large_card_does_not_discard_small_relevant_card():
     v = view(large, small)
     v.select("logging", ())
     assert [s.id for s in v.match_event(RANGE)] == [small.id]
+
+
+def test_pending_summary_and_detail_cannot_exceed_shared_budget():
+    v = view(card('pytest','d'*1600), triggered('r'*500))
+    initial = v.select('pytest',())
+    proposed = v.match_event(RANGE)
+    assert proposed
+    with pytest.raises(ValueError,match='budget'):
+        v.read(initial[0].id)
+    assert v.read_ids == ()
+    v.admit_summaries((proposed[0].id,))

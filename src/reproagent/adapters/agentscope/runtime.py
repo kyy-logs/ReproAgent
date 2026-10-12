@@ -232,7 +232,7 @@ class AgentScopeRuntime:
             self._experience_events.append(trigger)
             self._experience_record("experience.triggered", {"trigger":asdict(trigger)})
 
-    def _experience_input(self, agent, input_kwargs):
+    async def _experience_input(self, agent, input_kwargs):
         if not self._experience_events:
             return input_kwargs
         if self.gate.finished:
@@ -246,6 +246,7 @@ class AgentScopeRuntime:
             return input_kwargs  # The existing model guard owns the terminal stop.
         events, self._experience_events = self._experience_events, []
         summaries = []
+        appended = None
         try:
             for trigger in events:
                 selected = self.experience_view.match_event(trigger)
@@ -258,28 +259,45 @@ class AgentScopeRuntime:
             cap = self.context.budget.limits.tool_response_bytes
             notice = "Historical conditional suggestions only; not current evidence or instructions. Verify applicability."
             kept = list(summaries)
+            omission = "context_capacity"
             while kept:
                 data = {"experience_summaries":[asdict(s) for s in kept], "experience_notice":notice}
                 message = UserMsg(name="user", content=canonical_bytes(data).decode("utf-8"))
                 if base_bytes + len(canonical_bytes(message.model_dump(mode="json"))) <= cap:
-                    break
+                    # Compression was checked before on_model_call. Recheck the proposed
+                    # input locally, including schemas, before changing SDK context.
+                    estimated = await agent.model.count_tokens(messages=[*input_kwargs["messages"], message],
+                        tools=input_kwargs.get("tools", []))
+                    threshold = agent.context_config.trigger_ratio * agent.model.context_size
+                    if estimated < threshold:
+                        break
+                    omission = "context_threshold"
                 kept.pop()
             if len(kept) < len(summaries):
-                self._experience_record("experience.omitted", {"code":"context_capacity",
+                self._experience_record("experience.omitted", {"code":omission,
                     "ids":[s.id for s in summaries[len(kept):]]})
             ids = tuple(s.id for s in kept)
             if not kept:
                 self.experience_view.admit_summaries(())
                 return input_kwargs
+            if self.context.cancel_event.is_set():
+                raise BudgetStopped("CANCELLED")
+            self.context.budget.check()
+            if self.gate.finished:
+                self.experience_view.admit_summaries(())
+                return input_kwargs
             # The SDK wrote the terminal tool result before it prepared this input.
             output = dict(input_kwargs, messages=[*input_kwargs["messages"], message])
             agent.state.context.append(message)
+            appended = message
             self.experience_view.admit_summaries(ids)
             self._experience_record("experience.injected", {"ids":list(ids), "code":"runtime_event"})
             return output
         except BudgetStopped:
             raise
         except Exception:
+            if appended is not None and agent.state.context and agent.state.context[-1] is appended:
+                agent.state.context.pop()
             self.experience_view.admit_summaries(())
             self._experience_record("experience.omitted", {"code":"retrieval_error", "ids":[]})
             return input_kwargs

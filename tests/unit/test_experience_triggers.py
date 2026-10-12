@@ -109,3 +109,21 @@ def test_small_controlled_error_fact_keeps_trigger_without_large_arguments():
         "tool":"revise_contract","code":"SOURCE_RANGE_NOT_DISPLAYED"})}
     assert [asdict(t) for t in evidence_triggers(entry)] == [
         {"kind":"tool_error","tool":"revise_contract","code":"SOURCE_RANGE_NOT_DISPLAYED"}]
+
+
+def test_exact_legacy_card_boundary_survives_read_and_append(tmp_path):
+    legacy = asdict(card(detail=""))
+    legacy.pop("triggers", None)
+    overhead = len(canonical_bytes(legacy))
+    legacy['detail'] = 'x'*(2048-overhead)
+    assert len(canonical_bytes(legacy)) == 2048
+    path = tmp_path/'library.json'
+    path.write_bytes(canonical_bytes({'schema_version':1,'items':[legacy]}))
+    original = path.read_bytes()
+    loaded = exp.load_experience_snapshot(path)
+    assert loaded.state == 'ready'
+    assert path.read_bytes() == original
+    assert exp.append_experience(path,card('other'),None) == 'written'
+    stored = json.loads(path.read_text(encoding='utf-8'))['items']
+    assert canonical_bytes(stored[0]) == canonical_bytes(legacy)
+    assert all(len(canonical_bytes(item)) <= 2048 for item in stored)

@@ -155,7 +155,7 @@ def test_cancelled_runtime_does_not_admit_or_send_advice(tmp_path, projects, fac
     env.runtime._experience_event({"kind":RANGE.kind, "tool":RANGE.tool, "code":RANGE.code})
     env.context.cancel_event.set()
     with pytest.raises(BudgetStopped) as error:
-        env.runtime._experience_input(env.runtime._agent, {"messages":[]})
+        asyncio.run(env.runtime._experience_input(env.runtime._agent, {"messages":[]}))
     assert error.value.reason == "CANCELLED"
     assert env.requests == []
     with pytest.raises(ValueError):
@@ -168,7 +168,7 @@ def test_closed_phase_does_not_admit_advice(tmp_path, projects, facts):
     run(env)
     env.runtime._experience_event({"kind":RANGE.kind, "tool":RANGE.tool, "code":RANGE.code})
     original = {"messages":[]}
-    assert env.runtime._experience_input(env.runtime._agent, original) is original
+    assert asyncio.run(env.runtime._experience_input(env.runtime._agent, original)) is original
     assert len(env.requests) == 1
     with pytest.raises(ValueError):
         env.view.read(env.memory.id)
@@ -182,9 +182,10 @@ def test_failed_context_append_does_not_grant_detail_access(tmp_path, projects, 
             raise RuntimeError("context is unavailable")
     env = configured(tmp_path, projects, facts)
     env.runtime._experience_event({"kind":RANGE.kind,"tool":RANGE.tool,"code":RANGE.code})
-    agent = SimpleNamespace(state=SimpleNamespace(context=BrokenContext()))
+    agent = SimpleNamespace(state=SimpleNamespace(context=BrokenContext()),
+        model=env.runtime._agent.model,context_config=env.runtime._agent.context_config)
     original = {"messages":[UserMsg(name="user",content="original facts")]}
-    assert env.runtime._experience_input(agent,original) is original
+    assert asyncio.run(env.runtime._experience_input(agent,original)) is original
     with pytest.raises(ValueError):
         env.view.read(env.memory.id)
 
@@ -236,3 +237,37 @@ def test_trace_retains_controlled_condition_and_injected_ids(tmp_path, projects,
     assert injected_events[0]['attributes']['experience_ids'] == [env.memory.id]
     retrieved = next(s for s in doc['spans'] if s['name'] == 'experience.retrieved')
     assert retrieved['attributes']['experience_trigger']['code'] == RANGE.code
+
+
+def test_diagnostic_write_failure_preserves_terminal_tool_result(tmp_path, projects, facts, monkeypatch):
+    env = configured(tmp_path,projects,facts)
+    append = env.store.append_event
+    def broken(kind,*args,**kwargs):
+        if kind == 'exploration.tool_error':
+            raise OSError('diagnostic disk failure')
+        return append(kind,*args,**kwargs)
+    monkeypatch.setattr(env.store,'append_event',broken)
+    env.answers.extend([tool_reply('revise_contract',revision(env),call_id='bad'),
+        tool_reply('request_information',{'question':'missing facts'},call_id='stop')])
+    assert run(env).kind == 'request_information'
+    assert len(env.requests) == 2
+    assert any(m.get('role') == 'tool' and 'displayed whole' in str(m.get('content')) for m in env.requests[1]['messages'])
+
+
+def test_advice_respects_sdk_token_threshold(tmp_path, projects, facts, monkeypatch):
+    env = configured(tmp_path,projects,facts,limits=BudgetLimits(tool_response_bytes=200000))
+    env.runtime._agent.context_config.trigger_ratio = 0.01
+    threshold = env.runtime._agent.context_config.trigger_ratio * env.runtime._agent.model.context_size
+    async def tokens(messages,tools=None,**kwargs):
+        return int(threshold)-1 if not any('experience_summaries' in (m.get_text_content() or '') for m in messages) else int(threshold)+10
+    monkeypatch.setattr(env.model,'count_tokens',tokens)
+    env.answers.extend([tool_reply('revise_contract',revision(env),call_id='bad'),
+        tool_reply('request_information',{'question':'missing facts'},call_id='stop')])
+    try:
+        result = run(env)
+    except Exception:
+        pytest.fail('historical advice bypassed the SDK threshold and stopped a valid original task')
+    assert result.kind == 'request_information'
+    assert all(not injected(r) for r in env.requests)
+    with pytest.raises(ValueError):
+        env.view.read(env.memory.id)

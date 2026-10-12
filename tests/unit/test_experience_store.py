@@ -161,10 +161,10 @@ def test_library_limit_checked_after_real_append(tmp_path):
     index = 0
     while True:
         next_card = card("entry " + str(index), detail="x" * 1400)
-        increment = len(canonical_bytes(asdict(next_card))) + (1 if items else 0)
+        increment = len(canonical_bytes(exp()._card_record(next_card))) + (1 if items else 0)
         if size + increment > 1024 * 1024:
             break
-        items.append(asdict(next_card))
+        items.append(exp()._card_record(next_card))
         size += increment
         index += 1
     content = canonical_bytes({"schema_version": 1, "items": items})
@@ -176,9 +176,9 @@ def test_library_limit_checked_after_real_append(tmp_path):
 
 def test_exact_card_byte_boundary(tmp_path):
     path = tmp_path / "experiences.json"
-    overhead = len(canonical_bytes(asdict(card(detail=""))))
+    overhead = len(canonical_bytes(exp()._card_record(card(detail=""))))
     accepted = card(detail="x" * (2048 - overhead))
-    assert len(canonical_bytes(asdict(accepted))) == 2048
+    assert len(canonical_bytes(exp()._card_record(accepted))) == 2048
     assert exp().append_experience(path, accepted, None) == "written"
     rejected = card(summary="another", detail=accepted.detail + chr(0x4e2d))
     assert exp().append_experience(tmp_path / "oversize.json", rejected, None) == "invalid"

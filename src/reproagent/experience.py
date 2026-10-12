@@ -50,6 +50,14 @@ class ExperienceCard:
     triggers: tuple[ExperienceTrigger, ...] = ()
 
 
+def _card_record(card):
+    """Persist optional metadata only when present; legacy size/shape stays unchanged."""
+    data = asdict(card)
+    if not card.triggers:
+        data.pop("triggers")
+    return data
+
+
 @dataclass(frozen=True, slots=True)
 class ExperienceSnapshot:
     state: str
@@ -134,7 +142,7 @@ def _card(data):
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
         data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers)
-    if len(canonical_bytes(asdict(card))) > CARD_BYTES:
+    if len(canonical_bytes(_card_record(card))) > CARD_BYTES:
         raise _CardTooLarge("experience card exceeds byte limit")
     return card
 
@@ -233,7 +241,7 @@ def append_experience(path: Path, card: ExperienceCard, context) -> str:
             _, cards = _read_library(path)
             if any(old.id == checked.id for old in cards):
                 return "duplicate"
-            content = canonical_bytes({"schema_version": 1, "items": [asdict(c) for c in (*cards, checked)]})
+            content = canonical_bytes({"schema_version": 1, "items": [_card_record(c) for c in (*cards, checked)]})
             if len(content) > LIBRARY_BYTES:
                 return "store_error"
             _check(context)
@@ -334,7 +342,10 @@ class ExperienceView:
 
     def admit_summaries(self, ids):
         # Only actual model input grants access; all unadmitted reservations are released.
-        self._selected = tuple(self._selected or ()) + tuple(c for c in self._pending if c.id in ids)
+        admitted = tuple(self._selected or ()) + tuple(c for c in self._pending if c.id in ids)
+        if len(admitted) > 3 or self._visible_bytes(admitted) > VISIBLE_BYTES:
+            raise ValueError("experience admission exceeds shared visible budget")
+        self._selected = admitted
         self._pending = ()
 
     def read(self, identifier, *, max_bytes=VISIBLE_BYTES):
@@ -347,7 +358,7 @@ class ExperienceView:
         for key in ("summary", "detail"):
             for secret in self.secrets:
                 data[key] = data[key].replace(secret, "[REDACTED]")
-        summaries = [{"id": c.id, "summary": self._safe(c.summary)} for c in self._selected]
+        summaries = [{"id": c.id, "summary": self._safe(c.summary)} for c in (*self._selected, *self._pending)]
         if len(canonical_bytes(data)) > max_bytes or len(canonical_bytes(summaries)) + len(canonical_bytes(data)) > VISIBLE_BYTES:
             raise ValueError("experience detail exceeds shared visible budget")
         self._read_ids = (identifier,)

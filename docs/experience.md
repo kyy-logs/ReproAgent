@@ -25,7 +25,7 @@
 
 首轮及探索中累计最多展示 3 条独立 id/summary；Agent 通过 AgentScope 只读工具 `read_experience` 按需读取一条详情。整个任务只能成功读一次，契约修订和候选重试不重读库、不重置配额、不重复展示已注入卡。累计摘要列表与已读详情的 UTF-8 JSON 合计最多 2048 字节；容量不足跳过经验，不截断正文、不挤掉原始 Issue/契约/工具结果。动态摘要实际进入上下文后才开放对应详情；上下文容量按完整 SDK 消息投影加新消息核对。分析和 Verifier 不直接加载经验，经验引用不能申请当前原版契约修订。
 
-events.jsonl 和 trace 的 experience.triggered/retrieved/injected/omitted 分别说明实际情境、候选及匹配结果、实际注入和省略原因。trace 只增加受控 experience_trigger/experience_ids 元数据；不增加模型调用。整个功能不依赖 trace 开关。
+events.jsonl 和 trace 的 experience.triggered/retrieved/injected/omitted 分别说明实际情境、候选及匹配结果、实际加入上下文和省略原因。context_capacity 表示消息字节空间不足，context_threshold 表示加入后会越过 SDK token 阈值；这两种情况都省略经验。阈值通过 SDK 本地 count_tokens 估算并计入工具 schema，不调用 provider。trace 只增加受控 experience_trigger/experience_ids 元数据；不增加模型调用。整个功能不依赖 trace 开关。
 
 ## 什么时候写，谁写
 

@@ -164,7 +164,7 @@ class ExplorationMiddleware(MiddlewareBase):
         """
         if self.experience_input is not None:
             try:
-                input_kwargs = self.experience_input(agent, input_kwargs)
+                input_kwargs = await self.experience_input(agent, input_kwargs)
             except BudgetStopped:
                 raise
             except Exception:
@@ -244,7 +244,10 @@ class ExplorationMiddleware(MiddlewareBase):
                     if str(item.state) == "error":
                         fact = {"kind":"tool_error", "tool":name, "code":item.metadata.get(ERROR_METADATA)}
                         if trigger_from_fact(fact) is not None:
-                            self.record("exploration.tool_error", action=name, result_code=fact["code"])
+                            try:
+                                self.record("exploration.tool_error", action=name, result_code=fact["code"])
+                            except Exception:
+                                pass  # Optional diagnostic I/O cannot discard this response.
                             self._experience_fact(fact)
                 yield item
         finally:
