@@ -153,6 +153,8 @@ class AgentScopeRuntime:
         if self._task is not None:
             raise RuntimeError("this runtime runs one phase at a time")
         self.gate.begin()
+        for fact in context.experience_events:
+            self._experience_event(fact)
         # The reserve reads the contract per permission check, so it has to know this phase's.
         self.middleware.contract = context.contract
         self._bind_guard()

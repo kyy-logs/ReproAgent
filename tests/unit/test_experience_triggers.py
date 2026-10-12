@@ -137,3 +137,14 @@ def test_grounded_frozen_fact_derives_exact_condition(fact):
     from reproagent.experience_triggers import evidence_triggers
     assert [asdict(t) for t in evidence_triggers({"kind":"tool_error","text":json.dumps(fact)})] == [
         {"kind":"tool_error","tool":"write_candidate","code":"GROUNDED_CONTRACT_REQUIRED"}]
+
+
+@pytest.mark.parametrize('action,expected',[('run_candidate',True),('submit_candidate',False),('Read',False)])
+def test_only_actual_initial_review_overflow_action_is_triggerable(action,expected):
+    from reproagent.experience_triggers import evidence_triggers
+    entry = {'kind':'tool_error','text':json.dumps({'kind':'action.rejected','action':action,
+        'code':'REVIEW_CONTEXT_TOO_LARGE'})}
+    result = evidence_triggers(entry)
+    assert bool(result) is expected
+    if expected:
+        assert [asdict(t) for t in result] == [{'kind':'controller_error','tool':'','code':'REVIEW_CONTEXT_TOO_LARGE'}]

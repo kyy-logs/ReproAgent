@@ -214,7 +214,10 @@ def _prepare(store, result, context, *, secrets, exploration):
             if run.execution_role == 'original':
                 originals.append(run)
     notes = [{'seq':event.seq, 'kind':event.kind, 'code':event.payload.get('result_code'),
-        'tool':event.payload.get('action') if event.payload.get('action') in TOOLS else ''}
+        'tool':event.payload.get('action') if event.payload.get('action') in TOOLS else '',
+        **({'action':'run_candidate'} if event.kind == 'action.rejected'
+            and event.payload.get('action') == 'run_candidate'
+            and event.payload.get('result_code') == 'REVIEW_CONTEXT_TOO_LARGE' else {})}
         for event in events if event.kind in ('exploration.protocol_error', 'exploration.action', 'exploration.tool_error',
             'exploration.phase_error', 'phase.error', 'phase.result', 'action.rejected')
         and event.payload.get('result_code') in CONTROLLED]
