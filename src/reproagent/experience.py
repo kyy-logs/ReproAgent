@@ -185,7 +185,8 @@ def _read_library(path):
 
 def load_experience_snapshot(path: Path, *, secrets=(), diagnostic=None) -> ExperienceSnapshot:
     try:
-        from .experience_storage import directory_mode, load_directory_snapshot
+        from .experience_storage import directory_mode, load_directory_snapshot, approved_location
+        path = approved_location(Path(path))
         if directory_mode(Path(path)):
             return load_directory_snapshot(path, secrets=secrets, diagnostic=diagnostic)
         content, cards = _read_library(path)
@@ -254,8 +255,9 @@ def _check(context):
 
 
 def append_experience(path: Path, card: ExperienceCard, context, *, diagnostic=None) -> str:
-    from .experience_storage import directory_mode, append_directory_experience
+    from .experience_storage import directory_mode, append_directory_experience, approved_location
     try:
+        path = approved_location(Path(path))
         if directory_mode(Path(path)):
             return append_directory_experience(path, card, context, diagnostic=diagnostic)
     except (ValueError, OSError):

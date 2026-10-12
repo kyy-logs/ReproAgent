@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import os
 from pathlib import Path
 
 from .core.serialization import canonical_bytes, canonical_hash, bytes_hash, parse_json
-from .paths import workspace_path, directory_path, is_within
+from .paths import workspace_path, directory_path, extended_path, shared_path_form, is_within
 from .store import atomic_write
 from .experience_catalog import entry_from_card
 
@@ -27,9 +28,19 @@ def _notify(callback, category, code):
         except (OSError, ValueError, RuntimeError): pass
 
 
+def approved_location(path: Path) -> Path:
+    # Product callers pin the approved resolved path at preparation. Re-resolving
+    # must not silently approve a later root/ancestor junction replacement.
+    approved = Path(os.path.abspath(path))
+    approved, resolved = shared_path_form(approved, approved.resolve())
+    if approved != resolved:
+        raise ValueError('experience root location changed')
+    return resolved
+
+
 def _paths(root):
     from .experience import CATEGORIES
-    root = Path(root).resolve()
+    root = approved_location(root)
     lock = workspace_path(root.with_name(root.name + '.lock'))
     if lock.is_symlink(): raise ValueError('experience lock cannot be a link')
     for category in CATEGORIES:
@@ -159,7 +170,7 @@ def migrate_experience_library(source: Path, target: Path) -> dict:
             raw, cards = _read_library(source)
             parent = directory_path(target.parent)
             parent.mkdir(parents=True, exist_ok=True)
-            staging = Path(tempfile.mkdtemp(prefix='.' + target.name + '.migrate-', dir=str(parent)))
+            staging = Path(tempfile.mkdtemp(prefix='.' + target.name + '.migrate-', dir=str(extended_path(parent))))
             total = 0
             for category in CATEGORIES:
                 members = tuple(c for c in cards if c.category == category)
@@ -173,14 +184,16 @@ def migrate_experience_library(source: Path, target: Path) -> dict:
                 raise ValueError('migration verification failed')
             if _read_library(source)[0] != raw: return {'code': 'source_changed'}
             if workspace_path(target).exists(): return {'code': 'target_exists'}
-            workspace_path(staging).rename(workspace_path(target))
+            staging_path, target_path = shared_path_form(staging, target)
+            staging_path.rename(target_path)
             return {'code': 'migrated', 'count': len(cards), 'source_hash': bytes_hash(raw), 'target_hash': loaded.content_hash}
     except _Busy: return {'code': 'busy'}
     except (OSError, ValueError, TypeError, UnicodeError, RecursionError): return {'code': 'store_error'}
     finally:
         if staging is not None:
             # Only this operation's own same-parent temporary directory can be removed.
-            if staging.parent.resolve() == target.parent.resolve() and staging.name.startswith('.' + target.name + '.migrate-'):
+            actual_parent, expected_parent = shared_path_form(staging.parent.resolve(), target.parent.resolve())
+            if actual_parent == expected_parent and staging.name.startswith('.' + target.name + '.migrate-'):
                 if workspace_path(staging).is_dir(): shutil.rmtree(workspace_path(staging))
                 scratch_lock = workspace_path(staging.with_name(staging.name + '.lock'))
                 if scratch_lock.is_file() and not scratch_lock.is_symlink(): scratch_lock.unlink()

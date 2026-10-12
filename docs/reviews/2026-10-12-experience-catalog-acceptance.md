@@ -32,6 +32,19 @@
 | 首次全量 | 863 passed / 6 skipped / 1 failed；失败是离线夹具写死旧卡 ID，已改为按实际目录结果选择并通过端到端复测 |
 | 最终全量与查看器 | 待最终复跑记录，当前不宣告整分支验收通过 |
 
+## 独立审查与修复
+
+使用 gpt-6.1-sol 独立只读审查（非 Astra），Critical 0、Important 2、Minor 1。两项 Important 已在一次修复中完成：
+
+1. 固定库真实位置，后续目录/旧文件读取和追加先复核，拒绝根或祖先 junction 替换；真实 Windows junction 复现包括同字节副本进入修复仓库、冻结评测停止后续 case、旧文件模式在锁创建前拒绝。
+2. 迁移在生成临时子目录前提升路径表示，发布及清理使用一致表示；230 字符目标 / 226 字符父目录迁移成功，临时文件无残留。
+
+审查复现 RED：三个场景失败（修正 fixture 固定源码哈希后，冻结评测也确实错误启动了第二 case）；旧文件祖先跳转附加测试 RED。修复 GREEN：61 passed / 2 skipped，覆盖 review repairs/migration/store/directory/evaluation。查看器 8 passed。
+
+Minor 暂缓：直接调用经验 SDK 工具且 tool_response_bytes=10 时，受控错误 JSON 可超过该字节上限；如此小上限通常无法让完整任务的初始上下文进入探索。成功目录/正文始终按完整 UTF-8 JSON 上限计量并授权，本项不影响正常任务的成功加载边界。
+
+审查未判断真实效果/live provider、最终全量、POSIX 锁压力、电源故障和文件系统操作内部同时攻击；真实效果需另做授权冻结 A/B，最终全量另跑，锁沿用既有实现，操作内部竞争不在本次已验证保证内。无权限的 native symlink 测试跳过，但本次真实 Windows junction 场景已覆盖。
+
 ## 设计取舍与限制
 
 保留旧 ExperienceView 作为显式兼容 API，但产品 Service 与 SDK 工具链只用 ExperienceCatalogView；旧自动匹配注入不再执行。当前仍只允许成功读取一个正文，可浏览六页目录。旧卡兼容描述只从原 summary 派生，并不代表新推断了触发情境。索引持久化只是便于检查的缓存，读取不依靠它篡改正文。
