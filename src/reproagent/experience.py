@@ -169,7 +169,7 @@ def _read_library(path):
         root = parse_json(content.decode("utf-8"))
     except RecursionError as exc:
         raise ValueError("invalid experience library nesting") from exc
-    if set(root) != {"schema_version", "items"} or type(root["schema_version"]) is not int or root["schema_version"] != 1 or not isinstance(root["items"], list):
+    if set(root) != {"schema_version", "items"} or type(root["schema_version"]) is not int or root["schema_version"] not in (1, 2) or not isinstance(root["items"], list):
         raise ValueError("invalid experience library schema")
     cards = tuple(_card(item) for item in root["items"])
     if len({card.id for card in cards}) != len(cards):
@@ -177,8 +177,11 @@ def _read_library(path):
     return content, cards
 
 
-def load_experience_snapshot(path: Path, *, secrets=()) -> ExperienceSnapshot:
+def load_experience_snapshot(path: Path, *, secrets=(), diagnostic=None) -> ExperienceSnapshot:
     try:
+        from .experience_storage import directory_mode, load_directory_snapshot
+        if directory_mode(Path(path)):
+            return load_directory_snapshot(path, secrets=secrets, diagnostic=diagnostic)
         content, cards = _read_library(path)
         if any(secret and secret in canonical_bytes(asdict(card)).decode("utf-8")
                for card in cards for secret in secrets):
@@ -239,7 +242,13 @@ def _check(context):
             raise BudgetStopped("CANCELLED")
 
 
-def append_experience(path: Path, card: ExperienceCard, context) -> str:
+def append_experience(path: Path, card: ExperienceCard, context, *, diagnostic=None) -> str:
+    from .experience_storage import directory_mode, append_directory_experience
+    try:
+        if directory_mode(Path(path)):
+            return append_directory_experience(path, card, context, diagnostic=diagnostic)
+    except (ValueError, OSError):
+        return 'store_error'
     try:
         checked = _card(_card_record(card))
     except (ValueError, TypeError):
@@ -250,7 +259,7 @@ def append_experience(path: Path, card: ExperienceCard, context) -> str:
             _, cards = _read_library(path)
             if any(old.id == checked.id for old in cards):
                 return "duplicate"
-            content = canonical_bytes({"schema_version": 1, "items": [_card_record(c) for c in (*cards, checked)]})
+            content = canonical_bytes({"schema_version": 2, "items": [_card_record(c) for c in (*cards, checked)]})
             if len(content) > LIBRARY_BYTES:
                 return "store_error"
             _check(context)

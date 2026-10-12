@@ -56,7 +56,7 @@ def test_missing_and_valid_library(tmp_path):
 
 @pytest.mark.parametrize("raw", [
     '{"schema_version":1,"schema_version":1,"items":[]}',
-    '{"schema_version":true,"items":[]}', '{"schema_version":2,"items":[]}',
+    '{"schema_version":true,"items":[]}', '{"schema_version":3,"items":[]}',
     '{"schema_version":1,"items":[],"extra":1}', '{"schema_version":1,"items":[NaN]}',
     '{"schema_version":1,"items":[{}]}',
 ])
