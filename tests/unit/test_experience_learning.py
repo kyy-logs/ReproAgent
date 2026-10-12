@@ -18,6 +18,7 @@ def material_setup(tmp_path, projects, facts):
 
 def proposed(ids):
     return {"experience": {"category": "model", "tags": ["pytest"],
+        "name": "Check assertion semantics", "description": "When choosing an assertion after observing an exception.",
         "summary": "Confirm expected behaviour before an exception assertion.",
         "detail": "Condition: an exception is observed. Observation: the test failed. Read current evidence before choosing an assertion.",
         "evidence_ids": ids}}

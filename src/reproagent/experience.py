@@ -48,6 +48,8 @@ class ExperienceCard:
     source_task_id: str
     evidence_refs: tuple[EvidenceRef, ...]
     triggers: tuple[ExperienceTrigger, ...] = ()
+    name: str = ''
+    description: str = ''
 
 
 def _card_record(card):
@@ -55,6 +57,9 @@ def _card_record(card):
     data = asdict(card)
     if not card.triggers:
         data.pop("triggers")
+    if not card.name and not card.description:
+        data.pop('name')
+        data.pop('description')
     return data
 
 
@@ -79,7 +84,7 @@ class LearningResult:
     missing_fields: tuple[str, ...] = ()
 
 
-PROPOSAL_FIELDS = frozenset({'category', 'tags', 'summary', 'detail', 'evidence_ids'})
+PROPOSAL_FIELDS = frozenset({'category', 'tags', 'name', 'description', 'summary', 'detail', 'evidence_ids'})
 LEARNING_VALIDATION_CODES = frozenset({'invalid_json', 'invalid_structure', 'invalid_missing_fields',
     'invalid_extra_fields', 'invalid_evidence_ids', 'invalid_evidence_changed', 'invalid_fields', 'invalid_card_size'})
 
@@ -112,8 +117,12 @@ def _identifier(category, tags, summary, triggers=()):
 
 def _card(data):
     fields = {"id", "category", "tags", "summary", "detail", "source_task_id", "evidence_refs"}
-    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}):
+    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}, fields | {'name', 'description'}, fields | {'triggers', 'name', 'description'}):
         raise ValueError("invalid experience fields")
+    catalog_name, description = data.get('name', ''), data.get('description', '')
+    if 'name' in data and (catalog_name, description) != ('', '') and any(type(value) is not str or not value.strip() or len(value) > limit
+                             for value, limit in ((catalog_name, 64), (description, 160))):
+        raise ValueError('invalid catalog metadata')
     for name in ("id", "category", "summary", "detail", "source_task_id"):
         if type(data[name]) is not str or not data[name].strip():
             raise ValueError("invalid experience text")
@@ -141,7 +150,7 @@ def _card(data):
     if data["id"] != _identifier(data["category"], tags, data["summary"], triggers):
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
-        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers)
+        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers, catalog_name, description)
     if len(canonical_bytes(_card_record(card))) > CARD_BYTES:
         raise _CardTooLarge("experience card exceeds byte limit")
     return card
@@ -232,7 +241,7 @@ def _check(context):
 
 def append_experience(path: Path, card: ExperienceCard, context) -> str:
     try:
-        checked = _card(asdict(card))
+        checked = _card(_card_record(card))
     except (ValueError, TypeError):
         return "invalid"
     try:
@@ -430,11 +439,15 @@ def validate_experience(response, material, store, *, secrets=()):
     summary, detail = _redact(summary, secrets), _redact(detail, secrets)
     tags = [_redact(tag, secrets) for tag in tags]
     category = proposed["category"]
+    if any(type(proposed[key]) is not str or not proposed[key].strip() for key in ('name', 'description')):
+        raise LearningValidationError('invalid_fields')
     try:
-        # Validate the original five-field proposal before adding program metadata.
+        # Validate the proposal before adding program metadata.
         data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
             "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
-            "evidence_refs": [asdict(ref) for ref in refs]}
+            "evidence_refs": [asdict(ref) for ref in refs],
+            'name': _redact(proposed['name'], secrets) if type(proposed['name']) is str else proposed['name'],
+            'description': _redact(proposed['description'], secrets) if type(proposed['description']) is str else proposed['description']}
         _card(data)
         triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
         tags = normative_tags(tags, triggers)

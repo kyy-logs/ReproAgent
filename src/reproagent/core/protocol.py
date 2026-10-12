@@ -153,6 +153,8 @@ def validate_verdict(result):
 def learning_schema():
     properties = {"category": {"type": "string", "enum": ["framework", "model", "workflow"]},
         "tags": {"type": "array", "maxItems": 5, "items": {"type": "string", "minLength": 1, "maxLength": 64}},
+        "name": {"type": "string", "minLength": 1, "maxLength": 64},
+        "description": {"type": "string", "minLength": 1, "maxLength": 160},
         "summary": {"type": "string", "minLength": 1}, "detail": {"type": "string", "minLength": 1},
         "evidence_ids": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": True,
             "items": {"type": "string"}}}

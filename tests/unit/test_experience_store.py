@@ -22,7 +22,7 @@ def card(summary="advice", detail="Observe this only in the documented situation
 
 
 def library(path, *cards):
-    path.write_bytes(canonical_bytes({"schema_version": 1, "items": [asdict(c) for c in cards]}))
+    path.write_bytes(canonical_bytes({"schema_version": 1, "items": [exp()._card_record(c) for c in cards]}))
 
 
 def test_old_request_defaults_disable_experience(tmp_path):
