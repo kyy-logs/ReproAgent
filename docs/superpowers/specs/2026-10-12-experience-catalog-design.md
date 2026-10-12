@@ -28,7 +28,7 @@ index.json 是可丢弃的派生缓存，根为 schema_version=1/category/source
 1. `list_experiences(category, cursor?)`：浏览该分类简短索引，无 query、关键词计分或错误码硬过滤。按 ID 排序，默认最多 12 条，完整响应最多 4096 UTF-8 字节；返回 code/category/items/next_cursor，有更多内容时提供任务快照绑定的游标。
 2. `read_experience(id)`：只读取本任务成功返回过的目录 ID，返回 id/name/description/summary/detail。不开放任意路径，也不返回源证据文件内容。
 
-空分类正常返回 empty，并计入成功浏览。受控目录结果码为 ready/empty/invalid_category/invalid_cursor/catalog_limit/catalog_budget/response_capacity；读取失败码为 unknown_id/not_displayed/read_limit/response_capacity。一次页面必须完整容纳一个条目和响应结构，否则返回明确容量原因，不截断条目、不越过未展示条目。整个任务最多 6 次成功目录浏览、目录响应累计 8192 字节，正文仍最多成功读 1 次且完整响应最多 2048 字节；经验文本总上界 10240 字节。重复页也计入实际返回字节和浏览次数，不虚称重复响应免费。目录次数、正文读取和已展示 ID 跨探索阶段共享，不因契约修订而重置。失败不消耗成功配额，但照常消耗实际模型/动作预算。
+空分类正常返回 empty，并计入成功浏览。受控目录结果码为 ready/empty/invalid_category/invalid_cursor/catalog_limit/catalog_budget/response_capacity；读取失败码为 unknown_id/not_displayed/read_limit/response_capacity。一次页面必须完整容纳一个条目和响应结构，否则返回明确容量原因，不截断条目、不越过未展示条目。整个任务最多 6 次成功目录浏览、目录响应累计 8192 字节，正文仍最多成功读 1 次且完整响应最多 4096 字节；经验文本总上界 12288 字节。重复页也计入实际返回字节和浏览次数，不虚称重复响应免费。目录次数、正文读取和已展示 ID 跨探索阶段共享，不因契约修订而重置。失败不消耗成功配额，但照常消耗实际模型/动作预算。
 
 目录工具与正文工具均走原有只读预算、取消、权限与保留发布步骤机制，不获得额外模型步骤。小工具响应上限可以降低页面大小，不能先标记展示再由通用截断器截掉。目录响应成功返回才允许读取其 ID。完整模型输入仍由现有字节/token 守卫限制，不提高全局模型上下文上限。
 
@@ -36,7 +36,7 @@ index.json 是可丢弃的派生缓存，根为 schema_version=1/category/source
 
 ## 写入与迁移
 
-学习时机、独立总结上下文、8192 字节材料预算、30 秒学习预算和最多一次逻辑学习请求不变。新的非空提案严格要求 category/tags/name/description/summary/detail/evidence_ids 七个字段。description 描述有来源支持的适用情境，不能只写“提高效率”或虚构建议已验证。程序验证字段、EID 和证据哈希后生成 ID、引用和受控 triggers，写入分类正文并派生索引。单卡仍最多 2048 字节，三个正文总计最多 1 MiB；派生索引单独总计最多 1 MiB，读取缓存同样有大小限制。
+学习时机、独立总结上下文、8192 字节材料预算、30 秒学习预算和最多一次逻辑学习请求不变。新的非空提案严格要求 category/tags/name/description/summary/detail/evidence_ids 七个字段。description 描述有来源支持的适用情境，不能只写“提高效率”或虚构建议已验证。程序验证字段、EID 和证据哈希后生成 ID、引用和受控 triggers，写入分类正文并派生索引。单卡最多 4096 字节，三个正文总计最多 1 MiB；派生索引单独总计最多 1 MiB，读取缓存同样有大小限制。
 
 保留 experience_file 配置名，现有或后缀为 .json 的路径为单文件兼容模式，其他路径为目录模式；现有非 JSON 文件和目录冲突明确拒绝。旧 schema=1 可读，新单文件采用 schema=2，旧库第一次有效追加时在锁内整体升级，新读取版本可读，旧二进制不保证可读。只读不升级。
 
@@ -49,3 +49,5 @@ CLI 新默认为用户目录 `.reproagent/experiences`：已有新目录用新�
 记录 experience.catalog（分类、实际 ID、字节数、分页与结果码）、experience.read、experience.index（受控缓存原因）及既有学习事件。不把“返回目录”“读取正文”“经验起效”混成一件事。 trace 能关联权限、工具输入、目录/正文输出和下一轮模型实际输入，不依赖 trace 才能工作。
 
 验收覆盖无错误码的流程经验发现、分页后读取、未展示 ID 拒绝、跨阶段配额、坏缓存可读、坏正文隔离、并发与长路径、旧库/迁移、冻结评测不写库。离线 SDK MockTransport 验证工具链和实际 wire request；不调用真实 provider，不用 Astra。离线可检索不等于真实复现率提升，后者另做冻结库对照。
+
+2026-10-12 预算修订：落盘卡片与正文读取改为 4 KiB；超限结果附实际字节数、4096 上限与超出量，统计最终程序元数据之后的完整 JSON。目录/学习材料/步骤预算保持原值。旧 2 KiB 卡片和 ID 保持兼容。

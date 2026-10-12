@@ -177,8 +177,8 @@ def test_library_limit_checked_after_real_append(tmp_path):
 def test_exact_card_byte_boundary(tmp_path):
     path = tmp_path / "experiences.json"
     overhead = len(canonical_bytes(exp()._card_record(card(detail=""))))
-    accepted = card(detail="x" * (2048 - overhead))
-    assert len(canonical_bytes(exp()._card_record(accepted))) == 2048
+    accepted = card(detail="x" * (exp().CARD_BYTES - overhead))
+    assert len(canonical_bytes(exp()._card_record(accepted))) == exp().CARD_BYTES == 4096
     assert exp().append_experience(path, accepted, None) == "written"
     rejected = card(summary="another", detail=accepted.detail + chr(0x4e2d))
     assert exp().append_experience(tmp_path / "oversize.json", rejected, None) == "invalid"

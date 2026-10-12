@@ -79,7 +79,7 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
                     'summary':'\ud800', 'detail':'invalid Unicode', 'evidence_ids':ids}}))
             return text_response(json.dumps({"experience": {"category": "model", "tags": ["pytest"], "name":"Empty input assertions", "description":"When checking empty input behaviour.",
                 "summary": "Empty input assertions need original behaviour evidence.",
-                "detail": "Condition: empty input. Observation: the original test raised IndexError. Check current source before choosing exception assertions.",
+                "detail": ('x' * 6000 if learning == 'oversize' else "Condition: empty input. Observation: the original test raised IndexError. Check current source before choosing exception assertions."),
                 "evidence_ids": ids}}))
         if payload.get("tools"):
             main_calls.append("exploration")

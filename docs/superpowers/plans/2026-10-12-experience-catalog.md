@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking. 本计划按当前会话逐项执行；本计划已完成实现；最终验收见 docs/reviews/2026-10-12-experience-catalog-acceptance.md。
 
+> 后续预算修订：当前卡片/正文为 4096 B，目录预算不变。下列 2048 B 是原实现时的验收基线；预算修复记录另见 docs/reviews/2026-10-12-experience-card-budget-acceptance.md。
+
 **Goal:** Agent 按需浏览三类简短经验目录，选择 ID 后读取正文，实现类似 Skill 的渐进式加载。
 
 **Architecture:** 每分类一个 experiences.json 保存事实，一个 index.json 保存可重建的三字段目录。启动时冻结任务视图；两个只读工具负责目录浏览和正文读取，取代自动匹配注入。学习继续独立上下文，由程序校验并持久化，兼容旧单文件库。
