@@ -13,6 +13,7 @@ from .core.serialization import canonical_bytes, canonical_hash, parse_json, byt
 from .observability import span
 from .paths import directory_path, workspace_path, is_within
 from .store import atomic_write
+from .experience_triggers import ExperienceTrigger, checked_triggers, evidence_triggers, normative_tags
 
 LIBRARY_BYTES = 1024 * 1024
 
@@ -46,6 +47,15 @@ class ExperienceCard:
     detail: str
     source_task_id: str
     evidence_refs: tuple[EvidenceRef, ...]
+    triggers: tuple[ExperienceTrigger, ...] = ()
+
+
+def _card_record(card):
+    """Persist optional metadata only when present; legacy size/shape stays unchanged."""
+    data = asdict(card)
+    if not card.triggers:
+        data.pop("triggers")
+    return data
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,14 +102,17 @@ def _normalized(text):
     return " ".join(text.casefold().split())
 
 
-def _identifier(category, tags, summary):
-    return "exp_" + canonical_hash({"category": category,
-        "tags": sorted(set(_normalized(tag) for tag in tags)), "summary": _normalized(summary)})
+def _identifier(category, tags, summary, triggers=()):
+    data = {"category": category, "tags": sorted(set(_normalized(tag) for tag in tags)),
+        "summary": _normalized(summary)}
+    if triggers:
+        data["triggers"] = [asdict(t) for t in checked_triggers(triggers)]
+    return "exp_" + canonical_hash(data)
 
 
 def _card(data):
     fields = {"id", "category", "tags", "summary", "detail", "source_task_id", "evidence_refs"}
-    if not isinstance(data, dict) or set(data) != fields:
+    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}):
         raise ValueError("invalid experience fields")
     for name in ("id", "category", "summary", "detail", "source_task_id"):
         if type(data[name]) is not str or not data[name].strip():
@@ -124,11 +137,12 @@ def _card(data):
         checked.append(EvidenceRef(**ref))
     if len(set(checked)) != len(checked):
         raise ValueError("duplicate experience references")
-    if data["id"] != _identifier(data["category"], tags, data["summary"]):
+    triggers = checked_triggers(data.get("triggers", ()))
+    if data["id"] != _identifier(data["category"], tags, data["summary"], triggers):
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
-        data["summary"], data["detail"], data["source_task_id"], tuple(checked))
-    if len(canonical_bytes(asdict(card))) > CARD_BYTES:
+        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers)
+    if len(canonical_bytes(_card_record(card))) > CARD_BYTES:
         raise _CardTooLarge("experience card exceeds byte limit")
     return card
 
@@ -227,7 +241,7 @@ def append_experience(path: Path, card: ExperienceCard, context) -> str:
             _, cards = _read_library(path)
             if any(old.id == checked.id for old in cards):
                 return "duplicate"
-            content = canonical_bytes({"schema_version": 1, "items": [asdict(c) for c in (*cards, checked)]})
+            content = canonical_bytes({"schema_version": 1, "items": [_card_record(c) for c in (*cards, checked)]})
             if len(content) > LIBRARY_BYTES:
                 return "store_error"
             _check(context)
@@ -254,6 +268,9 @@ class ExperienceView:
         self.secrets = tuple(s for s in secrets if s)
         self._selected = None
         self._read_ids = ()
+        self._pending = ()
+        self._detail_bytes = 0
+        self.last_match_code = "no_match"
 
     @property
     def read_ids(self):
@@ -267,6 +284,8 @@ class ExperienceView:
         words = _keywords(query)
         scored = []
         for card in self.snapshot.cards:
+            if card.triggers:
+                continue
             score = sum(_normalized(tag) in query for tag in card.tags) + len(_keywords(card.summary) & words)
             if score > 0:
                 scored.append((-score, card.id, card))
@@ -283,6 +302,52 @@ class ExperienceView:
     def restrict_summaries(self, ids):
         self._selected = tuple(c for c in (self._selected or ()) if c.id in ids)
 
+    def _visible_bytes(self, cards):
+        return len(canonical_bytes([{"id": c.id, "summary": self._safe(c.summary)} for c in cards])) + self._detail_bytes
+
+    def _safe(self, text):
+        for secret in self.secrets:
+            text = text.replace(secret, "[REDACTED]")
+        return text
+
+    def match_event(self, trigger):
+        from .core.models import ExperienceSummary
+        from .experience_triggers import trigger_from_fact
+        self.last_match_code = "no_match"
+        if not isinstance(trigger, ExperienceTrigger) or trigger_from_fact(asdict(trigger)) is None:
+            return ()
+        selected = self._selected or ()
+        pending = list(self._pending)
+        seen = {c.id for c in (*selected, *pending)}
+        new = []
+        for card in sorted(self.snapshot.cards, key=lambda c: c.id):
+            if trigger not in card.triggers:
+                continue
+            if card.id in seen:
+                self.last_match_code = "already_displayed"
+                continue
+            if len(selected) + len(pending) >= 3:
+                self.last_match_code = "count_limit"
+                continue
+            if self._visible_bytes((*selected, *pending, card)) > VISIBLE_BYTES:
+                self.last_match_code = "visible_budget"
+                continue
+            pending.append(card)
+            new.append(card)
+            seen.add(card.id)
+        self._pending = tuple(pending)
+        if new:
+            self.last_match_code = "matched"
+        return tuple(ExperienceSummary(c.id, self._safe(c.summary)) for c in new)
+
+    def admit_summaries(self, ids):
+        # Only actual model input grants access; all unadmitted reservations are released.
+        admitted = tuple(self._selected or ()) + tuple(c for c in self._pending if c.id in ids)
+        if len(admitted) > 3 or self._visible_bytes(admitted) > VISIBLE_BYTES:
+            raise ValueError("experience admission exceeds shared visible budget")
+        self._selected = admitted
+        self._pending = ()
+
     def read(self, identifier, *, max_bytes=VISIBLE_BYTES):
         if self._read_ids:
             raise ValueError("only one successful experience detail read is allowed per task")
@@ -293,10 +358,11 @@ class ExperienceView:
         for key in ("summary", "detail"):
             for secret in self.secrets:
                 data[key] = data[key].replace(secret, "[REDACTED]")
-        summaries = [{"id": c.id, "summary": c.summary} for c in self._selected]
+        summaries = [{"id": c.id, "summary": self._safe(c.summary)} for c in (*self._selected, *self._pending)]
         if len(canonical_bytes(data)) > max_bytes or len(canonical_bytes(summaries)) + len(canonical_bytes(data)) > VISIBLE_BYTES:
             raise ValueError("experience detail exceeds shared visible budget")
         self._read_ids = (identifier,)
+        self._detail_bytes = len(canonical_bytes(data))
         return data
 
 @dataclass(frozen=True, slots=True)
@@ -341,7 +407,7 @@ def validate_experience(response, material, store, *, secrets=()):
     if not isinstance(ids, list) or not 1 <= len(ids) <= 3 or any(
         type(i) is not str or i not in material.evidence_map for i in ids) or len(set(ids)) != len(ids):
         raise LearningValidationError('invalid_evidence_ids')
-    refs = []
+    refs, entries = [], []
     for identity in ids:
         ref = material.evidence_map[identity]
         try:
@@ -349,11 +415,13 @@ def validate_experience(response, material, store, *, secrets=()):
             lines = content.splitlines()
             if bytes_hash(content) != ref.content_hash or not 1 <= ref.start_line == ref.end_line <= len(lines):
                 raise ValueError('changed evidence')
-            if parse_json(lines[ref.start_line - 1].decode("utf-8")).get("id") != identity:
+            entry = parse_json(lines[ref.start_line - 1].decode("utf-8"))
+            if entry.get("id") != identity:
                 raise ValueError('changed evidence identity')
         except (OSError, ValueError, TypeError, UnicodeError):
             raise LearningValidationError('invalid_evidence_changed') from None
         refs.append(ref)
+        entries.append(entry)
     summary = proposed["summary"]
     detail = proposed["detail"]
     tags = proposed["tags"]
@@ -363,9 +431,15 @@ def validate_experience(response, material, store, *, secrets=()):
     tags = [_redact(tag, secrets) for tag in tags]
     category = proposed["category"]
     try:
+        # Validate the original five-field proposal before adding program metadata.
         data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
             "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
             "evidence_refs": [asdict(ref) for ref in refs]}
+        _card(data)
+        triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
+        tags = normative_tags(tags, triggers)
+        data.update(id=_identifier(category, tags, summary, triggers), tags=tags,
+            triggers=[asdict(t) for t in triggers])
         return _card(data)
     except _CardTooLarge:
         raise LearningValidationError('invalid_card_size') from None
