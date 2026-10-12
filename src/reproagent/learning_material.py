@@ -12,6 +12,7 @@ from .paths import is_within, relative_name, workspace_path
 from .store import atomic_write, safe_child
 from .workspace import candidate_hash
 from .experience import INPUT_BYTES, CATEGORIES, LearningInput, _check, _redact
+from .experience_triggers import ERROR_METADATA, trigger_from_fact, TOOLS
 
 ATOM_BYTES = 2048
 MAX_ENTRIES = 24
@@ -119,6 +120,10 @@ def capture_exploration(messages, source_refs, *, secrets=()):
                 except (ValueError, TypeError):
                     record['link_state'] = 'invalid_arguments'
                     issue('INVALID_TOOL_INPUT')
+            metadata = getattr(block, 'metadata', {})
+            code = metadata.get(ERROR_METADATA) if isinstance(metadata, dict) else None
+            if state == 'error' and trigger_from_fact({'kind':'tool_error','tool':block.name,'code':code}):
+                record['error_code'] = code
             record = json.loads(_redact(canonical_bytes(record).decode('utf-8'), secrets))
             if len(canonical_bytes(record)) > ATOM_BYTES:
                 issue('TOOL_ERROR_TOO_LARGE')
@@ -207,7 +212,8 @@ def _prepare(store, result, context, *, secrets, exploration):
             run = store.load_record('runs', parts[1])
             if run.execution_role == 'original':
                 originals.append(run)
-    notes = [{'seq':event.seq, 'kind':event.kind, 'code':event.payload.get('result_code')}
+    notes = [{'seq':event.seq, 'kind':event.kind, 'code':event.payload.get('result_code'),
+        'tool':event.payload.get('action') if event.payload.get('action') in TOOLS else ''}
         for event in events if event.kind in ('exploration.protocol_error', 'exploration.action',
             'exploration.phase_error', 'phase.error', 'phase.result', 'action.rejected')
         and event.payload.get('result_code') in CONTROLLED]

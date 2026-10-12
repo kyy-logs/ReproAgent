@@ -13,6 +13,7 @@ from .core.serialization import canonical_bytes, canonical_hash, parse_json, byt
 from .observability import span
 from .paths import directory_path, workspace_path, is_within
 from .store import atomic_write
+from .experience_triggers import ExperienceTrigger, checked_triggers, evidence_triggers, normative_tags
 
 LIBRARY_BYTES = 1024 * 1024
 
@@ -46,6 +47,7 @@ class ExperienceCard:
     detail: str
     source_task_id: str
     evidence_refs: tuple[EvidenceRef, ...]
+    triggers: tuple[ExperienceTrigger, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,14 +94,17 @@ def _normalized(text):
     return " ".join(text.casefold().split())
 
 
-def _identifier(category, tags, summary):
-    return "exp_" + canonical_hash({"category": category,
-        "tags": sorted(set(_normalized(tag) for tag in tags)), "summary": _normalized(summary)})
+def _identifier(category, tags, summary, triggers=()):
+    data = {"category": category, "tags": sorted(set(_normalized(tag) for tag in tags)),
+        "summary": _normalized(summary)}
+    if triggers:
+        data["triggers"] = [asdict(t) for t in checked_triggers(triggers)]
+    return "exp_" + canonical_hash(data)
 
 
 def _card(data):
     fields = {"id", "category", "tags", "summary", "detail", "source_task_id", "evidence_refs"}
-    if not isinstance(data, dict) or set(data) != fields:
+    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}):
         raise ValueError("invalid experience fields")
     for name in ("id", "category", "summary", "detail", "source_task_id"):
         if type(data[name]) is not str or not data[name].strip():
@@ -124,10 +129,11 @@ def _card(data):
         checked.append(EvidenceRef(**ref))
     if len(set(checked)) != len(checked):
         raise ValueError("duplicate experience references")
-    if data["id"] != _identifier(data["category"], tags, data["summary"]):
+    triggers = checked_triggers(data.get("triggers", ()))
+    if data["id"] != _identifier(data["category"], tags, data["summary"], triggers):
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
-        data["summary"], data["detail"], data["source_task_id"], tuple(checked))
+        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers)
     if len(canonical_bytes(asdict(card))) > CARD_BYTES:
         raise _CardTooLarge("experience card exceeds byte limit")
     return card
@@ -341,7 +347,7 @@ def validate_experience(response, material, store, *, secrets=()):
     if not isinstance(ids, list) or not 1 <= len(ids) <= 3 or any(
         type(i) is not str or i not in material.evidence_map for i in ids) or len(set(ids)) != len(ids):
         raise LearningValidationError('invalid_evidence_ids')
-    refs = []
+    refs, entries = [], []
     for identity in ids:
         ref = material.evidence_map[identity]
         try:
@@ -349,11 +355,13 @@ def validate_experience(response, material, store, *, secrets=()):
             lines = content.splitlines()
             if bytes_hash(content) != ref.content_hash or not 1 <= ref.start_line == ref.end_line <= len(lines):
                 raise ValueError('changed evidence')
-            if parse_json(lines[ref.start_line - 1].decode("utf-8")).get("id") != identity:
+            entry = parse_json(lines[ref.start_line - 1].decode("utf-8"))
+            if entry.get("id") != identity:
                 raise ValueError('changed evidence identity')
         except (OSError, ValueError, TypeError, UnicodeError):
             raise LearningValidationError('invalid_evidence_changed') from None
         refs.append(ref)
+        entries.append(entry)
     summary = proposed["summary"]
     detail = proposed["detail"]
     tags = proposed["tags"]
@@ -363,9 +371,15 @@ def validate_experience(response, material, store, *, secrets=()):
     tags = [_redact(tag, secrets) for tag in tags]
     category = proposed["category"]
     try:
+        # Validate the original five-field proposal before adding program metadata.
         data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
             "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
             "evidence_refs": [asdict(ref) for ref in refs]}
+        _card(data)
+        triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
+        tags = normative_tags(tags, triggers)
+        data.update(id=_identifier(category, tags, summary, triggers), tags=tags,
+            triggers=[asdict(t) for t in triggers])
         return _card(data)
     except _CardTooLarge:
         raise LearningValidationError('invalid_card_size') from None
