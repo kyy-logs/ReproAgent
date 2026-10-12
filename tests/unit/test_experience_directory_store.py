@@ -94,3 +94,41 @@ def test_directory_long_path(tmp_path):
     root = tmp_path / ('a' * 100) / ('b' * 100) / 'memory'
     assert exp.append_experience(root, card(), None) == 'written'
     assert exp.load_experience_snapshot(root).cards == (card(),)
+
+
+def test_busy_snapshot_and_append_do_not_modify_body(tmp_path):
+    root = tmp_path / 'memory'
+    exp.append_experience(root, card(), None)
+    before = (root / 'model/experiences.json').read_bytes()
+    with exp._library_lock(root):
+        assert exp.load_experience_snapshot(root).state == 'store_error'
+        assert exp.append_experience(root, card('new'), None) == 'busy'
+    assert (root / 'model/experiences.json').read_bytes() == before
+
+
+def test_atomic_body_write_failure_preserves_previous_generation(tmp_path, monkeypatch):
+    import reproagent.experience_storage as storage
+    root = tmp_path / 'memory'
+    exp.append_experience(root, card(), None)
+    before = (root / 'model/experiences.json').read_bytes()
+    def fail(*args): raise OSError('cannot replace')
+    monkeypatch.setattr(storage, 'atomic_write', fail)
+    assert exp.append_experience(root, card('new'), None) == 'store_error'
+    assert (root / 'model/experiences.json').read_bytes() == before
+
+
+def test_total_library_limit_is_shared_by_categories(tmp_path):
+    root = tmp_path / 'memory'
+    for category in ('model', 'workflow'):
+        members = []
+        for i in range(340):
+            sample = replace(card(str(i), 'x' * 1400), category=category)
+            sample = replace(sample, id=exp._identifier(category, sample.tags, sample.summary))
+            members.append(exp._card_record(sample))
+        folder = root / category
+        folder.mkdir(parents=True)
+        (folder / 'experiences.json').write_bytes(canonical_bytes({'schema_version':2,'category':category,'items':members}))
+    assert exp.load_experience_snapshot(root).state == 'store_error'
+    before = (root / 'model/experiences.json').read_bytes()
+    assert exp.append_experience(root, card('new'), None) == 'store_error'
+    assert (root / 'model/experiences.json').read_bytes() == before

@@ -77,7 +77,7 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 
 ## Automatic experience library
 
-Optional progressive advice and automatic post-task learning are available. See [experience setup and frozen evaluation](docs/experience.md) and [task example](examples/task.experience.json). Disabled by default; real-model A/B benefit has not been measured.
+The CLI enables a shared experience library by default. The agent can browse a category's compact catalog and load one applicable lesson; post-task learning writes a validated record for later tasks. Explicit `experience_file: null` disables it. See [experience setup and frozen evaluation](docs/experience.md) and [task example](examples/task.experience.json). Real-model A/B benefit has not been measured.
 
 Every run writes an AgentScope/OpenTelemetry-backed local activity trace: what the model was sent and returned, what each tool was given and gave back, the program's checks behind an acceptance, and where the time, HTTP attempts and tokens went. It is **on by default** — `--no-trace` turns it off for one run — and never leaves the machine. See [observability](docs/observability.md).
 

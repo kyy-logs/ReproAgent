@@ -104,7 +104,8 @@ class AgentScopeExplorer(ReproAgent):
         toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context,
             experience_view=self.experience_view, evidence_views=self.evidence_views)
         return AgentScopeRuntime(model, toolkit, self.gate, self.context,
-                                 system_prompt=exploration_prompt(phase, self.candidate_parent),
+                                 system_prompt=exploration_prompt(phase, self.candidate_parent,
+                                     experience_enabled=self.experience_view is not None),
                                  store=self.store, secrets=getattr(self.gateway, 'secrets', ()), experience_view=self.experience_view)
 
 

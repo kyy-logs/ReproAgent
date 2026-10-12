@@ -38,7 +38,7 @@ def require_correctable_output(error):
         raise ModelProtocolError(f'{error.code}: repeating the same request cannot correct it') from None
 
 
-def exploration_prompt(context, candidate_parent='tests'):
+def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=False):
     """The strategy the SDK exploration phase of *context* runs under.
 
     The prompt is product policy, not a description of the phase's current state: the
@@ -65,7 +65,10 @@ def exploration_prompt(context, candidate_parent='tests'):
     parent = str(candidate_parent).strip().rstrip('/')
     if not parent or parent == '.':
         raise ValueError('the exploration phase needs a configured test area')
-    return prompt('explore').replace(CANDIDATE_PARENT_TOKEN, parent)
+    text = prompt('explore').replace(CANDIDATE_PARENT_TOKEN, parent)
+    if not experience_enabled:
+        text = text.partition('Optional historical experience tools')[0].rstrip() + '\n'
+    return text
 
 
 class ReproAgent:

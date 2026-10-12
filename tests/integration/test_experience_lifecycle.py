@@ -12,11 +12,15 @@ from tests.unit.test_experience_store import card, library, exp
 from tests.integration.test_agentscope_backends import CANDIDATE, tool_response, text_response
 
 
-def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED", priced=False, pitfalls=False):
+def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, seed=True, fail_export=False, classification="REPRODUCED", priced=False, pitfalls=False, directory=False):
     request, _, _, ctx = setup(tmp_path, projects, facts)
-    path = tmp_path / "shared-experiences.json"
+    path = tmp_path / ('shared-experiences' if directory else 'shared-experiences.json')
     if seed:
-        library(path, card(summary="empty input advice", detail="HISTORICAL_HINT"))
+        seeded = card(summary='empty input advice', detail='HISTORICAL_HINT')
+        if directory:
+            assert exp().append_experience(path, seeded, None) == 'written'
+        else:
+            library(path, seeded)
     request = replace(request, experience_file=path, learn_experience=learn)
     script = ScriptedModel(classification=classification)
     seen, main_calls, learning_calls = [], [], []
@@ -84,7 +88,13 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
                 return tool_response("list_experiences", {"category":"model"}, "catalog")
             if seed and not read:
                 read = True
-                return tool_response("read_experience", {"id":card(summary="empty input advice").id}, "memory")
+                for message in reversed(payload['messages']):
+                    if message['role'] != 'tool': continue
+                    try: page = json.loads(message['content'])
+                    except (ValueError, TypeError): continue
+                    if page.get('code') == 'ready' and page.get('items'):
+                        return tool_response('read_experience', {'id':page['items'][0]['id']}, 'memory')
+                return tool_response('request_information', {'question':'No catalog entry was displayed.'}, 'stop')
             if pitfalls and file_calls < 2:
                 file_calls += 1
                 path = 'absent.py' if file_calls == 1 else 'example/parser.py'

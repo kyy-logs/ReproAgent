@@ -44,3 +44,11 @@ def test_legacy_catalog_projection_preserves_storage_and_id():
     assert entry.name.endswith('…') and entry.description.endswith('…')
     assert before == exp._card_record(legacy)
     assert entry.id == legacy.id
+
+
+def test_product_prompt_only_advertises_registered_experience_tools(tmp_path, projects, facts):
+    from reproagent.core.agent import exploration_prompt
+    from tests.unit.test_agent import phase_context
+    phase = phase_context(facts, tmp_path, projects)
+    assert 'list_experiences' not in exploration_prompt(phase)
+    assert 'list_experiences' in exploration_prompt(phase, experience_enabled=True)
