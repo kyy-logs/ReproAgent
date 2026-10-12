@@ -34,7 +34,7 @@ from .dependency import require_agentscope
 from .evidence import READ_LINE_CHARACTERS, EvidenceLedger, original_lines
 from .snapshot_backend import SnapshotRefusal, UnverifiedContent
 from ...core.budget import BudgetStopped
-from ...core.candidate_service import CandidateService
+from ...core.candidate_service import CandidateService, GroundedContractRequired
 from ...core.models import CandidateDraft, DraftFile, EvidenceRef
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import canonical_bytes
@@ -491,7 +491,13 @@ class WriteCandidate(_DomainTool):
             tuple(DraftFile(item.path, item.content.encode("utf-8"), item.role) for item in params.files),
             self.candidates.snapshot.snapshot_id, contract.contract_id, contract.version, params.hypothesis,
             expectation_sources=contract.sources)
-        candidate = self.candidates.publish(draft)
+        try:
+            candidate = self.candidates.publish(draft)
+        except GroundedContractRequired as exc:
+            payload = {"code": exc.code, "message": str(exc), "missing": list(exc.missing),
+                "next_action": "Resolve missing information and obtain original source evidence before revise_contract; use request_information if required facts are unavailable."}
+            return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],
+                state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
         self.gate.finish(PhaseResult("candidate", candidate_id=candidate.candidate_id))
         return self._result({"status": "candidate_published", "candidate_id": candidate.candidate_id,
                              "contract_id": candidate.contract_id, "contract_version": candidate.contract_version,

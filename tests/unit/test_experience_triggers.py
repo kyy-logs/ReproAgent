@@ -127,3 +127,13 @@ def test_exact_legacy_card_boundary_survives_read_and_append(tmp_path):
     stored = json.loads(path.read_text(encoding='utf-8'))['items']
     assert canonical_bytes(stored[0]) == canonical_bytes(legacy)
     assert all(len(canonical_bytes(item)) <= 2048 for item in stored)
+
+
+@pytest.mark.parametrize("fact", [
+    {"kind":"exploration.tool_error","tool":"write_candidate","code":"GROUNDED_CONTRACT_REQUIRED"},
+    {"tool":"write_candidate","state":"error","link_state":"matched","arguments":{"files":[]},"error_code":"GROUNDED_CONTRACT_REQUIRED"},
+])
+def test_grounded_frozen_fact_derives_exact_condition(fact):
+    from reproagent.experience_triggers import evidence_triggers
+    assert [asdict(t) for t in evidence_triggers({"kind":"tool_error","text":json.dumps(fact)})] == [
+        {"kind":"tool_error","tool":"write_candidate","code":"GROUNDED_CONTRACT_REQUIRED"}]

@@ -23,6 +23,7 @@ def trigger_from_fact(fact):
     if not all(type(value) is str for value in (kind, tool, code)):
         return None
     valid = (kind == "tool_error" and tool == "revise_contract" and code in CITATION_CODES
+        or kind == "tool_error" and tool == "write_candidate" and code == "GROUNDED_CONTRACT_REQUIRED"
         or kind == "permission" and tool in TOOLS and code in ("DENIED", "RESERVED_FOR_PUBLISHING")
         and (code != "RESERVED_FOR_PUBLISHING" or tool in ("Read", "Grep", "Glob"))
         or kind == "protocol_error" and tool == "" and code in PROTOCOL_CODES)
@@ -58,7 +59,7 @@ def evidence_triggers(entry):
         trigger = trigger_from_fact({"kind": "protocol_error", "tool": "", "code": fact.get("code")})
     elif fact.get("state") == "error" and fact.get("link_state") == "matched":
         arguments = fact.get("arguments")
-        if isinstance(arguments, dict) and "source_refs" in arguments:
+        if isinstance(arguments, dict) and (fact.get("tool") != "revise_contract" or "source_refs" in arguments):
             trigger = trigger_from_fact({"kind": "tool_error", "tool": fact.get("tool"),
                 "code": fact.get("error_code")})
     return (trigger,) if trigger is not None else ()
