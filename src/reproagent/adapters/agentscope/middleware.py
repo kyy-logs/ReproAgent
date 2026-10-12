@@ -28,6 +28,7 @@ from importlib.metadata import PackageNotFoundError, version
 from agentscope.message import SystemMsg, ToolCallBlock
 from agentscope.middleware import MiddlewareBase
 from agentscope.model import ChatResponse
+from agentscope.tool import ToolResponse
 from agentscope.permission import PermissionBehavior, PermissionDecision
 
 from .dependency import require_agentscope
@@ -36,6 +37,7 @@ from ...core.budget import BudgetStopped
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
 from ...observability import mark, tool_call_key
+from ...experience_triggers import ERROR_METADATA, trigger_from_fact
 
 #: The phase these events belong to; one runtime runs the exploration phases of one task.
 PHASE = "EXPLORATION"
@@ -103,7 +105,7 @@ class ExplorationMiddleware(MiddlewareBase):
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, context, gate, store=None, *, allowed_tools=TOOL_NAMES) -> None:
+    def __init__(self, context, gate, store=None, *, allowed_tools=TOOL_NAMES, experience_event=None, experience_input=None) -> None:
         require_agentscope()
         self.context, self.gate, self.store = context, gate, store
         self.allowed_tools = tuple(allowed_tools)
@@ -111,6 +113,7 @@ class ExplorationMiddleware(MiddlewareBase):
         #: The phase's contract, handed over by the runtime when the phase starts.  Until
         #: then there is nothing to reserve the last steps for.
         self.contract = None
+        self.experience_event, self.experience_input = experience_event, experience_input
 
     @property
     def steps_remaining(self) -> int:
@@ -159,6 +162,13 @@ class ExplorationMiddleware(MiddlewareBase):
             PhaseProtocolError: the reply was refused whole.  Nothing of it has run, and
                 nothing of it enters the conversation.
         """
+        if self.experience_input is not None:
+            try:
+                input_kwargs = self.experience_input(agent, input_kwargs)
+            except BudgetStopped:
+                raise
+            except Exception:
+                pass  # Optional advice cannot replace the original model input.
         model = input_kwargs["current_model"]
         response = await model(
             messages=input_kwargs["messages"], tools=input_kwargs["tools"],
@@ -207,7 +217,38 @@ class ExplorationMiddleware(MiddlewareBase):
             "sdk_tool_input", input_kwargs.get("tool_input"), source="sdk_tool_input")
         self.record("exploration.action", action=name if name in self.allowed_tools else "", result_code=code,
                     arguments_hash=self._arguments_hash(input_kwargs.get("tool_input")))
+        if code != "ALLOWED":
+            self._experience_fact({"kind":"permission", "tool":name, "code":code})
         return decision
+
+    def _experience_fact(self, fact):
+        if self.experience_event is None or trigger_from_fact(fact) is None:
+            return
+        try:
+            self.experience_event(fact)
+        except BudgetStopped:
+            raise
+        except Exception:
+            pass
+
+    async def on_acting(self, agent, input_kwargs, next_handler):
+        # Terminal metadata comes from the tool itself; no error-prose matching.
+        call = input_kwargs.get("tool_call")
+        name = getattr(call, "name", "")
+        observed = False
+        gen = next_handler()
+        try:
+            async for item in gen:
+                if isinstance(item, ToolResponse) and not observed:
+                    observed = True
+                    if str(item.state) == "error":
+                        fact = {"kind":"tool_error", "tool":name, "code":item.metadata.get(ERROR_METADATA)}
+                        if trigger_from_fact(fact) is not None:
+                            self.record("exploration.tool_error", action=name, result_code=fact["code"])
+                            self._experience_fact(fact)
+                yield item
+        finally:
+            await gen.aclose()
 
     def _reserved_for_publishing(self, name) -> bool:
         """Whether this reader must wait: only the reserved steps remain to end the phase.

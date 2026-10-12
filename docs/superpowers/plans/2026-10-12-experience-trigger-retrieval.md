@@ -32,6 +32,8 @@
 
 ### Task 1: Trigger contract and evidence-backed writing
 
+Status: complete; RED 5 failures, GREEN 81 passed / 1 skipped. See acceptance ledger for later boundary regressions.
+
 **Files:** Create src/reproagent/experience_triggers.py, tests/unit/test_experience_triggers.py. Modify src/reproagent/experience.py, src/reproagent/learning_material.py, src/reproagent/prompts/extract_experience.md. Test existing store/learning/material/capture tests.
 
 **Interfaces:** `ExperienceTrigger(kind: str, tool: str, code: str)` frozen dataclass; `trigger_from_fact(fact: dict) -> ExperienceTrigger | None`; `evidence_triggers(entry: dict) -> tuple[ExperienceTrigger,...]`. `ExperienceCard.triggers: tuple[ExperienceTrigger,...] = ()`; `_identifier(..., triggers=())` preserves legacy identity when empty. Metadata key `reproagent_error_code` is produced by product tools only. Parser validates closed kind/tool/code combinations, never parses free result text.
@@ -45,6 +47,8 @@
 
 ### Task 2: Cumulative view and event matching
 
+Status: complete; RED 7 failures, GREEN 13 passed.
+
 **Files:** Modify src/reproagent/experience.py; create tests/unit/test_experience_trigger_view.py; existing tests/unit/test_experience_view.py.
 
 **Interfaces:** `ExperienceView.match_event(trigger) -> summaries` yields only unshown exact matches within remaining total count/bytes; no library reads. `admit_summaries(ids)` marks actual display; `restrict_summaries(ids)` keeps first-phase compatibility and excludes dropped suggestions. `read` remains one successful lookup of actually admitted ID. View keeps proposed and admitted cards separately and reserves consumed detail bytes.
@@ -55,6 +59,8 @@
 - [ ] Commit `feat: retrieve pitfall experience on matching runtime events` and ledger.
 
 ### Task 3: SDK event capture and bounded next-round injection
+
+Status: complete; SDK regression 66 passed; compact facts, trace and learning/capture checks 48 passed. Additional file: src/reproagent/observability.py (two controlled trace attribute keys).
 
 **Files:** Modify src/reproagent/adapters/agentscope/tools.py, middleware.py, runtime.py; create tests/integration/test_agentscope_experience_triggers.py. Existing runtime/domain/experience tests.
 

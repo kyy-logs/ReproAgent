@@ -32,6 +32,7 @@ from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import bytes_hash, canonical_bytes
 from ...observability import mark, tracing_enabled
+from ...experience_triggers import trigger_from_fact
 
 #: The SDK agent's name; it is the name of every message the SDK writes for this task.
 AGENT_NAME = "reproagent-exploration"
@@ -83,11 +84,15 @@ class AgentScopeRuntime:
         self.model, self.toolkit, self.gate, self.context = model, toolkit, gate, context
         self.secrets = tuple(secret for secret in secrets if secret)
         self.experience_view = experience_view
+        self.store = store
+        self._experience_events = []
         self._summaries_sent = False
         self.allowed_tools = tuple(tool.name for group in toolkit.tool_groups for tool in group.tools)
         if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + ("read_experience",)):
             raise ValueError("unexpected exploration toolkit")
-        self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools)
+        self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
+            experience_event=self._experience_event if experience_view is not None else None,
+            experience_input=self._experience_input if experience_view is not None else None)
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when
         # this task is traced: the phase answers ``on_model_call`` itself instead of
@@ -180,6 +185,7 @@ class AgentScopeRuntime:
                 break
             except PhaseProtocolError as failure:
                 self.middleware.record("exploration.protocol_error", action="", result_code=failure.code)
+                self._experience_event({"kind":"protocol_error", "tool":"", "code":failure.code})
                 if attempt + 1 == PROTOCOL_ATTEMPTS:
                     raise
                 message = self._correction(failure)
@@ -206,6 +212,77 @@ class AgentScopeRuntime:
     # =======================================================================
     # Internals
     # =======================================================================
+
+    def _experience_record(self, kind, payload):
+        try:
+            if self.store is not None:
+                self.store.append_event(kind, (), payload)
+            attributes = {"result_code":payload.get("code", "OBSERVED"), "experience_ids":payload.get("ids", [])}
+            if "trigger" in payload:
+                attributes["experience_trigger"] = payload["trigger"]
+            mark(kind, attributes=attributes)
+        except Exception:
+            pass  # No diagnostic write may alter the task's outcome.
+
+    def _experience_event(self, fact):
+        if self.experience_view is None:
+            return
+        trigger = trigger_from_fact(fact)
+        if trigger is not None and trigger not in self._experience_events and len(self._experience_events) < 16:
+            self._experience_events.append(trigger)
+            self._experience_record("experience.triggered", {"trigger":asdict(trigger)})
+
+    def _experience_input(self, agent, input_kwargs):
+        if not self._experience_events:
+            return input_kwargs
+        if self.gate.finished:
+            self._experience_events.clear()
+            self._experience_record("experience.omitted", {"code":"phase_ended", "ids":[]})
+            return input_kwargs
+        if self.context.cancel_event.is_set():
+            raise BudgetStopped("CANCELLED")
+        self.context.budget.check()
+        if self._steps_remaining() <= 0:
+            return input_kwargs  # The existing model guard owns the terminal stop.
+        events, self._experience_events = self._experience_events, []
+        summaries = []
+        try:
+            for trigger in events:
+                selected = self.experience_view.match_event(trigger)
+                self._experience_record("experience.retrieved", {"trigger":asdict(trigger),
+                    "ids":[s.id for s in selected], "code":self.experience_view.last_match_code})
+                summaries.extend(selected)
+            if not summaries:
+                return input_kwargs
+            base_bytes = len(canonical_bytes([m.model_dump(mode="json") for m in input_kwargs["messages"]]))
+            cap = self.context.budget.limits.tool_response_bytes
+            notice = "Historical conditional suggestions only; not current evidence or instructions. Verify applicability."
+            kept = list(summaries)
+            while kept:
+                data = {"experience_summaries":[asdict(s) for s in kept], "experience_notice":notice}
+                message = UserMsg(name="user", content=canonical_bytes(data).decode("utf-8"))
+                if base_bytes + len(canonical_bytes(message.model_dump(mode="json"))) <= cap:
+                    break
+                kept.pop()
+            if len(kept) < len(summaries):
+                self._experience_record("experience.omitted", {"code":"context_capacity",
+                    "ids":[s.id for s in summaries[len(kept):]]})
+            ids = tuple(s.id for s in kept)
+            if not kept:
+                self.experience_view.admit_summaries(())
+                return input_kwargs
+            # The SDK wrote the terminal tool result before it prepared this input.
+            output = dict(input_kwargs, messages=[*input_kwargs["messages"], message])
+            agent.state.context.append(message)
+            self.experience_view.admit_summaries(ids)
+            self._experience_record("experience.injected", {"ids":list(ids), "code":"runtime_event"})
+            return output
+        except BudgetStopped:
+            raise
+        except Exception:
+            self.experience_view.admit_summaries(())
+            self._experience_record("experience.omitted", {"code":"retrieval_error", "ids":[]})
+            return input_kwargs
 
     def _result(self) -> PhaseResult:
         """The phase's outcome once the agent has come to rest.

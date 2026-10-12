@@ -19,9 +19,13 @@
 
 ## 什么时候读
 
-准备阶段校验路径并读取一次库，固定任务视图。完成原始 Issue 分析后，按 Issue 与 target_modules 匹配经验：标签命中和摘要关键词命中计分，同分按 ID 排序，零分不返回。英文按词匹配，中文使用相邻双字。
+准备阶段校验路径并读取一次库，固定任务视图。完成原始 Issue 分析后，无结构化触发条件的卡按 Issue 与 target_modules 匹配：标签命中和摘要关键词命中计分，同分按 ID 排序，零分不返回。英文按词匹配，中文使用相邻双字。有 triggers 的过程卡不参与这一检索，不因为工具可用就提前加载。
 
-首轮探索最多展示 3 条 id/summary；Agent 通过 AgentScope 只读工具 `read_experience` 按需读取一条详情。整个任务只能成功读一次，契约修订和候选重试不重新加载。摘要列表与详情的 UTF-8 JSON 合计最多 2048 字节；容量不足时拒绝详情或减少摘要，不截断正文，不挤掉原始 Issue/契约。分析和 Verifier 不直接加载经验，经验引用不能申请当前原版契约修订。
+探索中，真实工具错误、最终权限拒绝或协议纠错触发从同一冻结库按需检索；条件 kind/tool/code 全部一致才匹配。摘要在下一次已有模型调用前作为历史建议送入，原始工具结果保持完整。初版支持 revise_contract 的 SOURCE_RANGE_NOT_DISPLAYED/SOURCE_HASH_MISMATCH，六工具的 DENIED，Read/Grep/Glob 的 RESERVED_FOR_PUBLISHING，以及 MULTIPLE_TOOL_CALLS/UNKNOWN_TOOL/INVALID_TOOL_INPUT。未知错误文本不猜测为上述条件。
+
+首轮及探索中累计最多展示 3 条独立 id/summary；Agent 通过 AgentScope 只读工具 `read_experience` 按需读取一条详情。整个任务只能成功读一次，契约修订和候选重试不重读库、不重置配额、不重复展示已注入卡。累计摘要列表与已读详情的 UTF-8 JSON 合计最多 2048 字节；容量不足跳过经验，不截断正文、不挤掉原始 Issue/契约/工具结果。动态摘要实际进入上下文后才开放对应详情；上下文容量按完整 SDK 消息投影加新消息核对。分析和 Verifier 不直接加载经验，经验引用不能申请当前原版契约修订。
+
+events.jsonl 和 trace 的 experience.triggered/retrieved/injected/omitted 分别说明实际情境、候选及匹配结果、实际注入和省略原因。trace 只增加受控 experience_trigger/experience_ids 元数据；不增加模型调用。整个功能不依赖 trace 开关。
 
 ## 什么时候写，谁写
 
@@ -43,7 +47,9 @@
 
 每卡最多 5 个短标签，每标签最多 64 个 Unicode 字符。重叠时优先选择具体框架约束，再选择生成错误模式，其余归工作流程。
 
-单个 JSON 库根字段为 schema_version=1 和 items；每卡包含 id、category、tags、summary、detail、source_task_id、evidence_refs，最终 UTF-8 JSON 最多 2048 字节，全库最多 1 MiB。ID 来自规范化 category/tags/summary 的 SHA256；同 ID 跳过，旧 detail 不覆盖。
+单个 JSON 库根字段为 schema_version=1 和 items；每卡包含 id、category、tags、summary、detail、source_task_id、evidence_refs，可选 triggers 为最多 3 个受控 kind/tool/code 条件。最终 UTF-8 JSON 最多 2048 字节，全库最多 1 MiB。旧卡缺 triggers 按空列表读取，空条件 ID 算法保持规范化 category/tags/summary 的 SHA256；非空条件也参与 ID，避免不同适用情境被误去重。同 ID 跳过，旧 detail 不覆盖。读取不改写旧库、不自动给旧卡补造条件。
+
+写入和检索共用同一套受控事件定义。模型仍只输出五字段，summary/detail 写明适用条件、实际观察和条件建议。程序核对所引用 EID 的冻结原子，从这些原子中的实际错误 metadata 或小型受控事件提取 triggers；不从摘要猜条件，不扫描本次所有工具，也不因任务 EXHAUSTED 就声称某个建议已有效。tool:/error: 标签由程序生成，模型的同名命名空间标签被去除，其余名额保留描述标签，总数仍最多 5 个。这只验证条件的事实来源，不证明建议语义或效果。
 
 写入时用稳定旁路文件做非阻塞系统锁，锁内重新读取、校验、去重和测量，再原子替换。竞争返回 busy；损坏或容量已满返回 store_error；旧库保留。MVP 只追加和精确去重，不自动合并、衰减、删卡、更新旧卡或扩容。
 
@@ -101,7 +107,7 @@ HTTP/token/费用总计已经包含真实学习尝试一次，learning 分项只
 
 离线测试验证真实 SDK + MockTransport + pytest 的调用、时序、引用和交付。提高复现率的结论必须来自固定模型/预算/环境、学习集与评测集分离、冻结库的关闭/开启对照；当前未执行真实模型 A/B。
 
-A/B 的有效性不能只看库的 ready/count：必须检查开启臂实际模型请求包含非空 experience_summaries，关闭臂未注入经验，并核对每次运行前后冻结库哈希不变。experience.matched 表示选中，不保证随后通过上下文容量检查而进入模型；read_experience 则表示是否进一步读详情。同用例生成的卡也可能因关键词零分而未匹配，不能强行注入后还称为当前匹配策略的自然效果。每臂至少两次只能作为小样本试验；同一 Issue 的学习后重跑衡量重复任务帮助，不能证明跨 Issue 泛化。
+A/B 的有效性不能只看库的 ready/count：必须检查开启臂实际模型请求包含非空 experience_summaries，关闭臂未注入经验，并核对每次运行前后冻结库哈希不变。experience.matched/experience.retrieved 表示选中，不保证随后通过上下文容量检查而进入模型；experience.injected 表示运行时实际加入，wire request 才是最终核对依据；read_experience 表示是否进一步读详情。有条件卡首轮零匹配不意味着后来无法检索，需要等对应真实事件发生后判断。若完整任务没有实际注入，停止把后续结果当作卡片效果，不强行补条件。每臂至少两次只能作为小样本试验；同一 Issue 的学习后重跑不能证明跨 Issue 泛化。
 
 开启经验功能，即使匹配结果为空，也可能增加 read_experience 工具。因此零命中不能推出两个运行的全部输入相同。若要测卡片内容的作用，可让控制臂读取有效空库、两臂都禁止写回并保留相同工具表；另外检查实际 wire request 的工具集一致。完全禁用经验与开启经验的对照则衡量整个功能开关，不能把差异单独归因于卡片内容。
 

@@ -43,6 +43,7 @@ ALLOWED_ATTRIBUTES = frozenset({
     "purpose", "tool", "tool_call_key", "tool_set", "result_code", "execution_role",
     "candidate_id", "run_id", "contract_id", "contract_version", "check", "check_source",
     "permission_result", "error_category", "classification_source",
+    "experience_ids", "experience_trigger",
     "checks", "reason_origin", "exit_code", "stop_reason", "cleanup_ok", "health",
     "attempt", "output_limit", "budget", "usage", "cost", "unknown", "http_status_code",
 })

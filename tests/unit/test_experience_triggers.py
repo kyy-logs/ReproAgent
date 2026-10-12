@@ -82,3 +82,30 @@ def test_trigger_derivation_keeps_original_validation(tmp_path):
     with pytest.raises(exp.LearningValidationError) as error:
         exp.validate_experience(proposal, material, store)
     assert error.value.code == "invalid_fields"
+
+
+def test_reserved_tag_namespace_cannot_be_forged_with_whitespace(tmp_path):
+    store, material, proposal = learning_fixture(tmp_path, cited=False)
+    proposal["experience"]["tags"] = [" Tool:revise_contract ", " ERROR:source_range_not_displayed "]
+    learned = exp.validate_experience(proposal, material, store)
+    assert learned.tags == ()
+
+
+@pytest.mark.parametrize("fact", [
+    {"kind":"tool_error", "tool":"Read", "code":"SOURCE_RANGE_NOT_DISPLAYED"},
+    {"kind":"permission", "tool":"write_candidate", "code":"RESERVED_FOR_PUBLISHING"},
+    {"kind":"permission", "tool":"Read", "code":"ALLOWED"},
+    {"kind":"protocol_error", "tool":"Read", "code":"MULTIPLE_TOOL_CALLS"},
+    {"kind":"tool_error", "tool":"revise_contract", "code":False},
+])
+def test_unknown_or_impossible_conditions_cannot_be_stored(fact):
+    from reproagent.experience_triggers import trigger_from_fact
+    assert trigger_from_fact(fact) is None
+
+
+def test_small_controlled_error_fact_keeps_trigger_without_large_arguments():
+    from reproagent.experience_triggers import evidence_triggers
+    entry = {"kind":"tool_error","text":json.dumps({"seq":5,"kind":"exploration.tool_error",
+        "tool":"revise_contract","code":"SOURCE_RANGE_NOT_DISPLAYED"})}
+    assert [asdict(t) for t in evidence_triggers(entry)] == [
+        {"kind":"tool_error","tool":"revise_contract","code":"SOURCE_RANGE_NOT_DISPLAYED"}]

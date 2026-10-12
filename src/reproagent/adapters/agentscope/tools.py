@@ -38,6 +38,7 @@ from ...core.candidate_service import CandidateService
 from ...core.models import CandidateDraft, DraftFile, EvidenceRef
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import canonical_bytes
+from ...experience_triggers import ERROR_METADATA
 from ...paths import relative_name
 
 #: The phase's whole surface, in the order the toolkit registers it.  Nothing else is
@@ -500,6 +501,12 @@ class WriteCandidate(_DomainTool):
                              "note": "The candidate is registered immutably and the controller executes it next. This is not a verdict: no test has run."})
 
 
+class _CitationRefusal(UnverifiedContent):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
 class ReviseContract(_DomainTool):
     """Requests a contract revision, citing only lines a tool displayed."""
 
@@ -515,7 +522,11 @@ class ReviseContract(_DomainTool):
         """Accept the revision request if every citation is a displayed original range."""
         self._open()
         params = _ReviseContractParams(**kwargs)
-        refs = tuple(self._cite(item) for item in params.source_refs)
+        try:
+            refs = tuple(self._cite(item) for item in params.source_refs)
+        except _CitationRefusal as exc:
+            return ToolChunk(content=[TextBlock(text=_capped(self.context, str(exc)))],
+                state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
         self.gate.finish(PhaseResult("revise_contract", source_refs=refs, reason=params.reason))
         return self._result({"status": "revision_requested", "reason": params.reason,
                              "source_refs": [{"path": ref.path, "content_hash": ref.content_hash,
@@ -531,9 +542,9 @@ class ReviseContract(_DomainTool):
         """
         canonical = canonical_ref(self.views.search, item.path, item.start_line, item.end_line)
         if canonical.content_hash != item.content_hash:
-            raise UnverifiedContent(f"the cited hash is not the frozen hash of {item.path!r}; copy the hash an evidence block listed")
+            raise _CitationRefusal("SOURCE_HASH_MISMATCH", f"the cited hash is not the frozen hash of {item.path!r}; copy the hash an evidence block listed")
         if not self.views.contains(canonical):
-            raise UnverifiedContent(f"lines {item.start_line}-{item.end_line} of {item.path!r} were not displayed whole by Read or Grep; "
+            raise _CitationRefusal("SOURCE_RANGE_NOT_DISPLAYED", f"lines {item.start_line}-{item.end_line} of {item.path!r} were not displayed whole by Read or Grep; "
                                     "cite a range an evidence block listed exactly, and Read the exact lines first if you need a narrower one")
         return canonical
 

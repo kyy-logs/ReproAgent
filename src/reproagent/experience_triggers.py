@@ -52,6 +52,8 @@ def evidence_triggers(entry):
     trigger = None
     if fact.get("kind") == "exploration.action":
         trigger = trigger_from_fact({"kind": "permission", "tool": fact.get("tool"), "code": fact.get("code")})
+    elif fact.get("kind") == "exploration.tool_error":
+        trigger = trigger_from_fact({"kind": "tool_error", "tool": fact.get("tool"), "code": fact.get("code")})
     elif fact.get("kind") == "exploration.protocol_error":
         trigger = trigger_from_fact({"kind": "protocol_error", "tool": "", "code": fact.get("code")})
     elif fact.get("state") == "error" and fact.get("link_state") == "matched":
@@ -64,7 +66,7 @@ def evidence_triggers(entry):
 
 def normative_tags(tags, triggers):
     """Reserve tool/error namespaces for program-derived facts only."""
-    descriptive = [tag for tag in tags if not tag.casefold().startswith(("tool:", "error:"))]
+    descriptive = [tag for tag in tags if not tag.strip().casefold().startswith(("tool:", "error:"))]
     keys = []
     for trigger in triggers:
         for key in ("tool:" + trigger.tool if trigger.tool else "", "error:" + trigger.code.casefold()):
