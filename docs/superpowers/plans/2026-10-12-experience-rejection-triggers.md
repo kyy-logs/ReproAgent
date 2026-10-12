@@ -55,6 +55,10 @@
 
 - [x] Offline capture -> frozen cited EID -> validated five-field proposal -> stored new card -> new-task corresponding event -> next wire injection, frozen library unchanged, shared quota intact.
 - [x] Update supported trigger list, source ownership and old-card relearning notes; preserve distinction NONE vs candidate count and A/B actual injection gate.
-- [ ] Fresh whole-branch review using GPT-6.1-sol (not Astra), fix Important findings with RED->GREEN tests.
-- [ ] Run full pytest with external basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-experience-triggers-verification/rejections-full, redirect E:/ReproAgent/.local/experience-rejections/full.log; expect exit0. Do not change source during final run.
-- [ ] Commit docs/acceptance, preserve branch; report evidence and actual A/B limits.
+- [x] Fresh whole-branch review using GPT-6.1-sol (not Astra), fix Important findings with RED->GREEN tests.
+- [x] Run full pytest with external basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-experience-triggers-verification/rejections-full, redirect E:/ReproAgent/.local/experience-rejections/full.log; expect exit0. Do not change source during final run.
+- [x] Commit docs/acceptance, preserve branch; report evidence and actual A/B limits.
+
+## Completed verification
+
+Grounded42 passed; learning/capture/material28 passed; Controller/SDK/trigger71 passed; additional Verifier/large-review/runtime/material40 passed; fresh GPT-6.1-sol review49 passed with no findings; final full suite839 passed /5 skipped,664.00s,exit0. All source acceptance at c58a165. No real provider/Astra; runtime budgets and validators unchanged.
