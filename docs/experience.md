@@ -21,7 +21,7 @@
 
 准备阶段校验路径并读取一次库，固定任务视图。完成原始 Issue 分析后，无结构化触发条件的卡按 Issue 与 target_modules 匹配：标签命中和摘要关键词命中计分，同分按 ID 排序，零分不返回。英文按词匹配，中文使用相邻双字。有 triggers 的过程卡不参与这一检索，不因为工具可用就提前加载。
 
-探索中，真实工具错误、最终权限拒绝或协议纠错触发从同一冻结库按需检索；条件 kind/tool/code 全部一致才匹配。摘要在下一次已有模型调用前作为历史建议送入，原始工具结果保持完整。初版支持 revise_contract 的 SOURCE_RANGE_NOT_DISPLAYED/SOURCE_HASH_MISMATCH，六工具的 DENIED，Read/Grep/Glob 的 RESERVED_FOR_PUBLISHING，以及 MULTIPLE_TOOL_CALLS/UNKNOWN_TOOL/INVALID_TOOL_INPUT。未知错误文本不猜测为上述条件。
+探索中，真实工具错误、最终权限拒绝、协议纠错或 Controller 确认的验收超限触发从同一冻结库按需检索；条件 kind/tool/code 全部一致才匹配。摘要在下一次已有模型调用前作为历史建议送入，原始工具结果保持完整。初版支持 revise_contract 的 SOURCE_RANGE_NOT_DISPLAYED/SOURCE_HASH_MISMATCH，六工具的 DENIED，Read/Grep/Glob 的 RESERVED_FOR_PUBLISHING，以及 MULTIPLE_TOOL_CALLS/UNKNOWN_TOOL/INVALID_TOOL_INPUT。另支持 tool_error/write_candidate/GROUNDED_CONTRACT_REQUIRED 与 controller_error/空工具/REVIEW_CONTEXT_TOO_LARGE。前者仅由 CandidateService 实际 grounded 校验失败生成，正文列固定缺项 expected/sources/missing_information；后者来自 Controller 在原版执行后的实际程序拒绝，作为 AgentContext.experience_events 只传入下一阶段，不从反馈字符串或整个历史猜测。未知错误文本不猜测为上述条件。
 
 首轮及探索中累计最多展示 3 条独立 id/summary；Agent 通过 AgentScope 只读工具 `read_experience` 按需读取一条详情。整个任务只能成功读一次，契约修订和候选重试不重读库、不重置配额、不重复展示已注入卡。累计摘要列表与已读详情的 UTF-8 JSON 合计最多 2048 字节；容量不足跳过经验，不截断正文、不挤掉原始 Issue/契约/工具结果。动态摘要实际进入上下文后才开放对应详情；上下文容量按完整 SDK 消息投影加新消息核对。分析和 Verifier 不直接加载经验，经验引用不能申请当前原版契约修订。
 
@@ -49,7 +49,9 @@ events.jsonl 和 trace 的 experience.triggered/retrieved/injected/omitted 分�
 
 单个 JSON 库根字段为 schema_version=1 和 items；每卡包含 id、category、tags、summary、detail、source_task_id、evidence_refs，可选 triggers 为最多 3 个受控 kind/tool/code 条件。最终 UTF-8 JSON 最多 2048 字节，全库最多 1 MiB。旧卡缺 triggers 按空列表读取，空条件 ID 算法保持规范化 category/tags/summary 的 SHA256；非空条件也参与 ID，避免不同适用情境被误去重。同 ID 跳过，旧 detail 不覆盖。读取不改写旧库、不自动给旧卡补造条件。
 
-写入和检索共用同一套受控事件定义。模型仍只输出五字段，summary/detail 写明适用条件、实际观察和条件建议。程序核对所引用 EID 的冻结原子，从这些原子中的实际错误 metadata 或小型受控事件提取 triggers；不从摘要猜条件，不扫描本次所有工具，也不因任务 EXHAUSTED 就声称某个建议已有效。tool:/error: 标签由程序生成，模型的同名命名空间标签被去除，其余名额保留描述标签，总数仍最多 5 个。这只验证条件的事实来源，不证明建议语义或效果。
+写入和检索共用同一套受控事件定义。新增 grounded 拒绝保留工具 metadata 和小型受控事件；验收超限保留 action.rejected/action=run_candidate 的事实，学习解析同一条件。旧卡不自动补造触发条件，应以新版重新学习。
+
+模型仍只输出五字段，summary/detail 写明适用条件、实际观察和条件建议。程序核对所引用 EID 的冻结原子，从这些原子中的实际错误 metadata 或小型受控事件提取 triggers；不从摘要猜条件，不扫描本次所有工具，也不因任务 EXHAUSTED 就声称某个建议已有效。tool:/error: 标签由程序生成，模型的同名命名空间标签被去除，其余名额保留描述标签，总数仍最多 5 个。这只验证条件的事实来源，不证明建议语义或效果。
 
 写入时用稳定旁路文件做非阻塞系统锁，锁内重新读取、校验、去重和测量，再原子替换。竞争返回 busy；损坏或容量已满返回 store_error；旧库保留。MVP 只追加和精确去重，不自动合并、衰减、删卡、更新旧卡或扩容。
 
@@ -112,3 +114,5 @@ A/B 的有效性不能只看库的 ready/count：必须检查开启臂实际模�
 开启经验功能，即使匹配结果为空，也可能增加 read_experience 工具。因此零命中不能推出两个运行的全部输入相同。若要测卡片内容的作用，可让控制臂读取有效空库、两臂都禁止写回并保留相同工具表；另外检查实际 wire request 的工具集一致。完全禁用经验与开启经验的对照则衡量整个功能开关，不能把差异单独归因于卡片内容。
 
 CLI learning.event_recorded=false 表示学习汇总事件未保存；已收集的 HTTP、token、费用和经验 ID 仍保留在内存返回结果中，stderr 提示保存失败，主退出码保持原值。过深或损坏的库 JSON 按 store_error 关闭本任务的经验功能，不停止主复现，也不覆盖旧库。
+
+证据等级 NONE 表示没有被认可的复现证据，不代表没有生成候选或执行测试；判断探索进度应同时核对候选数、original 执行数和验收结果。SINGLE_OBSERVATION 表示单次复现已被认可，仍需独立重跑确认。

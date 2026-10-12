@@ -32,11 +32,11 @@
 
 **Interfaces:** GroundedContractRequired(ValueError) owns code and tuple missing. Supported trigger tool_error/write_candidate/GROUNDED_CONTRACT_REQUIRED; tool returns ERROR with reproagent_error_code. Existing hook delivers small factual exploration.tool_error.
 
-- [ ] Write RED tests for actual ungrounded write refusal, exact missing/metadata, no stored candidate/phase finish, next-request injection; cited complete and compact facts yield triggers, wrong tool/uncited fact do not.
-- [ ] Run named tests; expect missing controlled code/trigger assertions to fail.
-- [ ] Implement typed source refusal and narrow tool conversion; extend closed combos, controlled learning code, and evidence parser without removing citation-specific safeguards.
-- [ ] Run domain tools, candidate/phase, learning/capture/material and trigger tests; expect GREEN.
-- [ ] Commit fix: expose grounded publication refusal as a learning trigger.
+- [x] Write RED tests for actual ungrounded write refusal, exact missing/metadata, no stored candidate/phase finish, next-request injection; cited complete and compact facts yield triggers, wrong tool/uncited fact do not.
+- [x] Run named tests; expect missing controlled code/trigger assertions to fail.
+- [x] Implement typed source refusal and narrow tool conversion; extend closed combos, controlled learning code, and evidence parser without removing citation-specific safeguards.
+- [x] Run domain tools, candidate/phase, learning/capture/material and trigger tests; expect GREEN.
+- [x] Commit fix: expose grounded publication refusal as a learning trigger.
 
 ### Task 2: Controller overflow into next phase
 
@@ -44,17 +44,17 @@
 
 **Interfaces:** AgentContext.experience_events: tuple[dict[str,Any], ...]=() appended default field. Controller supplies controller_error/tool empty/REVIEW_CONTEXT_TOO_LARGE only after its confirm_candidate returns that code; next phase opens gate then queues fact. Frozen learning notes preserve action=run_candidate for this actual action.rejected result.
 
-- [ ] RED tests: Controller real/context-overflow path passes structured fact to next phase; arbitrary feedback and other outcome do not. SDK next phase sends matching summary, no extra call/step; first phase without fact has no advice. Cited action.rejected fact writes same trigger; wrong action/code not accepted.
-- [ ] Implement optional phase events, latest actual outcome reset and runtime queueing after gate open. Match learning parser to controlled action.rejected source with action retained.
-- [ ] Run controller/Verifier/large-review/SDK/learning regressions; expect GREEN. Preserve context-too-large duplicate prevention.
-- [ ] Commit fix: retrieve overflow lessons on controller feedback.
+- [x] RED tests: Controller real/context-overflow path passes structured fact to next phase; arbitrary feedback and other outcome do not. SDK next phase sends matching summary, no extra call/step; first phase without fact has no advice. Cited action.rejected fact writes same trigger; wrong action/code not accepted.
+- [x] Implement optional phase events, latest actual outcome reset and runtime queueing after gate open. Match learning parser to controlled action.rejected source with action retained.
+- [x] Run controller/Verifier/large-review/SDK/learning regressions; expect GREEN. Preserve context-too-large duplicate prevention.
+- [x] Commit fix: retrieve overflow lessons on controller feedback.
 
 ### Task 3: Complete acceptance
 
 **Files:** docs/experience.md; docs/reviews/2026-10-12-experience-rejection-triggers-acceptance.md; plan progress.
 
-- [ ] Offline capture -> frozen cited EID -> validated five-field proposal -> stored new card -> new-task corresponding event -> next wire injection, frozen library unchanged, shared quota intact.
-- [ ] Update supported trigger list, source ownership and old-card relearning notes; preserve distinction NONE vs candidate count and A/B actual injection gate.
+- [x] Offline capture -> frozen cited EID -> validated five-field proposal -> stored new card -> new-task corresponding event -> next wire injection, frozen library unchanged, shared quota intact.
+- [x] Update supported trigger list, source ownership and old-card relearning notes; preserve distinction NONE vs candidate count and A/B actual injection gate.
 - [ ] Fresh whole-branch review using GPT-6.1-sol (not Astra), fix Important findings with RED->GREEN tests.
 - [ ] Run full pytest with external basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-experience-triggers-verification/rejections-full, redirect E:/ReproAgent/.local/experience-rejections/full.log; expect exit0. Do not change source during final run.
 - [ ] Commit docs/acceptance, preserve branch; report evidence and actual A/B limits.
