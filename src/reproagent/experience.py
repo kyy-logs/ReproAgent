@@ -260,6 +260,9 @@ class ExperienceView:
         self.secrets = tuple(s for s in secrets if s)
         self._selected = None
         self._read_ids = ()
+        self._pending = ()
+        self._detail_bytes = 0
+        self.last_match_code = "no_match"
 
     @property
     def read_ids(self):
@@ -273,6 +276,8 @@ class ExperienceView:
         words = _keywords(query)
         scored = []
         for card in self.snapshot.cards:
+            if card.triggers:
+                continue
             score = sum(_normalized(tag) in query for tag in card.tags) + len(_keywords(card.summary) & words)
             if score > 0:
                 scored.append((-score, card.id, card))
@@ -289,6 +294,49 @@ class ExperienceView:
     def restrict_summaries(self, ids):
         self._selected = tuple(c for c in (self._selected or ()) if c.id in ids)
 
+    def _visible_bytes(self, cards):
+        return len(canonical_bytes([{"id": c.id, "summary": self._safe(c.summary)} for c in cards])) + self._detail_bytes
+
+    def _safe(self, text):
+        for secret in self.secrets:
+            text = text.replace(secret, "[REDACTED]")
+        return text
+
+    def match_event(self, trigger):
+        from .core.models import ExperienceSummary
+        from .experience_triggers import trigger_from_fact
+        self.last_match_code = "no_match"
+        if not isinstance(trigger, ExperienceTrigger) or trigger_from_fact(asdict(trigger)) is None:
+            return ()
+        selected = self._selected or ()
+        pending = list(self._pending)
+        seen = {c.id for c in (*selected, *pending)}
+        new = []
+        for card in sorted(self.snapshot.cards, key=lambda c: c.id):
+            if trigger not in card.triggers:
+                continue
+            if card.id in seen:
+                self.last_match_code = "already_displayed"
+                continue
+            if len(selected) + len(pending) >= 3:
+                self.last_match_code = "count_limit"
+                continue
+            if self._visible_bytes((*selected, *pending, card)) > VISIBLE_BYTES:
+                self.last_match_code = "visible_budget"
+                continue
+            pending.append(card)
+            new.append(card)
+            seen.add(card.id)
+        self._pending = tuple(pending)
+        if new:
+            self.last_match_code = "matched"
+        return tuple(ExperienceSummary(c.id, self._safe(c.summary)) for c in new)
+
+    def admit_summaries(self, ids):
+        # Only actual model input grants access; all unadmitted reservations are released.
+        self._selected = tuple(self._selected or ()) + tuple(c for c in self._pending if c.id in ids)
+        self._pending = ()
+
     def read(self, identifier, *, max_bytes=VISIBLE_BYTES):
         if self._read_ids:
             raise ValueError("only one successful experience detail read is allowed per task")
@@ -299,10 +347,11 @@ class ExperienceView:
         for key in ("summary", "detail"):
             for secret in self.secrets:
                 data[key] = data[key].replace(secret, "[REDACTED]")
-        summaries = [{"id": c.id, "summary": c.summary} for c in self._selected]
+        summaries = [{"id": c.id, "summary": self._safe(c.summary)} for c in self._selected]
         if len(canonical_bytes(data)) > max_bytes or len(canonical_bytes(summaries)) + len(canonical_bytes(data)) > VISIBLE_BYTES:
             raise ValueError("experience detail exceeds shared visible budget")
         self._read_ids = (identifier,)
+        self._detail_bytes = len(canonical_bytes(data))
         return data
 
 @dataclass(frozen=True, slots=True)
