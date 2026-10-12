@@ -133,3 +133,54 @@ def append_directory_experience(root: Path, card, context, *, diagnostic=None) -
     except _Busy: return 'busy'
     except BudgetStopped as exc: return 'skipped_cancelled' if exc.reason == 'CANCELLED' else 'timeout'
     except (OSError, ValueError, UnicodeError, TypeError, RecursionError): return 'store_error'
+
+
+def migrate_experience_library(source: Path, target: Path) -> dict:
+    """Publish a verified category library; never alter the source or overwrite a target."""
+    import tempfile
+    import shutil
+    from contextlib import ExitStack
+    from .experience import CATEGORIES, _library_lock, _read_library, _card_record, _Busy, LIBRARY_BYTES
+    staging = None
+    try:
+        source, target = Path(source), Path(target)
+        if source.is_symlink() or target.is_symlink(): return {'code': 'store_error'}
+        source, target = source.resolve(), target.resolve()
+        if not workspace_path(source).is_file() or source.suffix.lower() != '.json': return {'code': 'store_error'}
+        if is_within(target, source) or is_within(source, target): return {'code': 'store_error'}
+        if workspace_path(target).exists(): return {'code': 'target_exists'}
+        if directory_mode(target) is False: return {'code': 'store_error'}
+        _paths(target)
+        with ExitStack() as stack:
+            for path in sorted((source, target), key=lambda p: str(p).casefold()):
+                if workspace_path(path.with_name(path.name + '.lock')).is_symlink(): return {'code': 'store_error'}
+                stack.enter_context(_library_lock(path))
+            if workspace_path(target).exists(): return {'code': 'target_exists'}
+            raw, cards = _read_library(source)
+            parent = directory_path(target.parent)
+            parent.mkdir(parents=True, exist_ok=True)
+            staging = Path(tempfile.mkdtemp(prefix='.' + target.name + '.migrate-', dir=str(parent)))
+            total = 0
+            for category in CATEGORIES:
+                members = tuple(c for c in cards if c.category == category)
+                content = canonical_bytes({'schema_version': 2, 'category': category, 'items': [_card_record(c) for c in members]})
+                total += len(content)
+                if total > LIBRARY_BYTES: raise ValueError('migrated library capacity')
+                atomic_write(staging / category / 'experiences.json', content)
+                atomic_write(staging / category / 'index.json', canonical_bytes(_index(category, content, members)))
+            loaded = load_directory_snapshot(staging)
+            if loaded.state != 'ready' or sorted(loaded.cards, key=lambda c: c.id) != sorted(cards, key=lambda c: c.id):
+                raise ValueError('migration verification failed')
+            if _read_library(source)[0] != raw: return {'code': 'source_changed'}
+            if workspace_path(target).exists(): return {'code': 'target_exists'}
+            workspace_path(staging).rename(workspace_path(target))
+            return {'code': 'migrated', 'count': len(cards), 'source_hash': bytes_hash(raw), 'target_hash': loaded.content_hash}
+    except _Busy: return {'code': 'busy'}
+    except (OSError, ValueError, TypeError, UnicodeError, RecursionError): return {'code': 'store_error'}
+    finally:
+        if staging is not None:
+            # Only this operation's own same-parent temporary directory can be removed.
+            if staging.parent.resolve() == target.parent.resolve() and staging.name.startswith('.' + target.name + '.migrate-'):
+                if workspace_path(staging).is_dir(): shutil.rmtree(workspace_path(staging))
+                scratch_lock = workspace_path(staging.with_name(staging.name + '.lock'))
+                if scratch_lock.is_file() and not scratch_lock.is_symlink(): scratch_lock.unlink()
