@@ -22,13 +22,14 @@ import time
 import uuid
 from dataclasses import asdict, dataclass, field, replace
 
-from ..observability import span
+from ..observability import span, mark
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
                      component_identity)
 from .serialization import bytes_hash, canonical_hash
 from .protocol import ModelOutputError, ModelProtocolError
+from .execution_diagnostics import diagnose_runtime, diagnostic_reason
 from reproagent.paths import relative_name
 from reproagent.store import atomic_write
 
@@ -38,7 +39,11 @@ from reproagent.store import atomic_write
 ACTION_RESULT_CODES = frozenset({'OK', 'INVALID_ARGUMENT', 'MISSING_FILE', 'INVALID_ENCODING', 'UNKNOWN_CANDIDATE',
     'STALE_CANDIDATE', 'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF',
     'REVISION_BUDGET_EXCEEDED', 'REPLAY_UNCONFIRMED', 'DUPLICATE_CANDIDATE', 'REVIEW_CONTEXT_TOO_LARGE', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR',
-    'MODEL_PROTOCOL_ERROR', 'INTERNAL_ERROR'})
+    'MODEL_PROTOCOL_ERROR', 'INTERNAL_ERROR', 'COMMAND_TIMEOUT', 'REPEATED_COMMAND_TIMEOUT',
+    'LOG_LIMIT', 'PROBE_INCOMPLETE', 'EXECUTION_NOT_EXITED'})
+
+MAX_CONSECUTIVE_COMMAND_TIMEOUTS = 2
+EXECUTION_FAILURE_CODES = frozenset({'COMMAND_TIMEOUT', 'LOG_LIMIT', 'PROBE_INCOMPLETE', 'EXECUTION_NOT_EXITED'})
 
 # What the Controller made of one phase result, in the same closed vocabulary: the phase's
 # own kind plus the outcome it led to, never the text a model or a provider produced.
@@ -82,6 +87,7 @@ class Lifecycle:
     executions: dict = field(default_factory=dict)
     verdicts: dict = field(default_factory=dict)
     context_blocked: dict = field(default_factory=dict)
+    command_timeout_streaks: dict = field(default_factory=dict)
 
 
 class Step:
@@ -189,6 +195,35 @@ class Controller:
             text = text.replace(secret, '[REDACTED]')
         return text.encode()[:8192].decode(errors='ignore')
 
+    def execution_outcome(self, lifecycle, run, verdict, result, context):
+        key = (run.snapshot_id, run.environment_id, run.execution_role)
+        if run.raw.stop_reason != 'COMMAND_TIMEOUT':
+            lifecycle.command_timeout_streaks.pop(key, None)
+        diagnostic = verdict.execution_diagnostic
+        if diagnostic is None or diagnostic.code not in EXECUTION_FAILURE_CODES:
+            return None
+        count = lifecycle.command_timeout_streaks.get(key, 0)
+        if diagnostic.code == 'COMMAND_TIMEOUT':
+            count += 1
+            lifecycle.command_timeout_streaks[key] = count
+        done = count >= MAX_CONSECUTIVE_COMMAND_TIMEOUTS
+        code = 'REPEATED_COMMAND_TIMEOUT' if done else diagnostic.code
+        payload = {'result_code': code, 'verdict': asdict(verdict), 'consecutive_command_timeouts': count,
+            'configured_command_timeout_seconds': context.budget.limits.command_timeout_seconds,
+            'instruction': 'Execution evidence is incomplete, not a failed semantic review. '
+                'Narrow the candidate or request information about the execution obstacle; do not merely change the hypothesis.'}
+        self.store.append_event('execution.diagnosed', (run.run_id,), {
+            'result_code': code, 'candidate_id': run.candidate_id, 'run_id': run.run_id,
+            'consecutive_command_timeouts': count, 'diagnostic': asdict(diagnostic),
+            'unmet_checks': list(verdict.unmet_checks)})
+        mark('execution.diagnosed', attributes={'result_code':code, 'candidate_id':run.candidate_id,
+            'run_id':run.run_id, 'checks':list(verdict.unmet_checks),
+            'budget':{'consecutive_command_timeouts':count, 'limit':MAX_CONSECUTIVE_COMMAND_TIMEOUTS}})
+        if done:
+            result = self.state(result, TaskState.BLOCKED, stop_reason=code,
+                uncertainties=(*result.uncertainties, f'{code}: {count} consecutive timeouts under unchanged execution conditions; {verdict.reason}'))
+        return result, self.feedback(payload), code, done
+
     def steps_remaining(self, context):
         return max(0, context.budget.limits.agent_steps - context.budget.steps_used)
 
@@ -284,6 +319,10 @@ class Controller:
                 return result, self.feedback({'error':str(exc)}), code, False
             self.store.save_record('verdicts', 'verdict-' + run.run_id, verdict)
             lifecycle.executions[candidate.candidate_id], lifecycle.verdicts[candidate.candidate_id] = run, verdict
+            outcome = self.execution_outcome(lifecycle, run, verdict, result, context)
+            if outcome is not None:
+                step.rejected(outcome[2])
+                return outcome
             if verdict.next_action == 'narrow_candidate':
                 if not candidate.preconditions:
                     lifecycle.context_blocked[execution_key] = (candidate, run, verdict)
@@ -314,7 +353,8 @@ class Controller:
             self.store.save_record('verdicts', 'verdict-' + second.run_id, second_verdict)
             if not self.verifier.confirm(contract, candidate, run, second, (verdict, second_verdict)):
                 step.rejected('REPLAY_UNCONFIRMED')
-                return (result, 'Independent replay did not confirm the same failure; revise or request information.',
+                return (result, self.feedback({'result_code':'REPLAY_UNCONFIRMED', 'verdict':asdict(second_verdict),
+                        'instruction':'Independent replay did not confirm the same failure; revise or request information.'}),
                         'REPLAY_UNCONFIRMED', False)
             result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.REPEATED_OBSERVATION,
                                 accepted_candidate_id=candidate.candidate_id)
@@ -339,6 +379,15 @@ class Controller:
             fixed_environment = await self.runner.prepare(fixed_request, fixed_snapshot, context)
             fixed_run = await self.runner.execute(candidate, fixed_snapshot, fixed_environment, context, execution_role='fixed')
             self.check_execution(fixed_run)
+            diagnostic, failed = diagnose_runtime(fixed_run)
+            if diagnostic is not None:
+                self.store.append_event('execution.diagnosed', (fixed_run.run_id,), {
+                    'result_code':diagnostic.code, 'execution_role':'fixed', 'run_id':fixed_run.run_id,
+                    'candidate_id':candidate.candidate_id, 'diagnostic':asdict(diagnostic), 'unmet_checks':list(failed)})
+                mark('execution.diagnosed', attributes={'result_code':diagnostic.code,
+                    'execution_role':'fixed', 'run_id':fixed_run.run_id, 'checks':list(failed)})
+                return replace(result, fix_validation_status='blocked',
+                    uncertainties=(*result.uncertainties, 'Fixed-version execution incomplete: ' + diagnostic_reason(diagnostic, failed)))
             checks = self.runner.adapter.check_framework(candidate, fixed_run.observation)
             same_nodes = set(fixed_run.observation.framework_details.get('completed_nodeids', [])) == set(first.observation.framework_details.get('completed_nodeids', []))
             passed = same_nodes and fixed_run.raw.exit_code == 0 and fixed_run.raw.stop_reason == 'EXITED' and fixed_run.protection.ok and fixed_run.observation.executed and fixed_run.observation.probe_complete and not checks.invalid and not checks.blocked
