@@ -465,6 +465,16 @@ class AgentContext:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutionDiagnostic:
+    code: str
+    stop_reason: str
+    duration_seconds: float
+    probe_complete: bool
+    protection_checked: bool
+    last_test_stage: str = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
 class Verdict:
     classification: CandidateClass | None
     reason: str
@@ -477,6 +487,7 @@ class Verdict:
     contract_id: str = ""
     contract_version: int = 1
     run_ids: tuple[str, ...] = ()
+    execution_diagnostic: ExecutionDiagnostic | None = None
 
 
 @dataclass(frozen=True, slots=True)

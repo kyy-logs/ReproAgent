@@ -41,7 +41,10 @@ def test_wrong_hash_origin_xfail_or_incomplete_probe_blocks_success_without_mode
     elif change == 'origin': execution = replace(execution, observation=replace(execution.observation, framework_details={'source_binding_ok':False}))
     else: execution = replace(execution, observation=replace(execution.observation, tests=({'when':'call','outcome':'skipped','wasxfail':'known'},)))
     verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context()))
-    assert verdict.classification == CandidateClass.INVALID_CANDIDATE and not model.calls
+    assert verdict.classification == (None if change == 'probe' else CandidateClass.INVALID_CANDIDATE)
+    assert not model.calls
+    if change == 'probe':
+        assert verdict.execution_diagnostic.code == 'PROBE_INCOMPLETE'
 
 
 def test_expected_bug_exception_probe_is_not_final_regression_test(tmp_path, projects, facts):

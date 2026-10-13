@@ -19,6 +19,7 @@ from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
 from .budget import BudgetStopped
 from .protocol import ModelOutputError, validate_verdict
+from .execution_diagnostics import diagnose_execution, execution_bound, diagnostic_reason, INVALID_INTEGRITY_CODES
 
 
 class CandidateFileChanged(ValueError):
@@ -57,13 +58,10 @@ class Verifier:
         bound to this candidate and contract, protected, cleanly reaped, fully probed,
         untruncated and exited of its own accord.
         """
-        return (self._bound(contract, candidate, run)
-                and candidate_hash(candidate) == candidate.manifest_hash
-                and run.protection.ok and run.raw.cleanup_ok and run.observation.probe_complete
-                and not run.raw.log_truncated and run.raw.stop_reason == 'EXITED')
+        return diagnose_execution(contract, candidate, run)[0] is None
 
     def _bound(self, contract, candidate, run):
-        return run.candidate_id == candidate.candidate_id and run.manifest_hash == candidate.manifest_hash and run.contract_id == contract.contract_id == candidate.contract_id and run.contract_version == contract.version == candidate.contract_version and run.snapshot_id == candidate.snapshot_id and run.execution_role == 'original'
+        return execution_bound(contract, candidate, run)
 
     async def evaluate(self, contract, candidate, executions, context):
         # The full ordered list goes on the span before any check runs, so a reader can
@@ -74,17 +72,23 @@ class Verifier:
 
     async def _evaluate(self, contract, candidate, executions, context):
         context.budget.check()
-        def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore'):
+        def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore', diagnostic=None, unmet=()):
             mark('verdict', attributes={'result_code': classification.value if classification else 'UNCLASSIFIED',
                                         'reason_origin': origin})
             return Verdict(classification, reason, refs, uncertainties=uncertainty, candidate_id=candidate.candidate_id,
                 manifest_hash=candidate.manifest_hash, contract_id=contract.contract_id, contract_version=contract.version,
-                run_ids=tuple(run.run_id for run in executions), next_action=next_action)
+                run_ids=tuple(run.run_id for run in executions), next_action=next_action,
+                execution_diagnostic=diagnostic, unmet_checks=unmet)
         if not record_check('execution_evidence_present', bool(executions)):
             return verdict(None, 'no execution evidence')
         run = executions[-1]
-        if not record_check('binding_and_integrity_ok', self._integrity_ok(contract, candidate, run)):
-            return verdict(CandidateClass.INVALID_CANDIDATE, 'binding, protection, cleanup or probe integrity failed')
+        diagnostic, failed = diagnose_execution(contract, candidate, run)
+        if not record_check('binding_and_integrity_ok', diagnostic is None):
+            for check in failed:
+                record_check(check, False)
+            return verdict(CandidateClass.INVALID_CANDIDATE if diagnostic.code in INVALID_INTEGRITY_CODES else None,
+                diagnostic_reason(diagnostic, failed), diagnostic=diagnostic, unmet=failed,
+                next_action='explore' if diagnostic.code in INVALID_INTEGRITY_CODES else 'revise_candidate_or_request_information')
         checks = self.adapter.check_framework(candidate, run.observation)
         non_origin_errors = tuple(error for error in checks.invalid if 'origin' not in error and error != 'no collected tests')
         if not record_check('no_non_origin_framework_errors', not non_origin_errors):
