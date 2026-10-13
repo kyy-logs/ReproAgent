@@ -45,6 +45,29 @@ def test_readable_report_preserves_original_source_and_links_without_copying_tes
     assert data == before
 
 
+def test_execution_obstacle_is_visible_and_does_not_claim_protection_failed():
+    data = report_data()
+    data.update(package_kind='diagnostic', verified=False, status='BLOCKED', stop_reason='REPEATED_COMMAND_TIMEOUT')
+    data['runs'][1]['execution_diagnostic'] = {
+        'code':'COMMAND_TIMEOUT', 'stop_reason':'COMMAND_TIMEOUT', 'duration_seconds':60.01,
+        'probe_complete':False, 'protection_checked':False, 'last_test_stage':'setup:passed'}
+    data['runs'][1]['unmet_checks'] = ['execution_exited','probe_complete']
+    text = render_report(data)
+    assert 'COMMAND_TIMEOUT' in text and '60.010' in text
+    assert 'setup:passed' in text and '保护检查未执行' in text
+    assert 'execution_exited' in text and 'probe_complete' in text
+
+
+def test_blocked_fixed_execution_is_unfinished_not_unstarted():
+    data = report_data()
+    data['fix_validation_status'] = 'blocked'
+    data['runs'].append({'run_id':'fixed-1', 'candidate_id':'candidate-1', 'role':'fixed', 'exit_code':None,
+        'cleanup_ok':True, 'execution_diagnostic':{'code':'COMMAND_TIMEOUT', 'duration_seconds':60,
+            'probe_complete':False, 'protection_checked':False, 'last_test_stage':'setup:passed'}})
+    text = render_report(data)
+    assert '差分验证未完成' in text and '差分验证未执行' not in text
+
+
 def test_fixed_failure_and_uncertainties_are_visible_without_promoting_evidence():
     data = report_data()
     data['runs'].append({'run_id': 'fixed-1', 'candidate_id': 'candidate-1', 'role': 'fixed', 'exit_code': 1, 'cleanup_ok': True})

@@ -12,6 +12,7 @@ from .paths import directory_path, extended_path, relative_name, shared_path_for
 from .store import atomic_write, safe_child
 from .workspace import candidate_hash
 from .reporting import render_report
+from .core.execution_diagnostics import diagnose_runtime
 
 
 class Exporter:
@@ -153,8 +154,17 @@ class Exporter:
             run = store.load_record('runs', path.parent.name)
             if success and run.candidate_id == candidate.candidate_id and run.manifest_hash == candidate.manifest_hash and run.contract_version == candidate.contract_version and run.execution_role == 'original':
                 report['accepted_run_ids'].append(run.run_id)
+            diagnostic, failed = diagnose_runtime(run)
+            verdict_path = safe_child(store.root, 'verdicts/verdict-' + run.run_id + '.json')
+            if verdict_path.is_file():
+                saved_verdict = store.load_record('verdicts', 'verdict-' + run.run_id)
+                if (saved_verdict.candidate_id == run.candidate_id and saved_verdict.manifest_hash == run.manifest_hash
+                    and saved_verdict.contract_id == run.contract_id and saved_verdict.contract_version == run.contract_version
+                    and run.run_id in saved_verdict.run_ids and saved_verdict.execution_diagnostic is not None):
+                    diagnostic, failed = saved_verdict.execution_diagnostic, saved_verdict.unmet_checks
             report['runs'].append({'run_id':run.run_id, 'role':run.execution_role, 'exit_code':run.raw.exit_code, 'cleanup_ok':run.raw.cleanup_ok,
-                'candidate_id':run.candidate_id, 'snapshot_id':run.snapshot_id, 'failure_refs':[asdict(r) for r in run.observation.failure_refs]})
+                'candidate_id':run.candidate_id, 'snapshot_id':run.snapshot_id, 'failure_refs':[asdict(r) for r in run.observation.failure_refs],
+                'execution_diagnostic':asdict(diagnostic) if diagnostic is not None else None, 'unmet_checks':list(failed)})
             for ref in (run.raw.stdout_ref, run.raw.stderr_ref, *run.observation.failure_refs):
                 if any(m['source_path'] == ref.path for m in report['log_mapping']):
                     continue

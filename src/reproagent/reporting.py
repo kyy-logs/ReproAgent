@@ -72,7 +72,10 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
         if fix_status == 'failed':
             lines.append('仅确认原版重复失败，差分复现未成立：修复版运行了同一候选但没有通过。')
         elif fix_status == 'blocked':
-            lines.append('修复版环境或夹具不可用，差分验证未执行；仅确认原版重复失败。')
+            if any(run.get('role') == 'fixed' and run.get('execution_diagnostic') for run in report.get('runs', [])):
+                lines.append('修复版执行受阻，差分验证未完成；仅确认原版重复失败。')
+            else:
+                lines.append('修复版环境或夹具不可用，差分验证未执行；仅确认原版重复失败。')
     lines += ['', f'- 任务：{_text(report.get("task_id", ""))}',
               f'- 导出时状态：{_code(report.get("status", ""))}',
               f'- 证据等级：{_code(level)}',
@@ -160,10 +163,22 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
     if total > len(runs):
         lines += ['', '（执行列表为节选，完整记录见 report.json。）']
     lines += ['', '退出码只表示 pytest 结果，不能单独证明失败对应目标 Bug。']
+    obstacles = [run for run in runs if run.get('execution_diagnostic')]
+    if obstacles:
+        lines += ['', '### 执行阻碍（程序诊断）']
+        for run in obstacles[:4]:
+            diagnostic = run['execution_diagnostic']
+            protection = '保护检查已执行' if diagnostic.get('protection_checked') else '保护检查未执行（不是源码已被修改的证据）'
+            duration = diagnostic.get('duration_seconds', 0)
+            lines += ['', f'- 运行 {_code(run["run_id"])}：{_code(diagnostic.get("code", "unknown"))}；'
+                f'耗时 {_text(f"{duration:.3f}")} 秒；probe_complete={_code(diagnostic.get("probe_complete"))}；{protection}。',
+                f'- 最后观测阶段：{_code(diagnostic.get("last_test_stage", "unknown"))}。未收到 call 报告不等于测试没有开始。',
+                '- 失败检查：' + '、'.join(_code(item) for item in run.get('unmet_checks', ())),
+                '- 建议：先处理具体执行障碍或缩小候选；不要仅更改假设反复提交。']
     if first_log:
         lines += ['', '### 首次可用运行日志节选', '', _link('完整日志', first_log), '', _block(previews[first_log])]
     if report.get('verdict_mapping'):
-        lines += ['', '### 模型核验意见节选', '', '这些意见仍需结合原始来源和实际失败审查。']
+        lines += ['', '### 核验意见节选', '', '程序诊断与模型语义意见均需结合原始来源和实际失败审查。']
         for item in limited(report['verdict_mapping'], 2):
             path = item['export_path']
             lines += ['', _link('完整核验记录', path)]
