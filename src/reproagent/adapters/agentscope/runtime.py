@@ -306,6 +306,10 @@ class AgentScopeRuntime:
             if bytes_hash(context.issue.text.encode('utf-8')) != context.issue.content_hash:
                 raise BudgetStopped('NEEDS_INFORMATION', 'original issue content hash mismatch')
             data['issue'] = context.issue
+        # The round's own facts about history: that there is some, and in which categories.
+        # Its text is deliberately absent -- browsing it is the phase's own decision.
+        if context.experience_catalog is not None:
+            data['experience_catalog'] = context.experience_catalog
         # Redact before JSON encoding so keys containing quotes/newlines cannot corrupt
         # the message. Keep the original hash as the reference to frozen local evidence.
         def redact(value):

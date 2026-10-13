@@ -440,6 +440,18 @@ class ExperienceSummary:
 
 
 @dataclass(frozen=True, slots=True)
+class ExperienceCatalogNotice:
+    """That history exists and under which categories, never what it says.
+
+    The phase is told this much up front so that browsing is a choice it can make; the
+    names and bodies stay behind ``list_experiences`` and ``read_experience``.
+    """
+
+    count: int
+    categories: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class AgentContext:
     contract: IssueContract
     project: ProjectView
@@ -448,6 +460,7 @@ class AgentContext:
     issue: IssueDescription | None = None
     experience_summaries: tuple[ExperienceSummary, ...] = ()
     experience_events: tuple[dict[str, Any], ...] = ()
+    experience_catalog: ExperienceCatalogNotice | None = None
 
 
 @dataclass(frozen=True, slots=True)

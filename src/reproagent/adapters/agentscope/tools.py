@@ -622,13 +622,13 @@ def _experience_event(store, kind, payload):
 
 class _CatalogParams(ParamsBase):
     model_config = ConfigDict(extra='forbid')
-    category: Literal['framework', 'model', 'workflow']
+    category: Literal['framework', 'model', 'workflow'] | None = None
     cursor: str | None = None
 
 
 class ListExperiences(ToolBase):
     name = 'list_experiences'
-    description = 'Browse id/name/description in one historical category. Load an applicable id using read_experience; no current source evidence.'
+    description = ('Browse id/category/name/description across historical cards, optionally filtered to one category. Load an applicable id using read_experience; no current source evidence.')
     input_schema = _CatalogParams.model_json_schema()
     is_read_only = True
     is_concurrency_safe = False

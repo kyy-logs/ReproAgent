@@ -17,7 +17,8 @@ def test_catalog_lists_without_error_or_keyword_and_read_requires_display():
     assert fixed.read(card().id)['code'] == 'not_displayed'
     page = fixed.list('model')
     assert page['code'] == 'ready'
-    assert set(page['items'][0]) == {'id', 'name', 'description'}
+    assert set(page['items'][0]) == {'id', 'category', 'name', 'description'}
+    assert page['items'][0]['category'] == 'model'
     assert 'SECRET_DETAIL' not in str(page)
     assert fixed.read(card().id)['detail'] == 'SECRET_DETAIL'
     assert fixed.read(card().id)['code'] == 'read_limit'
@@ -80,3 +81,21 @@ def test_catalog_rejects_invalid_category_and_cursor_without_quota():
     assert fixed.list('../outside')['code'] == 'invalid_category'
     assert fixed.list('model', 'forged')['code'] == 'invalid_cursor'
     for _ in range(6): assert fixed.list('model')['code'] == 'empty'
+
+
+def test_a_page_without_a_category_lists_every_card_under_its_own():
+    """The categories say what a card is about, not who may read it.
+
+    Requiring a category to see anything made a guess the gate: a phase that asked about
+    workflow while the library held one framework card was told the library was empty.
+    """
+    cards = [card('one'), replace(card('two'), category='workflow')]
+
+    page = view(cards).list()
+
+    assert page['code'] == 'ready'
+    assert len(page['items']) == 2
+    assert {item['category'] for item in page['items']} == {'model', 'workflow'}
+    # The narrowing still works, and an unknown category is still refused.
+    assert len(view(cards).list('workflow')['items']) == 1
+    assert view(cards).list('framework')['code'] == 'empty'
