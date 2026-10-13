@@ -83,10 +83,12 @@ def run_sdk_task(tmp_path, projects, facts, *, learning="valid", learn=True, see
                 "evidence_ids": ids}}))
         if payload.get("tools"):
             main_calls.append("exploration")
-            if seed and not listed:
+            view = holder['controller'].experience_service.view
+            has_history = view is not None and view.notice() is not None
+            if has_history and not listed:
                 listed = True
                 return tool_response("list_experiences", {"category":"model"}, "catalog")
-            if seed and not read:
+            if has_history and not read:
                 read = True
                 for message in reversed(payload['messages']):
                     if message['role'] != 'tool': continue

@@ -74,6 +74,9 @@ def test_run_case_reads_frozen_library_with_actual_sdk(tmp_path, projects, facts
         payload = json.loads(request.content)
         seen.append(payload)
         if payload.get("tools"):
+            if not any(m.get('role') == 'tool' and m.get('name') == 'list_experiences'
+                       for m in payload['messages']):
+                return tool_response('list_experiences', {'category': 'model'}, 'catalog')
             return tool_response("write_candidate", {"files": [{"path": "tests/test_repro.py",
                 "content": CANDIDATE, "role": "test"}], "hypothesis": "empty input"}, "write")
         data = json.loads(payload["messages"][-1]["content"])

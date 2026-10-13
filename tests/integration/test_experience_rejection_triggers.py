@@ -67,8 +67,8 @@ def test_grounded_capture_learning_and_next_task_wire_injection(tmp_path, projec
     run(second)
     assert second.initial == () and injected(second.requests[0]) == []
     assert injected(second.requests[1]) == []
-    assert learned.detail in json.dumps(second.requests[3]["messages"])
-    assert second.context.budget.steps_used == len(second.requests) == 4
+    assert learned.detail in json.dumps(second.requests[4]["messages"])
+    assert second.context.budget.steps_used == len(second.requests) == 5
     assert candidate_ids(second) == [] and library.read_bytes() == frozen
 
 
@@ -121,8 +121,8 @@ def test_controller_overflow_fact_is_citable_and_reaches_next_sdk_phase(tmp_path
     asyncio.run(go())
     assert env.initial == () and injected(env.requests[0]) == []
     assert injected(env.requests[1]) == []
-    assert learned.detail in json.dumps(env.requests[3]["messages"])
-    assert env.context.budget.steps_used == len(env.requests) == 4
+    assert learned.detail in json.dumps(env.requests[4]["messages"])
+    assert env.context.budget.steps_used == len(env.requests) == 5
     assert library.read_bytes() == frozen
 
 
