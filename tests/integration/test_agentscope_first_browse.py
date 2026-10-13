@@ -133,3 +133,15 @@ def test_relevant_card_can_be_loaded_from_later_page(tmp_path, projects, facts, 
     assert view.catalog_calls == 2
     assert view.read_ids == (sorted(view._cards)[-1],)
     assert env.runtime.browse_gate.state == 'satisfied'
+
+
+def test_no_library_bypass_is_observable_without_extra_model_hint(tmp_path, projects, facts):
+    from tests.integration.test_agentscope_runtime import environment
+    env = environment(tmp_path, projects, facts, answers=[
+        tool_reply('request_information', {'question': 'Need facts'}, call_id='stop')])
+    assert run(env).kind == 'request_information'
+    events, _ = env.store.read_events()
+    decision = next(e.payload for e in events if e.kind == 'experience.browse_gate')
+    assert decision['state'] == 'bypassed'
+    assert decision['reason'] == 'unavailable'
+    assert 'Current experience browse state:' not in json.dumps(env.requests[0]['messages'])

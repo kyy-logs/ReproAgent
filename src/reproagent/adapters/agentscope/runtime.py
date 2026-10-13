@@ -93,7 +93,7 @@ class AgentScopeRuntime:
             raise ValueError("unexpected exploration toolkit")
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
             experience_event=self._experience_event if experience_view is not None else None,
-            browse_gate=self.browse_gate if experience_view is not None else None)
+            browse_gate=self.browse_gate)
         self.middleware.record_browse()
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when

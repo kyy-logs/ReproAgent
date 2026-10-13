@@ -172,7 +172,7 @@ class ExplorationMiddleware(MiddlewareBase):
             except Exception:
                 pass  # Optional advice cannot replace the original model input.
         results = []
-        if self.browse_gate is not None:
+        if self.browse_gate is not None and 'list_experiences' in self.allowed_tools:
             for message in input_kwargs['messages']:
                 for block in message.content:
                     if isinstance(block, ToolResultBlock):

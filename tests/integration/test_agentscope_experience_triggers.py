@@ -15,7 +15,7 @@ from tests.unit.test_experience_trigger_view import triggered, RANGE
 from tests.integration.test_agentscope_runtime import environment, agent_context, tool_reply, write_payload
 
 
-def configured(tmp_path, projects, facts, *, memory=None, limits=None):
+def configured(tmp_path, projects, facts, *, memory=None, limits=None, browse=True):
     env = environment(tmp_path, projects, facts, limits=limits)
     memory = memory or triggered("引用范围被拒时先取得有效范围。", "UNIQUE_RECOVERY_ADVICE")
     view = ExperienceCatalogView(ExperienceSnapshot("ready", "a"*64, (memory,)))
@@ -25,6 +25,8 @@ def configured(tmp_path, projects, facts, *, memory=None, limits=None):
         system_prompt="Reproduce from original facts; historical advice is conditional.",
         store=env.store, experience_view=view)
     env.view, env.memory, env.initial = view, memory, initial
+    if browse:
+        env.answers.append(tool_reply('list_experiences', {'category': memory.category}, call_id='catalog'))
     return env
 
 
@@ -65,7 +67,7 @@ def test_actual_tool_error_is_observed_without_automatic_injection(tmp_path, pro
     assert run(env).kind == "request_information"
     assert all(not injected(r) for r in env.requests)
     assert env.view.read_ids == ()
-    assert env.view.read(env.memory.id)["code"] == "not_displayed"
+    assert env.memory.id in env.view._shown  # Initial browsing authorizes IDs, not detail injection.
     events, _ = env.store.read_events()
     assert any(e.kind == "experience.triggered" for e in events)
     assert not any(e.kind == "experience.injected" for e in events)
@@ -77,12 +79,12 @@ def test_repeated_refusals_do_not_retrieve_or_replay_tools(tmp_path, projects, f
         tool_reply("revise_contract",revision(env),call_id="bad2"),
         tool_reply("request_information",{"question":"missing facts"},call_id="stop")])
     run(env)
-    assert env.context.budget.steps_used == len(env.requests) == 3
+    assert env.context.budget.steps_used == len(env.requests) == 4
     assert all(not injected(r) for r in env.requests)
 
 
 def test_reserved_reader_permission_still_blocks_execution(tmp_path, projects, facts):
-    env = configured(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=4))
+    env = configured(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=4), browse=False)
     env.answers.extend([tool_reply("list_experiences",{"category":"workflow"},call_id="reserved"),
         tool_reply("write_candidate",write_payload(),call_id="publish")])
     assert run(env).kind == "candidate"
@@ -96,7 +98,7 @@ def test_protocol_correction_does_not_auto_inject_memory(tmp_path, projects, fac
     env.answers.extend([tool_reply(calls=[("Read",{"file_path":str(env.module)},"a"),("Glob",{},"b")]),
         tool_reply("request_information",{"question":"missing facts"},call_id="stop")])
     assert run(env).kind == "request_information"
-    assert env.context.budget.steps_used == len(env.requests) == 2
+    assert env.context.budget.steps_used == len(env.requests) == 3
     assert all(not injected(r) for r in env.requests)
 
 
