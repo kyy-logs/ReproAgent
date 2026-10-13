@@ -93,7 +93,9 @@ class ExperienceCatalogView:
         if not self._cards:
             return None
         return ExperienceCatalogNotice(len(self._cards),
-                                       tuple(sorted({card.category for card in self._cards.values()})))
+            tuple(sorted({card.category for card in self._cards.values()})),
+            tuple((category, sum(c.category == category for c in self._cards.values()))
+                  for category in ('framework', 'model', 'workflow')))
 
     def read(self, identifier: str, *, max_bytes: int = DETAIL_BYTES) -> dict:
         if len(self._read_ids) >= DETAIL_READS: return {'code': 'read_limit'}

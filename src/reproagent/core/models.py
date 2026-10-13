@@ -449,6 +449,7 @@ class ExperienceCatalogNotice:
 
     count: int
     categories: tuple[str, ...]
+    category_counts: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
