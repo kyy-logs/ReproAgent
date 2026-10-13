@@ -2,6 +2,7 @@
 import json
 import os
 import sys
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -48,18 +49,22 @@ def origin(filename):
         return ''
 
 
+_cached_origin = lru_cache(maxsize=4096)(origin)
+
+
 def profile(frame, event, arg):
     if event != 'call':
         return
     name = frame.f_globals.get('__name__', '')
     if any(name == target or name.startswith(target + '.') for target in _targets):
-        source = origin(frame.f_code.co_filename)
+        source = _cached_origin(frame.f_code.co_filename)
         if source:
             _origins[name] = source
         _calls[name] = _calls.get(name, 0) + 1
 
 
 def pytest_sessionstart(session):
+    _cached_origin.cache_clear()
     Path(os.environ['REPROAGENT_PROBE_PATH']).write_text('', encoding='utf-8')
     emit('session_start', {'python': sys.version, 'pytest': pytest.__version__})
 

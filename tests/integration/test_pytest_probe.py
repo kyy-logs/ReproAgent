@@ -33,6 +33,59 @@ def test_a_frame_the_compiler_named_never_ends_collection(monkeypatch):
     assert probe._calls == {'_pytest.fixtures': 1}           # the call still counts
 
 
+def test_repeated_target_calls_resolve_filename_once(monkeypatch):
+    from types import SimpleNamespace
+    probe = importlib.import_module('reproagent.adapters.languages.python_pytest.probe.reproagent_pytest_probe')
+    monkeypatch.setattr(probe, '_targets', ('cache_target',))
+    monkeypatch.setattr(probe, '_origins', {})
+    monkeypatch.setattr(probe, '_calls', {})
+    calls = []
+    monkeypatch.setattr(Path, 'resolve', lambda self: calls.append(str(self)) or Path('/resolved/module.py'))
+    frame = SimpleNamespace(f_globals={'__name__': 'cache_target'}, f_code=SimpleNamespace(co_filename='unique_cache_module.py'))
+    for _ in range(1000):
+        probe.profile(frame, 'call', None)
+    assert len(calls) == 1
+    assert probe._calls == {'cache_target': 1000}
+
+
+def test_origin_cache_is_bounded_and_cleared_per_session(monkeypatch):
+    probe = importlib.import_module('reproagent.adapters.languages.python_pytest.probe.reproagent_pytest_probe')
+    probe._cached_origin.cache_clear()
+    calls = []
+    monkeypatch.setattr(Path, 'resolve', lambda self: calls.append(str(self)) or Path('/resolved/module.py'))
+    for index in range(5000):
+        probe._cached_origin('cache_file_' + str(index) + '.py')
+    assert probe._cached_origin.cache_info().currsize == 4096
+    probe._cached_origin('same_session.py')
+    probe._cached_origin('same_session.py')
+    assert calls.count('same_session.py') == 1
+    monkeypatch.setattr(probe, 'emit', lambda *args: None)
+    monkeypatch.setenv('REPROAGENT_PROBE_PATH', 'not-written.jsonl')
+    monkeypatch.setattr(Path, 'write_text', lambda *args, **kwargs: None)
+    probe.pytest_sessionstart(None)
+    probe._cached_origin('same_session.py')
+    assert calls.count('same_session.py') == 2
+    probe._cached_origin.cache_clear()
+
+
+def test_final_module_origin_is_resolved_fresh(monkeypatch):
+    from types import SimpleNamespace
+    probe = importlib.import_module('reproagent.adapters.languages.python_pytest.probe.reproagent_pytest_probe')
+    monkeypatch.setattr(probe, '_targets', ('fresh_target',))
+    monkeypatch.setattr(probe, '_origins', {})
+    monkeypatch.setattr(probe, '_calls', {})
+    current = [Path('/original/module.py')]
+    monkeypatch.setattr(Path, 'resolve', lambda self: current[0])
+    frame = SimpleNamespace(f_globals={'__name__': 'fresh_target'}, f_code=SimpleNamespace(co_filename='fresh_target_file.py'))
+    probe.profile(frame, 'call', None)
+    monkeypatch.setitem(sys.modules, 'fresh_target', SimpleNamespace(__file__='fresh_target_file.py'))
+    current[0] = Path('/outside/module.py')
+    records = []
+    monkeypatch.setattr(probe, 'emit', lambda event, payload: records.append((event, payload)))
+    probe.pytest_sessionfinish(None, 1)
+    assert probe._origins['fresh_target'] == str(current[0])
+
+
 def run_probe(root, text, modules=()):
     collector = importlib.import_module('reproagent.adapters.languages.python_pytest.collector')
     probe = Path(collector.__file__).parent / 'probe'
