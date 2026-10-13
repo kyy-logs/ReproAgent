@@ -43,7 +43,8 @@ def test_native_sdk_reads_one_experience_then_publishes(tmp_path, projects, fact
     assert [e.payload["id"] for e in events if e.kind == "experience.read"] == [card().id]
 
 
-def test_revised_phase_does_not_reload_experience(tmp_path, projects, facts):
+def test_a_revised_phase_spends_the_remaining_read_allowance(tmp_path, projects, facts):
+    """The allowance is per task, not per phase: a revision gets the second read, not a third."""
     env, fixed, summaries = configured(tmp_path, projects, facts, [
         tool_reply("read_experience", {"id": card().id}, call_id="memory"),
         tool_reply("write_candidate", write_payload(), call_id="publish"),
@@ -58,7 +59,7 @@ def test_revised_phase_does_not_reload_experience(tmp_path, projects, facts):
             await env.runtime.aclose()
             await env.factory.aclose()
     assert asyncio.run(run()).kind == "request_information"
-    assert fixed.read_ids == (card().id,)
+    assert fixed.read_ids == (card().id, card().id)
     user_inputs = [json.loads(m.get_text_content()) for m in env.runtime.messages if m.role == "user" and (m.get_text_content() or "").startswith("{")]
     assert sum("experience_summaries" in value for value in user_inputs) == 0
     assert env.context.budget.steps_used == 4

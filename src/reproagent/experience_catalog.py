@@ -5,11 +5,15 @@ from secrets import token_hex
 from .core.models import ExperienceCatalogNotice
 from .core.serialization import canonical_bytes
 
-CATALOG_BYTES = 8192
-PAGE_BYTES = 4096
-DETAIL_BYTES = 4096
-CATALOG_CALLS = 6
-PAGE_ITEMS = 12
+CATALOG_BYTES = 16384
+PAGE_BYTES = 8192
+DETAIL_BYTES = 8192
+CATALOG_CALLS = 12
+PAGE_ITEMS = 24
+
+#: How many card details one task may load.  Two is enough to weigh a first candidate
+#: against a second without turning browsing into a substitute for exploring.
+DETAIL_READS = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,7 +96,7 @@ class ExperienceCatalogView:
                                        tuple(sorted({card.category for card in self._cards.values()})))
 
     def read(self, identifier: str, *, max_bytes: int = DETAIL_BYTES) -> dict:
-        if self._read_ids: return {'code': 'read_limit'}
+        if len(self._read_ids) >= DETAIL_READS: return {'code': 'read_limit'}
         card = self._cards.get(identifier)
         if card is None: return {'code': 'unknown_id'}
         if identifier not in self._shown: return {'code': 'not_displayed'}
@@ -100,5 +104,5 @@ class ExperienceCatalogView:
         data = {'id': card.id, 'name': self._safe(entry.name), 'description': self._safe(entry.description),
                 'summary': self._safe(card.summary), 'detail': self._safe(card.detail)}
         if len(canonical_bytes(data)) > min(DETAIL_BYTES, max_bytes): return {'code': 'response_capacity'}
-        self._read_ids = (identifier,)
+        self._read_ids = (*self._read_ids, identifier)
         return data

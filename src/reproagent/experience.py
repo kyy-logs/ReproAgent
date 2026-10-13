@@ -391,8 +391,9 @@ class ExperienceView:
         self._pending = ()
 
     def read(self, identifier, *, max_bytes=VISIBLE_BYTES):
-        if self._read_ids:
-            raise ValueError("only one successful experience detail read is allowed per task")
+        from .experience_catalog import DETAIL_READS
+        if len(self._read_ids) >= DETAIL_READS:
+            raise ValueError("only two successful experience detail reads are allowed per task")
         card = next((c for c in (self._selected or ()) if c.id == identifier), None)
         if card is None:
             raise ValueError("experience id was not displayed in this task")
@@ -403,7 +404,7 @@ class ExperienceView:
         summaries = [{"id": c.id, "summary": self._safe(c.summary)} for c in (*self._selected, *self._pending)]
         if len(canonical_bytes(data)) > max_bytes or len(canonical_bytes(summaries)) + len(canonical_bytes(data)) > VISIBLE_BYTES:
             raise ValueError("experience detail exceeds shared visible budget")
-        self._read_ids = (identifier,)
+        self._read_ids = (*self._read_ids, identifier)
         self._detail_bytes = len(canonical_bytes(data))
         return data
 

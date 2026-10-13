@@ -23,6 +23,23 @@ from .budget import BudgetStopped
 #: Where a controller-built exploration prompt puts the test area it was configured with.
 CANDIDATE_PARENT_TOKEN = '{candidate_parent}'
 
+#: Where it states what history this round has.  The sentence is instruction, not data: the
+#: count and the categories travel, and the cards' names and bodies stay behind the tools.
+EXPERIENCE_CATALOG_TOKEN = '{experience_catalog}'
+
+
+def experience_catalog_sentence(notice):
+    """How much history this round has, and of what kind, in one instruction-zone line."""
+    if notice is None:
+        return 'This round has no historical cards.'
+    categories = list(notice.categories)
+    if not categories:
+        return f'This round has {notice.count} historical cards.'
+    if notice.count == 1:
+        return f'This round has 1 historical card ({categories[0]}).'
+    listed = categories[0] if len(categories) == 1 else ', '.join(categories[:-1]) + ' and ' + categories[-1]
+    return f'This round has {notice.count} historical cards across {listed}.'
+
 
 def prompt(name):
     return files('reproagent').joinpath('prompts/' + name + '.md').read_text(encoding='utf-8')
@@ -65,7 +82,8 @@ def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=
     parent = str(candidate_parent).strip().rstrip('/')
     if not parent or parent == '.':
         raise ValueError('the exploration phase needs a configured test area')
-    text = prompt('explore').replace(CANDIDATE_PARENT_TOKEN, parent)
+    text = prompt('explore').replace(CANDIDATE_PARENT_TOKEN, parent).replace(
+        EXPERIENCE_CATALOG_TOKEN, experience_catalog_sentence(context.experience_catalog))
     if not experience_enabled:
         text = text.partition('Optional historical experience tools')[0].rstrip() + '\n'
     return text

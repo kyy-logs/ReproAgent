@@ -36,13 +36,14 @@ def test_only_displayed_id_can_be_read():
     assert fixed.read(summaries[0].id)["detail"] == card().detail
 
 
-def test_one_successful_detail_per_task():
+def test_two_successful_details_per_task():
     fixed = view(card(), card("other"))
     summaries = fixed.select("pytest", ())
     fixed.read(summaries[0].id)
+    fixed.read(summaries[1].id)
     with pytest.raises(ValueError):
-        fixed.read(summaries[1].id)
-    assert fixed.read_ids == (summaries[0].id,)
+        fixed.read(summaries[0].id)
+    assert fixed.read_ids == (summaries[0].id, summaries[1].id)
     assert fixed.select("other keywords", ()) == summaries
 
 

@@ -52,3 +52,25 @@ def test_product_prompt_only_advertises_registered_experience_tools(tmp_path, pr
     phase = phase_context(facts, tmp_path, projects)
     assert 'list_experiences' not in exploration_prompt(phase)
     assert 'list_experiences' in exploration_prompt(phase, experience_enabled=True)
+
+
+def test_the_prompt_states_how_much_history_exists_and_never_its_text(tmp_path, projects, facts):
+    """The count is instruction the phase acts on; the cards stay behind the two tools.
+
+    The line used to live in the phase's data message, where nothing acted on it: six real
+    runs across two cases read the library and browsed it zero times.
+    """
+    from dataclasses import replace
+    from reproagent.core.agent import exploration_prompt
+    from reproagent.core.models import ExperienceCatalogNotice
+    from tests.unit.test_agent import phase_context
+    phase = phase_context(facts, tmp_path, projects)
+
+    def built(notice):
+        return exploration_prompt(replace(phase, experience_catalog=notice), experience_enabled=True)
+
+    assert 'This round has no historical cards.' in built(None)
+    assert 'This round has 1 historical card (model).' in built(ExperienceCatalogNotice(1, ('model',)))
+    assert 'This round has 3 historical cards across framework and workflow.' in built(
+        ExperienceCatalogNotice(3, ('framework', 'workflow')))
+    assert '{experience_catalog}' not in built(ExperienceCatalogNotice(2, ('model', 'workflow')))
