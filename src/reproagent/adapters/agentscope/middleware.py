@@ -250,7 +250,10 @@ class ExplorationMiddleware(MiddlewareBase):
         # the decision went -- a refused call is exactly the one worth looking at.
         call_key = tool_call_key(sdk_call_id=getattr(input_kwargs.get("tool_call"), "id", ""),
                                  step_index=self.context.budget.steps_used)
-        attributes = {"tool": name if name in self.allowed_tools else "", "result_code": code}
+        permission_code = 'DENIED' if code == 'EXPERIENCE_BROWSE_REQUIRED' else code
+        attributes = {"tool": name if name in self.allowed_tools else "", "result_code": permission_code}
+        if code == 'EXPERIENCE_BROWSE_REQUIRED':
+            attributes['error_category'] = code
         if call_key is not None:
             attributes["tool_call_key"] = call_key
         mark("permission", attributes=attributes).capture(

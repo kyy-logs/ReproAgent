@@ -116,3 +116,24 @@ def test_observation_failure_does_not_block_browse(facts):
     middleware = ExplorationMiddleware(facts.context(), SimpleNamespace(finished=False),
         store=BrokenStore(), browse_gate=ExperienceBrowseGate(True))
     middleware.record_browse()
+
+
+def test_browse_refusal_keeps_denied_permission_filter(facts, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+    from agentscope.permission import PermissionBehavior, PermissionDecision
+    from reproagent.adapters.agentscope import middleware as module
+    points = []
+    def mark(name, **kwargs):
+        points.append((name, kwargs))
+        return SimpleNamespace(capture=lambda *args, **kwargs: None)
+    monkeypatch.setattr(module, 'mark', mark)
+    middleware = module.ExplorationMiddleware(facts.context(), SimpleNamespace(finished=False),
+        browse_gate=ExperienceBrowseGate(True))
+    async def allow(**kwargs):
+        return PermissionDecision(behavior=PermissionBehavior.ALLOW, message='allowed')
+    asyncio.run(middleware.on_check_permission(None,
+        {'tool': SimpleNamespace(name='Read'), 'tool_input': {}}, allow))
+    attributes = next(kwargs['attributes'] for name, kwargs in points if name == 'permission')
+    assert attributes['result_code'] == 'DENIED'
+    assert attributes['error_category'] == 'EXPERIENCE_BROWSE_REQUIRED'
