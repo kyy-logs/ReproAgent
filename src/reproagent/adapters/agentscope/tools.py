@@ -647,7 +647,10 @@ class ListExperiences(ToolBase):
         self.context.budget.check()
         if self.context.cancel_event.is_set(): raise BudgetStopped('CANCELLED')
         params = _CatalogParams(**kwargs)
-        data = self.view.list(params.category, params.cursor, max_bytes=self.context.budget.limits.tool_response_bytes)
+        try:
+            data = self.view.list(params.category, params.cursor, max_bytes=self.context.budget.limits.tool_response_bytes)
+        except OSError:
+            data = {'code': 'catalog_unavailable', 'category': params.category or '', 'items': [], 'next_cursor': None}
         success = data['code'] in ('ready', 'empty')
         _experience_event(self.store, 'experience.catalog', {'category': data['category'],
             'ids': [item['id'] for item in data['items']] if success else [], 'code': data['code'],

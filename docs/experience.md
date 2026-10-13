@@ -19,11 +19,11 @@
 
 ## 什么时候读
 
-准备阶段只读取并冻结库，不把所有正文送入模型。探索 Agent 根据当前情境自主选择分类，调用 `list_experiences(category, cursor?)` 浏览类似 Skill 的简短目录。每条只包含 `id/name/description`，description 说明什么时候需要加载；无需先出现错误码，无关键词硬过滤。模型从目录选择适用的 ID，再调用 `read_experience(id)` 读取 name/description/summary/detail。不强制探索阶段，不再自动匹配注入摘要。
+准备阶段只读取并冻结库，不把所有正文送入模型。有非空可用库时，探索 Agent 必须先根据当前输入选择分类并调用一次 `list_experiences(category)`；完整结果交付后，自主决定是否翻页、换分类或读取正文。短索引的 description 说明什么时候需要加载；无需先出现错误码，无关键词硬过滤。模型从目录选择适用 ID，再调用 `read_experience(id)` 读取 name/description/summary/detail。不新增后续探索阶段约束，不自动匹配注入摘要。
 
-三个分类是 framework（框架/环境条件）、model（断言或生成错误）、workflow（探索与操作教训）。每页最多 12 条、完整 UTF-8 JSON 最多 4096 字节；更多条目通过 next_cursor 分页。每任务最多成功浏览 6 页，目录响应累计最多 8192 字节；正文最多成功读取一条，完整响应最多 4096 字节。重复浏览同页也计入配额，契约修订不重置。目录完整成功返回过的 ID 才有正文读取权限；超限明确返回原因，不静默截断或授权不可见 ID。
+三个分类是 framework（框架/环境条件）、model（断言或生成错误）、workflow（探索与操作教训）。沿用本次已有基线：每页最多 24 条、完整 UTF-8 JSON 最多 8192 字节；更多条目通过 next_cursor 分页。每任务最多成功浏览 12 页，目录响应累计最多 16384 字节；正文最多成功读取两次，单次完整响应最多 8192 字节。重复浏览同页也计入配额，契约修订不重置。目录完整成功返回过的 ID 才有正文读取权限；超限明确返回原因，不静默截断或授权不可见 ID。
 
-目录码 ready/empty 表示成功；invalid_category/invalid_cursor/catalog_limit/catalog_budget/response_capacity 表示未成功加载。正文拒绝码 unknown_id/not_displayed/read_limit/response_capacity。两个工具仍遵守原动作预算、取消、SDK 权限和保留发布步骤；没有额外模型预算。本地浏览和读取不发模型请求，但 Agent 选择工具的轮次和返回文本消耗模型步骤与 token。
+目录码 ready/empty 表示成功；invalid_category/invalid_cursor/catalog_limit/catalog_budget/response_capacity/catalog_unavailable 表示未成功加载。正文拒绝码 unknown_id/not_displayed/read_limit/response_capacity。首次浏览要求未满足时返回 EXPERIENCE_BROWSE_REQUIRED，不执行该工具。两个工具仍遵守原动作预算、取消、SDK 权限和保留发布步骤；没有额外模型预算。本地浏览和读取不发模型请求，但 Agent 选择工具的轮次和返回文本消耗模型步骤与 token。
 
 经验为历史建议，不是原版源码证据，不能作为 revise_contract 引用；分析和 Verifier 不直接加载经验。事件 experience.catalog 记录分类、实际返回的 ID、字节和分页；experience.read 记录实际成功读正文的 ID。真实错误仍可见于 experience.triggered，但不会自动召回或注入卡片；本版不产生自动匹配的 retrieved/injected/omitted 事件。完整 trace 的工具输入、输出和下一模型请求用于核实加载链，关闭 trace 不影响加载。
 
@@ -136,4 +136,14 @@ CLI learning.event_recorded=false 表示学习汇总事件未保存；已收集�
 
 证据等级 NONE 表示没有被认可的复现证据，不代表没有生成候选或执行测试；判断探索进度应同时核对候选数、original 执行数和验收结果。SINGLE_OBSERVATION 表示单次复现已被认可，仍需独立重跑确认。
 
-卡片落盘与正文加载上限已从 2 KiB 调至 4 KiB，目录累计预算仍为 8192 字节、学习材料仍为 8192 字节，模型总上下文和步骤上限不变。超限数字在规范化标签、受控 triggers 和证据引用全部补齐后，按最终 UTF-8 JSON 计算；非大小错误的三个字段为 null。学习失败不改变主退出码，不自动追加格式修复或重试请求。
+卡片落盘上限为 4 KiB，学习材料仍为 8192 字节；目录/正文加载配额见上文。首次浏览门禁不增加这些配额，模型总上下文和步骤上限不变。超限数字在规范化标签、受控 triggers 和证据引用全部补齐后，按最终 UTF-8 JSON 计算；非大小错误的三个字段为 null。学习失败不改变主退出码，不自动追加格式修复或重试请求。
+
+## 首次目录浏览
+
+启用经验且冻结库非空时，探索 Agent 在源码读取、契约修订和候选发布之前，必须先调用一次 `list_experiences(category)`，显式选择 framework/model/workflow 且不带游标。目录入口展示各类数量及用途；不会先把经验正文注入模型。
+
+程序门禁在完整目录结果进入下一轮模型请求后解除。小目录可一次看完，大目录通过 `next_cursor` 翻页，没有“只能看前五条”的限制。所选目录为空也解除首次门禁；模型之后可换分类、翻页、读相关正文，或直接探索。门禁与目录/正文配额跨契约修订共享，不重新要求浏览。
+
+首次调用使用现有模型和动作预算，不额外调用检索模型；索引和正文进入输入仍产生 token。模型连续两次未遵循首次浏览时，这两次工具均不执行，随后记录 `bypassed/noncompliant` 放行探索。经验关闭、空库、不可用或明确容量/权限问题同样不会卡死主任务；取消与全局预算耗尽仍按原规则终止。
+
+观测新增 `experience.browse_gate`，区分 pending/satisfied/bypassed 和具体原因，关联目录调用与实际输入。目录交付、正文读取、经验被采用及最终复现收益是不同指标。历史经验仍为不可信建议，不能进入原版证据或 Verifier。

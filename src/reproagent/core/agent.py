@@ -82,8 +82,12 @@ def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=
     parent = str(candidate_parent).strip().rstrip('/')
     if not parent or parent == '.':
         raise ValueError('the exploration phase needs a configured test area')
+    sentence = experience_catalog_sentence(context.experience_catalog)
+    if context.experience_catalog is not None and context.experience_catalog.category_counts:
+        sentence += ' Category counts: ' + ', '.join(
+            f'{category}={count}' for category, count in context.experience_catalog.category_counts) + '.'
     text = prompt('explore').replace(CANDIDATE_PARENT_TOKEN, parent).replace(
-        EXPERIENCE_CATALOG_TOKEN, experience_catalog_sentence(context.experience_catalog))
+        EXPERIENCE_CATALOG_TOKEN, sentence)
     if not experience_enabled:
         text = text.partition('Optional historical experience tools')[0].rstrip() + '\n'
     return text

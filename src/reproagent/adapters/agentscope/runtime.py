@@ -84,12 +84,17 @@ class AgentScopeRuntime:
         self.model, self.toolkit, self.gate, self.context = model, toolkit, gate, context
         self.secrets = tuple(secret for secret in secrets if secret)
         self.experience_view = experience_view
+        from .experience_browse import ExperienceBrowseGate
+        self.browse_gate = ExperienceBrowseGate(
+            experience_view is not None and experience_view.notice() is not None)
         self.store = store
         self.allowed_tools = tuple(tool.name for group in toolkit.tool_groups for tool in group.tools)
         if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + EXPERIENCE_TOOL_NAMES):
             raise ValueError("unexpected exploration toolkit")
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
-            experience_event=self._experience_event if experience_view is not None else None)
+            experience_event=self._experience_event if experience_view is not None else None,
+            browse_gate=self.browse_gate if experience_view is not None else None)
+        self.middleware.record_browse()
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when
         # this task is traced: the phase answers ``on_model_call`` itself instead of
@@ -310,6 +315,11 @@ class AgentScopeRuntime:
         # Its text is deliberately absent -- browsing it is the phase's own decision.
         if context.experience_catalog is not None:
             data['experience_catalog'] = context.experience_catalog
+        if self.experience_view is not None:
+            data['experience_browse'] = {
+                'state': self.browse_gate.state, 'reason': self.browse_gate.reason,
+                'required_first_action': 'list_experiences(category)' if self.browse_gate.state == 'pending' else '',
+            }
         # Redact before JSON encoding so keys containing quotes/newlines cannot corrupt
         # the message. Keep the original hash as the reference to frozen local evidence.
         def redact(value):

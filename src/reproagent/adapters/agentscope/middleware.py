@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
 
-from agentscope.message import SystemMsg, ToolCallBlock
+from agentscope.message import SystemMsg, ToolCallBlock, ToolResultBlock, TextBlock
 from agentscope.middleware import MiddlewareBase
 from agentscope.model import ChatResponse
 from agentscope.tool import ToolResponse
@@ -105,7 +105,7 @@ class ExplorationMiddleware(MiddlewareBase):
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, context, gate, store=None, *, allowed_tools=TOOL_NAMES, experience_event=None, experience_input=None) -> None:
+    def __init__(self, context, gate, store=None, *, allowed_tools=TOOL_NAMES, experience_event=None, experience_input=None, browse_gate=None) -> None:
         require_agentscope()
         self.context, self.gate, self.store = context, gate, store
         self.allowed_tools = tuple(allowed_tools)
@@ -114,6 +114,8 @@ class ExplorationMiddleware(MiddlewareBase):
         #: then there is nothing to reserve the last steps for.
         self.contract = None
         self.experience_event, self.experience_input = experience_event, experience_input
+        self.browse_gate = browse_gate
+        self._browse_delivery_info = {}
 
     @property
     def steps_remaining(self) -> int:
@@ -169,10 +171,27 @@ class ExplorationMiddleware(MiddlewareBase):
                 raise
             except Exception:
                 pass  # Optional advice cannot replace the original model input.
+        results = []
+        if self.browse_gate is not None:
+            for message in input_kwargs['messages']:
+                for block in message.content:
+                    if isinstance(block, ToolResultBlock):
+                        text = block.output if isinstance(block.output, str) else ''.join(
+                            item.text for item in block.output if isinstance(item, TextBlock))
+                        results.append((block.id, block.name, str(block.state), text))
+            state = 'satisfied' if self.browse_gate.has_delivery(results) else self.browse_gate.state
+            hint = (' First call list_experiences(category) with an explicit category and no cursor.'
+                    if state == 'pending' else ' Initial browsing is no longer required; details and further pages are optional.')
+            # This is a fresh per-call program view, not another persistent history message.
+            input_kwargs = {**input_kwargs, 'messages': [*input_kwargs['messages'],
+                SystemMsg(name='experience-browse', content=f'Current experience browse state: {state}.' + hint)]}
         model = input_kwargs["current_model"]
         response = await model(
             messages=input_kwargs["messages"], tools=input_kwargs["tools"],
             tool_choice=input_kwargs["tool_choice"], **self.output_limit(model))
+        if self.browse_gate is not None:
+            if self.browse_gate.confirm_delivery(results):
+                self.record_browse(**self._browse_delivery_info)
         self.check_response(response, allowed_tools=self.allowed_tools)
         return response
 
@@ -205,6 +224,27 @@ class ExplorationMiddleware(MiddlewareBase):
             decision = PermissionDecision(
                 behavior=PermissionBehavior.DENY, decision_reason="outside the phase tool set",
                 message=f"{name or 'this tool'} is not part of the exploration phase")
+        browse = self.browse_gate
+        if browse is not None and browse.state == 'pending':
+            if code != 'ALLOWED' or decision.behavior is not PermissionBehavior.ALLOW:
+                if name == 'list_experiences':
+                    browse.bypass(code)
+                    self.record_browse()
+            else:
+                params = input_kwargs.get('tool_input') or {}
+                valid_first = (name == 'list_experiences'
+                    and params.get('category') in ('framework', 'model', 'workflow')
+                    and params.get('cursor') is None)
+                if not valid_first:
+                    previous = browse.state
+                    browse.reject()
+                    code = 'EXPERIENCE_BROWSE_REQUIRED'
+                    decision = PermissionDecision(behavior=PermissionBehavior.DENY,
+                        decision_reason=code,
+                        message='EXPERIENCE_BROWSE_REQUIRED: first call list_experiences with an explicit '
+                            'framework, model or workflow category and no cursor. This call was not executed.')
+                    if browse.state != previous:
+                        self.record_browse()
         # The decision is projected, never asked again: a second permission check would
         # be a second decision.  The arguments are captured once, here, whichever way
         # the decision went -- a refused call is exactly the one worth looking at.
@@ -241,6 +281,24 @@ class ExplorationMiddleware(MiddlewareBase):
             async for item in gen:
                 if isinstance(item, ToolResponse) and not observed:
                     observed = True
+                    if name == 'list_experiences' and self.browse_gate is not None and self.browse_gate.state == 'pending':
+                        text = ''.join(block.text for block in item.content if isinstance(block, TextBlock))
+                        try:
+                            data = parse_json(text)
+                        except (ValueError, TypeError):
+                            data = {}
+                        code = data.get('code') if isinstance(data, dict) else None
+                        if str(item.state) == 'success' and code in ('ready', 'empty'):
+                            self.browse_gate.stage_delivery(call.id, text)
+                            self._browse_delivery_info = {
+                                'category': data.get('category', ''),
+                                'ids': [entry['id'] for entry in data.get('items', [])],
+                                'bytes': len(text.encode('utf-8')),
+                                'tool_call_key': tool_call_key(sdk_call_id=call.id, step_index=self.context.budget.steps_used),
+                            }
+                        elif code in ('response_capacity', 'catalog_budget', 'catalog_limit', 'catalog_unavailable'):
+                            self.browse_gate.bypass(code)
+                            self.record_browse()
                     if str(item.state) == "error":
                         fact = {"kind":"tool_error", "tool":name, "code":item.metadata.get(ERROR_METADATA)}
                         if trigger_from_fact(fact) is not None:
@@ -334,6 +392,25 @@ class ExplorationMiddleware(MiddlewareBase):
         self.store.append_event(kind, (), {
             "phase": PHASE, "action": "", "result_code": "", "arguments_hash": "",
             "steps_remaining": self.steps_remaining, "components": self.components, **fields})
+
+    def record_browse(self, **fields) -> None:
+        if self.browse_gate is None:
+            return
+        try:
+            self.record('experience.browse_gate', state=self.browse_gate.state,
+                        reason=self.browse_gate.reason, **fields)
+        except (OSError, ValueError, RuntimeError):
+            pass  # Optional observation must not block reproduction.
+        try:
+            mark('experience.browse_gate', attributes={
+                'result_code': self.browse_gate.state,
+                'stop_reason': self.browse_gate.reason,
+                'experience_ids': fields.get('ids', []),
+                'tool_call_key': fields.get('tool_call_key', ''),
+                'budget': {'catalog_bytes': fields.get('bytes', 0)},
+            })
+        except (OSError, ValueError, RuntimeError):
+            pass
 
     @staticmethod
     def output_limit(model) -> dict:

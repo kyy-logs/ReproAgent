@@ -11,6 +11,8 @@ from reproagent.adapters.agentscope.runtime import AgentScopeRuntime
 
 
 def configured(tmp_path, projects, facts, answers):
+    if answers:
+        answers = [tool_reply('list_experiences', {'category': 'model'}, call_id='catalog'), *answers]
     env = environment(tmp_path, projects, facts, answers=answers)
     from reproagent.experience_catalog import ExperienceCatalogView
     fixed = ExperienceCatalogView(ExperienceSnapshot("ready", "a" * 64, (card(detail="UNIQUE_ADVICE"),)))
@@ -34,10 +36,10 @@ def test_native_sdk_reads_one_experience_then_publishes(tmp_path, projects, fact
             await env.factory.aclose()
     result = asyncio.run(run())
     assert result.kind == "candidate"
-    assert env.context.budget.steps_used == 2
+    assert env.context.budget.steps_used == 3
     assert fixed.read_ids == (card().id,)
     assert [t["function"]["name"] for t in env.requests[0]["tools"]] == [*TOOL_NAMES, "list_experiences", "read_experience"]
-    assert "UNIQUE_ADVICE" in json.dumps(env.requests[1]["messages"])
+    assert "UNIQUE_ADVICE" in json.dumps(env.requests[2]["messages"])
     events, errors = env.store.read_events()
     assert not errors
     assert [e.payload["id"] for e in events if e.kind == "experience.read"] == [card().id]
@@ -62,7 +64,7 @@ def test_a_revised_phase_spends_the_remaining_read_allowance(tmp_path, projects,
     assert fixed.read_ids == (card().id, card().id)
     user_inputs = [json.loads(m.get_text_content()) for m in env.runtime.messages if m.role == "user" and (m.get_text_content() or "").startswith("{")]
     assert sum("experience_summaries" in value for value in user_inputs) == 0
-    assert env.context.budget.steps_used == 4
+    assert env.context.budget.steps_used == 5
 
 
 def test_optional_summary_cannot_displace_issue(tmp_path, projects, facts):
@@ -72,7 +74,7 @@ def test_optional_summary_cannot_displace_issue(tmp_path, projects, facts):
     from reproagent.experience_catalog import ExperienceCatalogView
     fixed = ExperienceCatalogView(fixed.snapshot)
     env.runtime.experience_view = fixed
-    message = plain.runtime._message(agent_context(plain))
+    message = env.runtime._message(agent_context(env))
     env.context.budget.limits = replace(env.context.budget.limits, tool_response_bytes=len(message.get_text_content().encode()) + 20)
     output = env.runtime._message(replace(agent_context(env), experience_summaries=summaries))
     assert "contract" in json.loads(output.get_text_content())

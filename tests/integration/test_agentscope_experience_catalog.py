@@ -43,6 +43,7 @@ def test_sdk_catalog_then_detail_then_publish(tmp_path, projects, facts):
 
 def test_error_does_not_auto_inject_detail_or_summary(tmp_path, projects, facts):
     env, fixed = catalog_environment(tmp_path, projects, facts, [
+        tool_reply('list_experiences', {'category': 'model'}, call_id='catalog'),
         tool_reply('Read', {'file_path': 'absent.py'}, call_id='error'),
         tool_reply('request_information', {'question': 'Need source'}, call_id='stop')])
     async def run():
@@ -57,6 +58,7 @@ def test_error_does_not_auto_inject_detail_or_summary(tmp_path, projects, facts)
 
 def test_the_phase_is_told_history_exists_and_never_what_it_says(tmp_path, projects, facts):
     env, fixed = catalog_environment(tmp_path, projects, facts, [
+        tool_reply('list_experiences', {'category': 'model'}, call_id='catalog'),
         tool_reply('request_information', {'question': 'Need source'}, call_id='stop')])
     context = replace(agent_context(env), experience_catalog=fixed.notice())
     async def run():
@@ -67,7 +69,8 @@ def test_the_phase_is_told_history_exists_and_never_what_it_says(tmp_path, proje
     assert asyncio.run(run()).kind == 'request_information'
 
     envelope = next(json.loads(m['content']) for m in env.requests[0]['messages'] if m.get('role') == 'user')
-    assert envelope['experience_catalog'] == {'count': 2, 'categories': ['model']}
+    assert envelope['experience_catalog'] == {'count': 2, 'categories': ['model'],
+        'category_counts': [['framework', 0], ['model', 2], ['workflow', 0]]}
     # The notice is a pointer: the names and bodies it points at stay unloaded.
     assert 'UNIQUE_LOADED_DETAIL' not in json.dumps(env.requests[0]['messages'])
     assert 'UNREAD_DETAIL' not in json.dumps(env.requests[0]['messages'])

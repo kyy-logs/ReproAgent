@@ -25,3 +25,16 @@ class ExperienceBrowseGate:
         if self.state == 'pending':
             self.state, self.reason = 'satisfied', 'catalog_delivered'
             self.delivery = None
+
+    def stage_delivery(self, call_id: str, payload: str) -> None:
+        if self.state == 'pending' and call_id:
+            self.delivery = (call_id, 'list_experiences', 'success', payload)
+
+    def confirm_delivery(self, results) -> bool:
+        if not self.has_delivery(results):
+            return False
+        self.satisfy()
+        return True
+
+    def has_delivery(self, results) -> bool:
+        return self.state == 'pending' and self.delivery is not None and self.delivery in results
