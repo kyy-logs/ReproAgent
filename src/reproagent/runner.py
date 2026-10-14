@@ -1,5 +1,5 @@
 import os
-import shutil
+import asyncio
 import stat
 import tempfile
 import uuid
@@ -15,9 +15,21 @@ from .store import atomic_write
 from .core.serialization import bytes_hash, canonical_bytes
 
 
-def _remove_private_temp(path, parent):
-    """Delete only this execution's direct, non-reparse child of the chosen temp root."""
+async def _remove_private_temp(path, parent, context):
+    """Cooperatively delete only an owned tree, within task and cleanup deadlines.
+
+    Filesystem calls, like the existing workspace operations, are synchronous;
+    each entry yields to cancellation and rechecks the deadline. No background
+    deletion survives a stopped execution, and reparse points are never followed.
+    """
+    clock = context.budget.clock
+    deadline = min(context.budget.deadline, clock() + context.budget.limits.cleanup_timeout_seconds)
+    def permitted():
+        return not context.cancel_event.is_set() and clock() < deadline
+    opened = []
     try:
+        if not permitted():
+            return False
         if path.parent != parent or not path.name.startswith('ra-'):
             return False
         info = path.lstat()
@@ -25,12 +37,45 @@ def _remove_private_temp(path, parent):
             return False
         if path.resolve().parent != parent:
             return False
-        shutil.rmtree(extended_path(path))
-        return True
+        # Keep scandir iterators instead of materializing an arbitrarily large
+        # directory or recursing through Python's call stack.
+        stack = [(Path(extended_path(path)), None)]
+        while stack:
+            await asyncio.sleep(0)
+            if not permitted():
+                return False
+            directory, entries = stack[-1]
+            if entries is None:
+                entries = os.scandir(directory)
+                opened.append(entries)
+                stack[-1] = (directory, entries)
+                continue
+            entry = next(entries, None)
+            if entry is None:
+                entries.close()
+                stack.pop()
+                if not permitted():
+                    return False
+                directory.rmdir()
+                continue
+            child = Path(entry.path)
+            info = child.lstat()
+            if not permitted():
+                return False
+            if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                return False
+            if stat.S_ISDIR(info.st_mode):
+                stack.append((child, None))
+            else:
+                child.unlink()
+        return permitted()
     except FileNotFoundError:
-        return True
+        return not path.exists()
     except OSError:
         return False
+    finally:
+        for entries in opened:
+            entries.close()
 
 
 class Runner:
@@ -99,7 +144,7 @@ class Runner:
             raw = await self.backend.execute(spec, context)
         finally:
             if private_temp is not None:
-                temp_cleanup_ok = _remove_private_temp(private_temp, temp_parent)
+                temp_cleanup_ok = await _remove_private_temp(private_temp, temp_parent, context)
         if not temp_cleanup_ok:
             raw = replace(raw, cleanup_ok=False)
         observation = self.adapter.normalize(raw, raw.probe_artifacts)

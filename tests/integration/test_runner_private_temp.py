@@ -78,7 +78,7 @@ def test_temp_cleanup_failure_invalidates_process_cleanup(tmp_path, projects, fa
     _, request, _, snapshot, candidate, runner = setup_runner(tmp_path, projects, facts)
     owned = []
     real_remove = module._remove_private_temp
-    def fail(path, parent):
+    async def fail(path, parent, context):
         owned.append((path, parent))
         return False
     monkeypatch.setattr(module, '_remove_private_temp', fail)
@@ -89,13 +89,82 @@ def test_temp_cleanup_failure_invalidates_process_cleanup(tmp_path, projects, fa
         assert not result.protection.ok
     finally:
         for path, parent in owned:
-            assert real_remove(path, parent)
+            assert asyncio.run(real_remove(path, parent, facts.context()))
 
 
-def test_private_temp_cleanup_refuses_an_unowned_directory(tmp_path):
+def test_private_temp_cleanup_refuses_an_unowned_directory(tmp_path, facts):
     from reproagent.runner import _remove_private_temp
     parent = tmp_path / 'owned'; parent.mkdir()
     outside = tmp_path / 'ra-outside'; outside.mkdir()
     marker = outside / 'keep.txt'; marker.write_text('preserve', encoding='utf-8')
-    assert not _remove_private_temp(outside, parent)
+    assert not asyncio.run(_remove_private_temp(outside, parent, facts.context()))
     assert marker.read_text(encoding='utf-8') == 'preserve'
+
+
+@pytest.mark.parametrize('limit', ['cleanup', 'task', 'cancel'])
+def test_private_temp_cleanup_stops_between_files(tmp_path, facts, monkeypatch, limit):
+    from reproagent.core.models import BudgetLimits
+    from reproagent.runner import _remove_private_temp
+    parent = tmp_path.resolve()
+    root = parent / 'ra-budget'; root.mkdir()
+    for number in range(5):
+        (root / str(number)).write_text('temporary', encoding='utf-8')
+    context = facts.context(limits=BudgetLimits(cleanup_timeout_seconds=100 if limit == 'task' else 0.05))
+    now = [0.0]
+    context.budget.clock = lambda: now[0]
+    context.budget.deadline = 0.05 if limit == 'task' else 100
+    real_unlink = Path.unlink
+    removed = []
+    def unlink(path, *args, **kwargs):
+        real_unlink(path, *args, **kwargs)
+        removed.append(path)
+        if limit == 'cancel':
+            context.cancel_event.set()
+        else:
+            now[0] += 0.06
+    monkeypatch.setattr(Path, 'unlink', unlink)
+    assert asyncio.run(_remove_private_temp(root, parent, context)) is False
+    assert len(removed) == 1
+    assert len(list(root.iterdir())) == 4
+
+
+def test_missing_child_does_not_masquerade_as_complete_cleanup(tmp_path, facts, monkeypatch):
+    from reproagent.runner import _remove_private_temp
+    root = tmp_path.resolve() / 'ra-missing'; root.mkdir()
+    (root / 'first').write_text('temporary', encoding='utf-8')
+    (root / 'second').write_text('temporary', encoding='utf-8')
+    real_unlink = Path.unlink
+    def disappeared(path, *args, **kwargs):
+        real_unlink(path, *args, **kwargs)
+        raise FileNotFoundError('concurrent disappearance')
+    monkeypatch.setattr(Path, 'unlink', disappeared)
+    assert asyncio.run(_remove_private_temp(root, tmp_path.resolve(), facts.context())) is False
+    assert root.is_dir()
+
+
+@pytest.mark.skipif(os.name != 'nt', reason='Windows private temp lifecycle')
+def test_cancelled_cleanup_cannot_claim_integrity(tmp_path, projects, facts, monkeypatch):
+    from tests.integration.test_runner import setup_runner
+    _, request, _, snapshot, candidate, runner = setup_runner(tmp_path, projects, facts)
+    context = facts.context()
+    owned = []
+    real_execute = runner.backend.execute
+    async def backend(spec, ctx):
+        result = await real_execute(spec, ctx)
+        owned.append(Path(spec.env_overrides['TMP']))
+        ctx.cancel_event.set()
+        return result
+    async def scenario():
+        environment = await runner.prepare(request, snapshot, context)
+        monkeypatch.setattr(runner.backend, 'execute', backend)
+        return await runner.execute(candidate, snapshot, environment, context)
+    try:
+        result = asyncio.run(scenario())
+        assert not result.raw.cleanup_ok
+        assert not result.protection.ok
+        assert result.observation.framework_details['temp_cleanup_ok'] is False
+    finally:
+        import shutil
+        for root in owned:
+            if root.exists():
+                shutil.rmtree(root)
