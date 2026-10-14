@@ -74,10 +74,20 @@
 | 集中验收 | **119 passed、3 skipped，129.62s，exit 0** |
 | 清理期限补修后 runner/verifier/Windows/controller/paths 回归 | **90 passed、3 skipped，131.40s，exit 0** |
 
-集中验收覆盖 runner_private_temp、private_temp_confirmation、verifier、sphinx_rejudge、pinned_sphinx_script_repair、windows_long_paths、runner、controller、paths 和 swt_results，basetemp 为仓库外的 `C:/Users/Dell/AppData/Local/Temp/reproagent-environment-recovery-acceptance`。这些组有重叠，不相加为唯一测试数；本批没有重新跑全仓测试。初次及补修后日志复制保留在 `E:/ReproAgent/.local/environment-recovery-20261014/environment-recovery-acceptance.log`、`environment-recovery-cleanup-final.log`。
+集中验收覆盖 runner_private_temp、private_temp_confirmation、verifier、sphinx_rejudge、pinned_sphinx_script_repair、windows_long_paths、runner、controller、paths 和 swt_results，basetemp 为仓库外的 `C:/Users/Dell/AppData/Local/Temp/reproagent-environment-recovery-acceptance`。这些组有重叠，不相加为唯一测试数；实现阶段未重新跑全仓测试，合并阶段的全量回归见下文。初次及补修后日志复制保留在 `E:/ReproAgent/.local/environment-recovery-20261014/environment-recovery-acceptance.log`、`environment-recovery-cleanup-final.log`。
 
 独立审查初轮 14 项通过，指出 1 项 Important（清理绕过期限），已修复。新增期限/取消测试先见到 4 项失败，补齐实现后通过；子文件消失误报清理成功也先看到失败后修复。审查人复核最终实现，独立 19 项通过（10.05s），无剩余 Critical/Important。审查建议进一步隔离任务期限与清理期限测试，已分别设为 0.05s/100s，单独 3 项通过（0.22s）。
 
 ## 保留的评测边界
 
-原 holdout-diag-002 的官方成绩仍为 **4/10 / 0.4**。8627 新回执是明确带修复环境的额外确认，不修改原成绩；8906 目前只确认环境已解除阻塞。未修改 11445、5221、8474 的生成/验收策略。用户本地评测 HTML 保留。未合并 main，未 push。
+原 holdout-diag-002 的官方成绩仍为 **4/10 / 0.4**。8627 新回执是明确带修复环境的额外确认，不修改原成绩；8906 目前只确认环境已解除阻塞。未修改 11445、5221、8474 的生成/验收策略。用户本地评测 HTML 保留。
+
+## 合并阶段全量验证
+
+用户另行授权“合并并 push”后，同步 origin/main，main 从 `cf23ae0` 快进合并到 `194ab3e`，没有合并冲突。在主工作区 `E:/ReproAgent` 实际执行：
+
+```powershell
+.venv/Scripts/python.exe -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-environment-merge-full-20261014
+```
+
+结果为 **1055 passed、6 skipped，917.82s，exit 0**。未调用真实模型。完整日志在 `E:/ReproAgent/.local/environment-recovery-merge-full.log`。`git diff --check` 通过；用户未跟踪的 `docs/evaluations/2026-10-13-pitfall-experience-ab.html` SHA256 仍为 `aaa7f31a825f9c89e80bb8249f364d2c2b2be59aceb972d29c76d0b67551c0e2`，不纳入此次提交。
