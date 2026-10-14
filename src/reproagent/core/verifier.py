@@ -1,9 +1,10 @@
 import json
+from dataclasses import asdict
 from importlib.resources import files
 from pathlib import Path
 
 from ..observability import mark, record_check, span
-from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
+from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict, VerificationIssue
 
 #: The hard checks, in the order the program reaches them.  A trace shows which ran:
 #: everything after the first short-circuit has no record at all, which is the only way
@@ -17,6 +18,7 @@ from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, bu
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
+from .verification_issues import ISSUE_SPECS
 from .budget import BudgetStopped
 from .protocol import ModelOutputError, validate_verdict
 from .execution_diagnostics import diagnose_execution, execution_bound, diagnostic_reason, INVALID_INTEGRITY_CODES
@@ -29,10 +31,8 @@ class CandidateFileChanged(ValueError):
 def _overflow_reason(needed_bytes: int, budget_bytes: int) -> str:
     """A refusal that cannot be acted on is a defect: it has to carry its own magnitude.
 
-    The recovery this design prescribes is to narrow the candidate, and ``reason`` is the
-    only channel that reaches the model or a reader -- ``Verdict.next_action`` is declared
-    and never consumed.  The projected size is already measured at every site that refuses,
-    so the measurement is kept instead of being replaced by a sentence with no number in it.
+    The magnitude remains in the readable reason and the typed issue measurements.
+    Program decisions use the controlled code, never parse this prose.
     """
     return (f'semantic evidence exceeds bounded context (review evidence needs {needed_bytes} bytes; '
             f'budget is {budget_bytes} bytes); narrow candidate')
@@ -50,6 +50,20 @@ class Verifier:
         if type(ref.start_line) is not int or type(ref.end_line) is not int or not 1 <= ref.start_line <= ref.end_line <= max(1, len(data.splitlines())):
             raise ValueError('evidence line range invalid')
         return data.decode('utf-8')
+
+    def _issue(self, code, message, *, check=None, refs=(), measurements=None, origin=None):
+        checks, default_origin, recovery = ISSUE_SPECS[code]
+        check = check or checks[0]
+        origin = origin or default_origin or ('program_check' if check == 'framework_not_blocked' else 'provider_claim')
+        verified = []
+        for ref in refs:
+            try:
+                self.resolve(ref)
+            except (ValueError, OSError, UnicodeError):
+                continue
+            if ref not in verified:
+                verified.append(ref)
+        return VerificationIssue(code, check, origin, message, tuple(verified), measurements or {}, recovery)
 
     def _integrity_ok(self, contract, candidate, run) -> bool:
         """The positive form of the compound integrity check, so it can be recorded.
@@ -72,38 +86,52 @@ class Verifier:
 
     async def _evaluate(self, contract, candidate, executions, context):
         context.budget.check()
-        def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore', diagnostic=None, unmet=()):
+        def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore', diagnostic=None, unmet=(), code=None, check=None, measurements=None, issues=()):
+            if code is not None:
+                issues = (self._issue(code, reason, check=check, refs=refs, measurements=measurements), *issues)
+            if issues and not unmet:
+                unmet = tuple(dict.fromkeys(item.check for item in issues))
+            for item in issues:
+                mark('verification.issue', attributes={'diagnostic_code': item.code, 'check': item.check,
+                    'check_source': item.origin, 'candidate_id': candidate.candidate_id,
+                    'contract_version': contract.version})
             mark('verdict', attributes={'result_code': classification.value if classification else 'UNCLASSIFIED',
                                         'reason_origin': origin})
             return Verdict(classification, reason, refs, uncertainties=uncertainty, candidate_id=candidate.candidate_id,
                 manifest_hash=candidate.manifest_hash, contract_id=contract.contract_id, contract_version=contract.version,
                 run_ids=tuple(run.run_id for run in executions), next_action=next_action,
-                execution_diagnostic=diagnostic, unmet_checks=unmet)
+                execution_diagnostic=diagnostic, unmet_checks=unmet, issues=issues)
         if not record_check('execution_evidence_present', bool(executions)):
-            return verdict(None, 'no execution evidence')
+            return verdict(None, 'no execution evidence', code='EXECUTION_EVIDENCE_MISSING')
         run = executions[-1]
         diagnostic, failed = diagnose_execution(contract, candidate, run)
         if not record_check('binding_and_integrity_ok', diagnostic is None):
             for check in failed:
                 record_check(check, False)
             return verdict(CandidateClass.INVALID_CANDIDATE if diagnostic.code in INVALID_INTEGRITY_CODES else None,
-                diagnostic_reason(diagnostic, failed), diagnostic=diagnostic, unmet=failed,
+                diagnostic_reason(diagnostic, failed), diagnostic=diagnostic, unmet=failed, code=diagnostic.code,
+                measurements={key:value for key,value in asdict(diagnostic).items() if key != 'code'},
                 next_action='explore' if diagnostic.code in INVALID_INTEGRITY_CODES else 'revise_candidate_or_request_information')
         checks = self.adapter.check_framework(candidate, run.observation)
         non_origin_errors = tuple(error for error in checks.invalid if 'origin' not in error and error != 'no collected tests')
         if not record_check('no_non_origin_framework_errors', not non_origin_errors):
-            return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(non_origin_errors))
+            return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(non_origin_errors), run.observation.failure_refs,
+                code='FRAMEWORK_CHECK_FAILED', measurements={'framework_errors':list(non_origin_errors[:16])})
         if not record_check('framework_not_blocked', not checks.blocked):
             if not run.observation.target_origins:
-                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate import references an unavailable module before target execution')
+                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate import references an unavailable module before target execution',
+                    run.observation.failure_refs, code='CANDIDATE_IMPORT_BLOCKED')
             if 'ModuleNotFoundError' not in contract.reported_actual and 'import' not in contract.reported_actual.lower():
-                return verdict(CandidateClass.ENVIRONMENT_BLOCKED, '; '.join(checks.blocked))
+                return verdict(CandidateClass.ENVIRONMENT_BLOCKED, '; '.join(checks.blocked), run.observation.failure_refs,
+                    code='ENVIRONMENT_BLOCKED', measurements={'framework_errors':list(checks.blocked[:16])})
         if not record_check('tests_executed_and_valid', not checks.invalid and bool(run.observation.executed)):
-            return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(checks.invalid) or 'no executed tests')
+            return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(checks.invalid) or 'no executed tests',
+                run.observation.failure_refs, code='TEST_EXECUTION_INVALID',
+                measurements={'framework_errors':list(checks.invalid[:16]), 'collected':bool(run.observation.collected), 'executed':bool(run.observation.executed)})
         if not record_check('candidate_reproduced', run.raw.exit_code != 0):
-            return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot')
+            return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', code='CANDIDATE_NOT_REPRODUCED')
         if not record_check('expectation_is_grounded', bool(contract.expected) and bool(contract.sources)):
-            return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',))
+            return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',), code='EXPECTATION_UNGROUNDED')
         # Every hard check above ran against the complete ExecutionResult. Only a
         # bounded, citable projection reaches the model, and nothing here may turn a
         # failed hard check or an unusable projection into a success.
@@ -119,19 +147,21 @@ class Verifier:
         try:
             review = project()
         except CandidateFileChanged:
-            return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
+            return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed', code='CANDIDATE_HASH_MISMATCH', check='candidate_file_hash')
         except ReviewContextTooLarge as error:
             record_check('review_context_fits', False)
             mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
-            return verdict(None, _overflow_reason(error.needed_bytes, error.budget_bytes), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate')
+            return verdict(None, _overflow_reason(error.needed_bytes, error.budget_bytes), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate', code='REVIEW_CONTEXT_TOO_LARGE',
+                measurements={'needed_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
         except (ValueError, OSError, UnicodeError):
-            return verdict(None, 'evidence source is unavailable or altered')
+            return verdict(None, 'evidence source is unavailable or altered', code='EVIDENCE_UNAVAILABLE')
         sources = tuple(EvidenceRef(s.path, s.content_hash, s.start_line, s.end_line) for s in contract.sources)
         record_check('review_context_fits', True)
         mark('review.context', attributes={'input_bytes':review.input_bytes, 'output_bytes':review.output_bytes,
             'budget_bytes':cap})
         prompt = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
         error = ''
+        protocol_code = 'MODEL_PROTOCOL_ERROR'
         for attempt in range(3):
             context.budget.check()
             if context.cancel_event.is_set():
@@ -143,7 +173,8 @@ class Verifier:
             if size > cap:
                 record_check('review_context_fits', False)
                 mark('review.context', attributes={'output_bytes':size, 'budget_bytes':cap, 'stage':'redaction'})
-                return verdict(None, _overflow_reason(size, cap), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate')
+                return verdict(None, _overflow_reason(size, cap), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate', code='REVIEW_CONTEXT_TOO_LARGE',
+                    measurements={'needed_bytes':size, 'budget_bytes':cap, 'stage':'redaction'})
             try:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt}, {'role':'user','content':text}), 'verdict'), context)
             except ModelOutputError as exc:
@@ -152,6 +183,7 @@ class Verifier:
                     # request would be the same request again, so it ends the call here.
                     raise
                 error = str(exc)
+                protocol_code = 'MODEL_PROTOCOL_ERROR'
             else:
                 result = {}
                 try:
@@ -165,9 +197,17 @@ class Verifier:
                         self.resolve(ref)
                 except (ValueError, TypeError, KeyError, OSError) as exc:
                     if any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
-                        return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success')
+                        return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success',
+                            code='MODEL_PROTOCOL_ERROR', measurements={'attempts':attempt + 1, 'protocol_error':'invalid_negative_response'})
                     error = str(exc)
+                    protocol_code = 'MODEL_PROTOCOL_ERROR'
                 else:
+                    semantic_issues = tuple(self._issue(code, result['reason'], check=key, refs=refs)
+                        for key,code in (('expected_assertion','EXPECTED_ASSERTION_UNCONFIRMED'),
+                            ('target_triggered','TARGET_TRIGGER_UNCONFIRMED'),
+                            ('failure_matches_issue','ISSUE_FAILURE_MATCH_UNCONFIRMED')) if not result[key])
+                    for item in semantic_issues:
+                        record_check(item.check, False, source='provider_claim')
                     if classification == CandidateClass.REPRODUCED:
                         # The three booleans are the model's own claim, and are recorded
                         # as a claim -- they are not the program accepting anything.
@@ -176,23 +216,27 @@ class Verifier:
                                                                           'failure_matches_issue')),
                                               source='provider_claim')
                         if not claims:
-                            return verdict(None, 'semantic reproduction checks are not all true', refs)
+                            return verdict(None, 'semantic reproduction checks are not all true', refs, origin='provider', issues=semantic_issues)
                         # ...and this one is the program's own check that the citations
                         # cover both the expectation and the observed failure.
                         cites_both = (any(ref in sources for ref in refs)
                                       and any(ref in run.observation.failure_refs for ref in refs))
                         if not record_check('citations_cover_expectation_and_failure', cites_both):
                             error = 'REPRODUCED requires citations to both expectation source and actual failure'
+                            protocol_code = 'SEMANTIC_CITATIONS_INCOMPLETE'
                         else:
                             return verdict(classification, result['reason'], refs, origin='provider')
                     else:
-                        return verdict(classification, result['reason'], refs, origin='provider')
+                        if not semantic_issues:
+                            code = 'ENVIRONMENT_BLOCKED' if classification == CandidateClass.ENVIRONMENT_BLOCKED else 'SEMANTIC_REPRODUCTION_UNCONFIRMED'
+                            semantic_issues = (self._issue(code, result['reason'], check='provider_semantic_claims', refs=refs, origin='provider_claim'),)
+                        return verdict(classification, result['reason'], refs, origin='provider', issues=semantic_issues)
             # A correction re-measures the whole payload, protocol error included: the
             # request that is actually sent has to stay inside the same budget.
             try:
                 review = project(error[:512])
             except CandidateFileChanged:
-                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed')
+                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed', code='CANDIDATE_HASH_MISMATCH', check='candidate_file_hash')
             except ReviewContextTooLarge as error:
                 record_check('review_context_fits', False)
                 mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes,
@@ -200,10 +244,16 @@ class Verifier:
                 # The initial evidence fit. A failed answer's correction envelope
                 # is not proof that the candidate can never be reviewed.
                 return verdict(None, f'semantic verdict invalid: correction context needs {error.needed_bytes} bytes; '
-                    f'budget is {error.budget_bytes} bytes; initial evidence fit', uncertainty=('MODEL_PROTOCOL_ERROR',))
+                    f'budget is {error.budget_bytes} bytes; initial evidence fit', uncertainty=('MODEL_PROTOCOL_ERROR',),
+                    code='MODEL_PROTOCOL_ERROR', measurements={'attempts':attempt + 1, 'needed_bytes':error.needed_bytes,
+                        'budget_bytes':error.budget_bytes, 'stage':'protocol_correction', 'protocol_error':protocol_code})
             except (ValueError, OSError, UnicodeError):
-                return verdict(None, 'evidence source is unavailable or altered')
-        return verdict(None, 'semantic verdict invalid after 3 attempts: ' + error[:512], uncertainty=('MODEL_PROTOCOL_ERROR',))
+                return verdict(None, 'evidence source is unavailable or altered', code='EVIDENCE_UNAVAILABLE')
+        extra = ()
+        if protocol_code == 'SEMANTIC_CITATIONS_INCOMPLETE':
+            extra = (self._issue(protocol_code, 'Both expectation and failure citations are required.'),)
+        return verdict(None, 'semantic verdict invalid after 3 attempts: ' + error[:512], uncertainty=('MODEL_PROTOCOL_ERROR',),
+            code='MODEL_PROTOCOL_ERROR', measurements={'attempts':3, 'protocol_error':protocol_code}, issues=extra)
 
     def confirm(self, contract, candidate, first, second, verdicts):
         if len(verdicts) != 2 or any(v.classification != CandidateClass.REPRODUCED or v.candidate_id != candidate.candidate_id or v.manifest_hash != candidate.manifest_hash or v.contract_id != contract.contract_id or v.contract_version != contract.version for v in verdicts):
