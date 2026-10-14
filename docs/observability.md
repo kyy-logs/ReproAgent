@@ -31,7 +31,7 @@ CLI 与评测复用同一套结束/落盘逻辑：JSON 写入失败不继续生�
 
 - `error_category`：`JSON_SYNTAX_ERROR`、`JSON_ROOT_NOT_OBJECT`、`JSON_DUPLICATE_KEY`、
   `JSON_NON_FINITE`、`TOOL_INPUT_TYPE_ERROR`、`JSON_NESTING_LIMIT` 或 `JSON_PARSE_ERROR`。
-- JSON 语法错误包含 parser 的 `line`、`column`（从 1 开始）与 `position`（从 0 开始）；不复制解析器错误原文。
+- JSON 语法错误包含 parser 的 `line`、`column`（从 1 开始）与 `position`（从 0 开始的字符偏移，并非 UTF-8 字节偏移）；不复制解析器错误原文。
 - `protocol_failures_used` / `protocol_failures_limit` / `protocol_failure_codes`：本 phase 累计拒绝次数、上限及真实顺序，成功工具调用不重置，仍最多三次。
 
 下一次纠错请求只收到受控原因/位置与计数，不收到被拒绝参数的回放；模型仍需自行生成合法调用。
