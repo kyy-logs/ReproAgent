@@ -85,3 +85,31 @@ helper is not an in-place cleanup tool for reusable repositories.
 Neither the dependency profile nor the derivative creates an official execution
 receipt. New official grading still needs a separately versioned harness repair
 and verified provenance. Existing official results remain unchanged.
+
+## Recorded re-judge entry point
+
+The combined entry point now freezes the prediction and scripts, derives the
+rollback repair, mounts the dependency profile read-only in two disposable
+containers and records their inspected exit codes, rollback markers and removal
+results. Run it from this checkout on Linux/WSL with Docker:
+
+```sh
+PYTHONPATH=src python -m evals.repairs.sphinx_rejudge \
+  --round /path/to/holdout-diag-002 \
+  --logs /opt/swt-harness/run_instance_swt_logs \
+  --image exec.eval.x86_64.77d82541416cab86d0d86a.a26bfd526d53d606524963:latest \
+  --output /path/to/new-rejudge
+```
+
+It only uses an already available image, resolving its tag to an immutable ID.
+The output must be new and outside the input directories. The original round is
+read-only. Missing tests, skipped tests, a timeout, a rollback failure or a failed
+container removal cannot establish a successful differential. Container exit 1
+for the expected original test failure is distinct from Docker client failure.
+
+`receipt.json` binds the source round/receipt, prediction bytes, patch, original
+and derived scripts, tool code, repair files, image ID, commands, mounts, test
+nodes and logs. Its kind is `reproagent-repaired-environment-diagnostic-v1` and its
+result is `candidate_differential_confirmed` or `inconclusive`; it is deliberately
+not an official execution receipt accepted by `import-reports`. The command
+does not change the old official score or make model calls.

@@ -235,10 +235,15 @@ class Verifier:
 
         def signatures(run):
             from .failure_signature import stable_failure_message
-            roots = _run_roots(run.observation.framework_details.get('run_root', ''))
+            roots = [(spelling, RUN_ROOT) for spelling in
+                     _run_roots(run.observation.framework_details.get('run_root', ''))]
+            temp_root = run.observation.framework_details.get('temp_root', '')
+            if temp_root:
+                roots.extend((spelling, RUN_ROOT + '/tmp') for spelling in _root_spellings(temp_root))
+            roots.sort(key=lambda item: len(item[0]), reverse=True)
             def normalized(text):
-                for spelling in roots:
-                    text = text.replace(spelling, RUN_ROOT)
+                for spelling, replacement in roots:
+                    text = text.replace(spelling, replacement)
                 return text
             result = []
             for phase in run.observation.tests:

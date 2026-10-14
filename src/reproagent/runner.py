@@ -1,3 +1,7 @@
+import os
+import shutil
+import stat
+import tempfile
 import uuid
 from dataclasses import replace
 from pathlib import Path
@@ -6,9 +10,27 @@ from .adapters.languages.python_pytest.adapter import PythonPytestAdapter
 from .adapters.runtimes.local import LocalBackend
 from .core.models import ExecutionResult, ProbeResults, ProjectView, ProtectionCheck
 from .observability import span
-from .paths import directory_path, is_within, relative_name, workspace_path
+from .paths import directory_path, extended_path, is_within, relative_name, workspace_path
 from .store import atomic_write
 from .core.serialization import bytes_hash, canonical_bytes
+
+
+def _remove_private_temp(path, parent):
+    """Delete only this execution's direct, non-reparse child of the chosen temp root."""
+    try:
+        if path.parent != parent or not path.name.startswith('ra-'):
+            return False
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+            return False
+        if path.resolve().parent != parent:
+            return False
+        shutil.rmtree(extended_path(path))
+        return True
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
 
 
 class Runner:
@@ -63,9 +85,23 @@ class Runner:
             raise ValueError('original snapshot/candidate mismatch')
         context.budget.check()
         run = self.workspace.fresh_run(snapshot, candidate, context)
-        spec = replace(self.adapter.build_execution(candidate, run, environment), execution_role=execution_role)
-        atomic_write(run.root.parent / 'spec.json', canonical_bytes(spec))
-        raw = await self.backend.execute(spec, context)
+        private_temp = None
+        temp_cleanup_ok = True
+        if os.name == 'nt':
+            # Legacy pathlib/pytest resolve() drops extended prefixes. A short private
+            # root also keeps helper-generated child names away from MAX_PATH.
+            temp_parent = Path(tempfile.gettempdir()).resolve()
+            private_temp = Path(tempfile.mkdtemp(prefix='ra-', dir=temp_parent))
+            run = replace(run, temp_root=private_temp)
+        try:
+            spec = replace(self.adapter.build_execution(candidate, run, environment), execution_role=execution_role)
+            atomic_write(run.root.parent / 'spec.json', canonical_bytes(spec))
+            raw = await self.backend.execute(spec, context)
+        finally:
+            if private_temp is not None:
+                temp_cleanup_ok = _remove_private_temp(private_temp, temp_parent)
+        if not temp_cleanup_ok:
+            raw = replace(raw, cleanup_ok=False)
         observation = self.adapter.normalize(raw, raw.probe_artifacts)
         protected = {entry.path:entry.content_hash for entry in snapshot.files}
         def origin_ok(path):
@@ -87,6 +123,7 @@ class Runner:
                     del original_origins[module]
         origins_ok = bool(original_origins) and all(origin_ok(path) for path in original_origins.values())
         details = dict(observation.framework_details, source_binding_ok=origins_ok, run_root=str(run.root), preconditions=list(environment.preconditions))
+        details.update(temp_root=str(run.temp_root), temp_cleanup_ok=temp_cleanup_ok)
         details['candidate_target_origins'] = candidate_origins
         details['target_calls'] = {module: count for module, count in details.get('target_calls', {}).items()
                                    if module not in candidate_origins}
