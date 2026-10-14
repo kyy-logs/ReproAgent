@@ -18,7 +18,9 @@ def assertion_sites(candidate_files):
         if entry['role'] != 'test' or not entry['path'].endswith('.py'):
             continue
         try:
-            tree = ast.parse(entry['content'])
+            # Python accepts a UTF-8 BOM when compiling file bytes. Strip only
+            # this encoding marker for parsing, preserving source/hash/lines.
+            tree = ast.parse(entry['content'].removeprefix('\ufeff'))
         except (SyntaxError, ValueError, RecursionError) as error:
             raise ValueError('candidate assertion inventory unavailable: ' + entry['path']) from error
         for node in ast.walk(tree):

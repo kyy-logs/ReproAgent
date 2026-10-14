@@ -153,9 +153,18 @@ class Verifier:
                     raise
                 error = str(exc)
             else:
-                result = {}
+                context.budget.check()
+                if context.cancel_event.is_set():
+                    raise BudgetStopped('CANCELLED')
                 try:
                     result = parse_json(response.text)
+                except ValueError as exc:
+                    # Ambiguous/unparseable JSON has no trustworthy object from
+                    # which to retain negative claims. A later yes must not erase
+                    # an earlier no hidden behind a duplicate key or syntax error.
+                    return verdict(None, f'semantic verdict invalid JSON ({type(exc).__name__}); no correction request',
+                        uncertainty=('MODEL_PROTOCOL_ERROR',))
+                try:
                     sites = {site['id']: site for site in review.payload['assertion_sites']}
                     validate_verdict(result, tuple(sites))
                     classification = CandidateClass(result['classification']) if result['classification'] else None

@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import pytest
 
-from reproagent.core.models import CandidateClass
+from reproagent.core.models import CandidateClass, ModelResponse
 from tests.unit.test_verifier import EvidenceModel, prepare
 
 
@@ -121,3 +121,83 @@ def test_bad_negative_audit_is_not_retried_until_model_agrees(tmp_path, projects
     verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context()))
     assert verdict.classification is None
     assert len(model.calls) == 1
+
+
+def test_executable_utf8_bom_candidate_keeps_assertion_review(tmp_path, projects, facts):
+    text = '\ufefffrom example.parser import parse\ndef test_empty():\n    assert parse([]) == []\n'
+    contract, candidate, execution, verifier, model, *_ = prepare(tmp_path, projects, facts, text)
+    assert execution.raw.exit_code == 1 and execution.observation.probe_complete
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context()))
+    assert verdict.classification == CandidateClass.REPRODUCED
+    assert len(model.calls) == 1
+    sites = json.loads(model.calls[0].messages[-1]['content'])['assertion_sites']
+    assert sites[0]['start_line'] == 3
+
+
+@pytest.mark.parametrize('problem', ['duplicate', 'nonfinite', 'syntax', 'nonobject'])
+def test_ambiguous_json_cannot_erase_negative_before_a_correction(tmp_path, projects, facts, problem):
+    class AmbiguousReply(EvidenceModel):
+        async def complete(self, request, context):
+            response = await super().complete(request, context)
+            if len(self.calls) > 1:
+                return response  # The unsafe implementation would promote this reply.
+            answer = json.loads(response.text)
+            answer['assertion_reviews'][0]['supported'] = False
+            raw = json.dumps(answer)
+            if problem == 'duplicate':
+                raw = raw[:-1] + ', "reason": "a duplicated key"}'
+            elif problem == 'nonfinite':
+                raw = raw[:-1] + ', "extra": NaN}'
+            elif problem == 'syntax':
+                raw = raw[:-1] + ', "extra": }'
+            else:
+                raw = '[' + raw + ']'
+            return replace(response, text=raw)
+    model = AmbiguousReply()
+    contract, candidate, execution, verifier, *_ = prepare(tmp_path, projects, facts, model=model)
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context()))
+    assert verdict.classification is None
+    assert len(model.calls) == 1
+    assert 'MODEL_PROTOCOL_ERROR' in verdict.uncertainties
+
+
+def test_duplicate_negative_is_terminal_through_real_sdk_http_boundary(tmp_path, projects, facts):
+    import httpx
+    from tests.assertion_support import approved_assertions
+    from tests.unit.test_model_gateway import gateway
+    calls = []
+    def handler(request):
+        payload = json.loads(json.loads(request.content)['messages'][-1]['content'])
+        calls.append(payload)
+        answer = {'classification': 'REPRODUCED', 'reason': 'scripted',
+            'evidence_refs': payload['available_refs'], 'expected_assertion': True,
+            'target_triggered': True, 'failure_matches_issue': True,
+            'assertion_reviews': approved_assertions(payload)}
+        if len(calls) == 1:
+            answer['assertion_reviews'][0].update(supported=False, evidence_refs=[])
+            text = json.dumps(answer)[:-1] + ', "reason": "duplicate"}'
+        else:
+            text = json.dumps(answer)
+        return httpx.Response(200, json={'choices': [{'finish_reason': 'stop',
+            'message': {'content': text}}], 'usage': {'prompt_tokens': 10, 'completion_tokens': 5}})
+    contract, candidate, execution, verifier, *_ = prepare(tmp_path, projects, facts)
+    verifier.gateway = gateway(handler)
+    context = facts.context()
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), context))
+    assert verdict.classification is None and len(calls) == 1
+    assert context.budget.unknown_cost_calls == 1
+    assert 'DuplicateJSONFieldError' in verdict.reason
+
+
+def test_expired_task_wins_over_invalid_json_reply(tmp_path, projects, facts):
+    from reproagent.core.budget import BudgetStopped
+    class ExpiringReply(EvidenceModel):
+        async def complete(self, request, context):
+            await super().complete(request, context)
+            context.budget.deadline = context.budget.clock() - 1
+            return ModelResponse('{"incomplete":')
+    model = ExpiringReply()
+    contract, candidate, execution, verifier, *_ = prepare(tmp_path, projects, facts, model=model)
+    with pytest.raises(BudgetStopped) as error:
+        asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context()))
+    assert error.value.reason == 'EXHAUSTED' and len(model.calls) == 1
