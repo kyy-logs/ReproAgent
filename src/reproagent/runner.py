@@ -73,8 +73,24 @@ class Runner:
             if not is_within(path, run.root): return False
             relative = relative_name(path, run.root)
             return relative in protected and bytes_hash(path.read_bytes()) == protected[relative]
-        origins_ok = bool(observation.target_origins) and all(origin_ok(path) for path in observation.target_origins.values())
+        # A newly published test may live under a broad target package (e.g.
+        # sympy/tests). Its calls are candidate evidence, never original source.
+        published = {entry.path: entry.content_hash for entry in candidate.files}
+        candidate_origins = {}
+        original_origins = dict(observation.target_origins)
+        for module, filename in observation.target_origins.items():
+            path = Path(filename).resolve()
+            if is_within(path, run.root):
+                relative = relative_name(path, run.root)
+                if relative in published and bytes_hash(path.read_bytes()) == published[relative]:
+                    candidate_origins[module] = filename
+                    del original_origins[module]
+        origins_ok = bool(original_origins) and all(origin_ok(path) for path in original_origins.values())
         details = dict(observation.framework_details, source_binding_ok=origins_ok, run_root=str(run.root), preconditions=list(environment.preconditions))
+        details['candidate_target_origins'] = candidate_origins
+        details['target_calls'] = {module: count for module, count in details.get('target_calls', {}).items()
+                                   if module not in candidate_origins}
+        observation = replace(observation, target_origins=original_origins)
         normalize_node = lambda node: node.replace('\\', '/').split(run.run_id + '/code/', 1)[-1]
         details['collected_nodeids'] = [normalize_node(node) for node in details.get('collected_nodeids', [])]
         details['completed_nodeids'] = [normalize_node(node) for node in details.get('completed_nodeids', [])]

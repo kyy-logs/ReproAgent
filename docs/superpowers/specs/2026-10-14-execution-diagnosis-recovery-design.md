@@ -20,6 +20,12 @@ sympy-15678 的七个 run 均在约 60 秒 COMMAND_TIMEOUT，探针停在第一�
 
 每次匹配目标模块的 call 仍增加原计数。缓存只减少重复解析，不采样或跳过调用。pytest_sessionfinish 的模块来源解析继续 fresh，不使用缓存结果；Runner 的保护和原版哈希核验继续独立执行。源码被改动、来源切到仓库外等情况不能因缓存通过验收。
 
+## 重放发现的候选来源边界
+
+真实 Runner 重放还证明：当 target_modules 使用整个包（sympy）、候选位于包内测试目录时，探针会正确观察到候选模块，但 Runner 旧逻辑把它当成原版保护文件，导致来源绑定误拒绝。
+
+仅对位于当前 run 内、路径属于发布清单且当前内容哈希匹配的候选来源，单独保留 candidate_target_origins，并从原版 target_origins 与 target_calls 中剔除。仍须至少一个通过原版快照哈希核验的来源；候选自身调用不能成为原版执行证据。候选变动、外部路径、未登记来源仍不能获得信任。原版保护及候选保护继续独立执行。
+
 ## 执行诊断
 
 新增程序维护的 ExecutionDiagnostic，Verdict 增加可选 execution_diagnostic 字段，旧记录默认 None。诊断只含受控码和有界事实：code、stop_reason、duration_seconds、probe_complete、protection_checked、last_test_stage。last_test_stage 来自最后一条已有 test_phase，如 setup:passed；没有记录时 unknown，不猜测进入了哪个函数。
