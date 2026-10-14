@@ -74,7 +74,7 @@ Issue 支持标题渲染/toctree 的检查，没有给出内部子节点顺序�
 | 补充任务过期优先级 RED | 1 failed，1.90s：预算到期也应先于协议结果 |
 | 全部补修后的同范围最终回归 | **116 passed，261.40s，exit 0** |
 
-集中相关回归及最终回归覆盖 audit、verifier、review_context、controller、model_protocol_regressions、candidate_quality_guidance、large_review_context、agentscope_backends、observability_end_to_end。测试组有重叠，不相加为唯一计数。最终日志保存在 `E:/ReproAgent/.local/assertion-audit-20261014/final-acceptance.log`；初次 109 项记录为同目录 `acceptance.log`。没有在本批重新跑全仓测试；此前 main 的 1055 项结果不作为本批全量结果。
+集中相关回归及最终回归覆盖 audit、verifier、review_context、controller、model_protocol_regressions、candidate_quality_guidance、large_review_context、agentscope_backends、observability_end_to_end。测试组有重叠，不相加为唯一计数。最终日志保存在 `E:/ReproAgent/.local/assertion-audit-20261014/final-acceptance.log`；初次 109 项记录为同目录 `acceptance.log`。功能分支阶段未重新跑全仓测试；合并阶段全量验证见下文，此前 main 的 1055 项结果不代替本批验证。
 
 SDK 验证使用 httpx.MockTransport，确认断言清单和必填响应 schema 到达实际请求，正常 DONE/差分路径、固定版隔离、原调用顺序和探索扣步不变。它证明请求交付和程序拒绝条件，不证明真实模型已学会逐条判断。
 
@@ -107,6 +107,20 @@ SDK 验证使用 httpx.MockTransport，确认断言清单和必填响应 schema 
 
 独立审查初轮集中 10 项通过，但确认 1 项 Important（严格 JSON 解析失败使否定声明不可见，后续回复可晋升成功）和 1 项 Minor（BOM 误拒）。两项均已修，审查者独立 14 项通过（17.59s）；随后发现并修复取消/期限优先级，审查者又独立运行取消、期限、SDK 重复键及合法 JSON 有界纠错，共 **4 passed，9.98s**，确认无新阻断问题。实现方最终同范围 **116 passed**。BOM 仅在 AST 解析时剥掉开头标记，发送文本、文件哈希及行号不变。
 
-当前为功能分支提交，未合并 main、未 push；主工作区的未跟踪评测 HTML 保留。
+功能分支验收时尚未合并、推送；用户随后单独授权合并及 push，执行记录见下文。
 
 实现期间 main 的另一会话新增了 `804ac7b`，仅提交待审阅的 `2026-10-14-verifier-failure-feedback-design.md`。本批未修改或实现那份设计。它对未来失败反馈功能写有“保持原六字段”的范围约束；本批独立增加的 assertion_reviews 是断言审查所需模型协议扩展，后续反馈实现需基于最终合并后的协议同步设计，不能假定该字段不存在。当前生产代码没有并发修改冲突。
+
+## 合并阶段全量验证（2026-10-15）
+
+按用户“push + 合并”授权同步远端，将功能分支 `696e456` 合入 main，合并提交 `b1e22f1`。保留 main 已有 `804ac7b` 设计文档；源码与测试和审查分支一致，无合并冲突。
+
+主工作区实际执行：
+
+```powershell
+.venv/Scripts/python.exe -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-assertion-merge-full-20261014
+```
+
+结果 **1071 passed、6 skipped，907.01s，exit 0**。日志：`E:/ReproAgent/.local/assertion-audit-20261014/merge-full.log`。未调用真实模型接口，未使用 Astra。`git diff --check` 通过。
+
+合并前后，用户未提交的 `docs/reports/reproagent-问题与挑战记录.md` SHA256 均为 `a9eca4c9de48586dda5ed6fe298f1d7f5af58f1c309621636de665f5d6f5244c`；未跟踪的评测 HTML SHA256 仍为 `aaa7f31a825f9c89e80bb8249f364d2c2b2be59aceb972d29c76d0b67551c0e2`。两者不纳入本次提交。
