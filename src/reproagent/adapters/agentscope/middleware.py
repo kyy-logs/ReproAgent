@@ -34,10 +34,13 @@ from agentscope.permission import PermissionBehavior, PermissionDecision
 from .dependency import require_agentscope
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
+from ...core.exploration_progress import step_budget_view
+from ...core.models import AgentContext
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
 from ...observability import mark, tool_call_key
 from ...experience_triggers import ERROR_METADATA, trigger_from_fact
+from .progress import render_progress
 
 #: The phase these events belong to; one runtime runs the exploration phases of one task.
 PHASE = "EXPLORATION"
@@ -113,6 +116,7 @@ class ExplorationMiddleware(MiddlewareBase):
         #: The phase's contract, handed over by the runtime when the phase starts.  Until
         #: then there is nothing to reserve the last steps for.
         self.contract = None
+        self.phase_context: AgentContext | None = None
         self.experience_event, self.experience_input = experience_event, experience_input
         self.browse_gate = browse_gate
         self._browse_delivery_info = {}
@@ -185,6 +189,18 @@ class ExplorationMiddleware(MiddlewareBase):
             # This is a fresh per-call program view, not another persistent history message.
             input_kwargs = {**input_kwargs, 'messages': [*input_kwargs['messages'],
                 SystemMsg(name='experience-browse', content=f'Current experience browse state: {state}.' + hint)]}
+        # Rebuild from task counters before the guarded model takes this call's step.
+        # This message is local to this input, never another persistent history entry.
+        if not self.gate.finished and not self.context.cancel_event.is_set() and self.steps_remaining > 0:
+            self.context.budget.check()
+            view = step_budget_view(self.context.budget.limits.agent_steps, self.context.budget.steps_used)
+            try:
+                progress = render_progress(view, self.phase_context)
+            except ValueError as exc:
+                raise BudgetStopped('NEEDS_INFORMATION', 'exploration progress exceeds its bounded message') from exc
+            input_kwargs = {**input_kwargs, 'messages': [*input_kwargs['messages'],
+                SystemMsg(name='exploration-progress', content=progress)]}
+            await self._check_progress_capacity(agent, input_kwargs['messages'], input_kwargs['tools'])
         model = input_kwargs["current_model"]
         response = await model(
             messages=input_kwargs["messages"], tools=input_kwargs["tools"],
@@ -194,6 +210,19 @@ class ExplorationMiddleware(MiddlewareBase):
                 self.record_browse(**self._browse_delivery_info)
         self.check_response(response, allowed_tools=self.allowed_tools)
         return response
+
+    async def _check_progress_capacity(self, agent, messages, tools) -> None:
+        """Count the actual input after ephemeral notices, without spending a step."""
+        if self.gate.finished or self.context.cancel_event.is_set() or self.steps_remaining <= 0:
+            return  # The model guard owns these stops, with their established precedence.
+        self.context.budget.check()
+        estimated = await agent.model.count_tokens(messages=messages, tools=tools)
+        if self.gate.finished or self.context.cancel_event.is_set() or self.steps_remaining <= 0:
+            return
+        self.context.budget.check()
+        if estimated >= agent.context_config.trigger_ratio * agent.model.context_size:
+            raise BudgetStopped('NEEDS_INFORMATION',
+                                'the final exploration input including budget progress reached the model context threshold')
 
     async def on_check_permission(self, agent, input_kwargs, next_handler):
         """Refuse every tool outside the phase surface, and never ask a user who is absent.

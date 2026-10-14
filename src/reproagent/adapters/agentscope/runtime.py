@@ -159,6 +159,7 @@ class AgentScopeRuntime:
             self._experience_event(fact)
         # The reserve reads the contract per permission check, so it has to know this phase's.
         self.middleware.contract = context.contract
+        self.middleware.phase_context = context
         self._bind_guard()
         self._agent.react_config.max_iters = max(1, self._steps_remaining())
         self.middleware.record("exploration.phase", action="", result_code="BEGIN",

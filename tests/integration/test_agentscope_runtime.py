@@ -156,6 +156,174 @@ def events(env, kind=None):
     return [event.payload for event in stored if kind is None or event.kind == kind]
 
 
+def wire_progress(request):
+    notices = []
+    for message in request['messages']:
+        if message.get('role') != 'system':
+            continue
+        try:
+            content = json.loads(message['content'])
+        except (ValueError, TypeError):
+            continue
+        if isinstance(content, dict) and {'budget', 'facts', 'guidance'} <= content.keys():
+            notices.append(content)
+    assert len(notices) == 1, 'each actual request must have exactly one fresh progress notice'
+    return notices[0]
+
+
+def test_budget_progress_refreshes_on_each_wire_request(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    env.answers.extend([read_reply(env.module, f'call-{i}') for i in range(19)])
+    env.answers.append(tool_reply('write_candidate', write_payload(), call_id='publish'))
+    assert explore(env).kind == 'candidate'
+    assert len(env.requests) == 20 and env.context.budget.steps_used == 20
+    views = [wire_progress(request) for request in env.requests]
+    for index, mode, used, left in [(14, 'normal', 14, 6), (15, 'converging', 15, 5),
+                                    (19, 'converging', 19, 1)]:
+        assert views[index]['budget']['mode'] == mode
+        assert views[index]['budget']['used_steps'] == used
+        assert views[index]['budget']['remaining_steps'] == left
+    assert all(bool(v['guidance']) == (i >= 15) for i, v in enumerate(views))
+    assert not any(getattr(m, 'name', '') == 'exploration-progress' for m in env.runtime.messages)
+    with pytest.raises(BudgetStopped):
+        explore(env)
+    assert len(env.requests) == 20
+
+
+def test_budget_progress_http_retry_keeps_one_snapshot(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=1), answers=[
+        httpx.Response(503, json={'error': {'message': 'busy'}}),
+        httpx.Response(503, json={'error': {'message': 'busy'}}),
+        tool_reply('request_information', {'question': 'Need evidence'})])
+    assert explore(env).kind == 'request_information'
+    assert len(env.requests) == 3 and env.context.budget.steps_used == 1
+    views = [wire_progress(request) for request in env.requests]
+    assert all(view == views[0] for view in views)
+    assert views[0]['budget']['remaining_steps'] == 1
+
+
+def test_budget_progress_protocol_correction_spends_new_step(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=4), answers=[
+        tool_reply(calls=[('Read', {'file_path': 'a.py'}, 'a'), ('Read', {'file_path': 'b.py'}, 'b')]),
+        tool_reply('request_information', {'question': 'Need evidence'})])
+    env.context.budget.take_step()
+    env.context.budget.take_step()
+    assert explore(env).kind == 'request_information'
+    assert [wire_progress(r)['budget']['mode'] for r in env.requests] == ['normal', 'converging']
+    assert env.context.budget.steps_used == 4
+
+
+def test_budget_progress_contract_revision_does_not_reset(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    source = next(item for item in env.snapshot.files if item.path == 'example/parser.py')
+    env.answers.extend([
+        read_reply(env.module, 'source'),
+        tool_reply('revise_contract', {'source_refs': [{'path': source.path, 'content_hash': source.content_hash,
+            'start_line': 1, 'end_line': 2}], 'reason': 'Need actual behaviour'}),
+        tool_reply('request_information', {'question': 'Need evidence'})])
+    for _ in range(13):
+        env.context.budget.take_step()
+
+    async def execute():
+        try:
+            assert (await env.runtime.explore(agent_context(env))).kind == 'revise_contract'
+            env.service.bind_contract(replace(env.service.contract, version=2))
+            return await env.runtime.explore(agent_context(env))
+        finally:
+            await env.runtime.aclose()
+            await env.factory.aclose()
+    assert asyncio.run(execute()).kind == 'request_information'
+    views = [wire_progress(r) for r in env.requests]
+    assert [v['budget']['used_steps'] for v in views] == [13, 14, 15]
+    assert [v['facts']['contract_version'] for v in views] == [1, 1, 2]
+    assert views[-1]['budget']['mode'] == 'converging'
+
+
+def test_budget_progress_is_ephemeral_and_coexists_with_browse(tmp_path, projects, facts):
+    from tests.integration.test_agentscope_experience_catalog import catalog_environment
+    env, _ = catalog_environment(tmp_path, projects, facts, [
+        tool_reply('list_experiences', {'category': 'model'}, call_id='catalog'),
+        tool_reply('request_information', {'question': 'Need evidence'})])
+    assert explore(env).kind == 'request_information'
+    assert wire_progress(env.requests[1])['budget']['used_steps'] == 1
+    catalog = next(m for m in env.requests[1]['messages'] if m.get('tool_call_id') == 'catalog')
+    assert json.loads(catalog['content'])['items']
+    assert 'Current experience browse state: satisfied' in json.dumps(env.requests[1]['messages'])
+    assert not any(getattr(m, 'name', '') == 'exploration-progress' for m in env.runtime.messages)
+
+
+@pytest.mark.parametrize('steps', [1, 2, 3])
+def test_budget_progress_small_limits_can_finish_without_extra_call(tmp_path, projects, facts, steps):
+    env = environment(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=steps), answers=[
+        tool_reply('request_information', {'question': 'Need evidence'})])
+    assert explore(env).kind == 'request_information'
+    assert len(env.requests) == 1
+    assert wire_progress(env.requests[0])['budget']['remaining_steps'] == steps
+
+
+@pytest.mark.parametrize('stop', ['cancel', 'deadline', 'exhausted'])
+def test_budget_progress_stopped_calls_do_not_reach_http(tmp_path, projects, facts, stop):
+    env = environment(tmp_path, projects, facts, answers=[text_reply()])
+    if stop == 'cancel':
+        env.context.cancel_event.set()
+    elif stop == 'deadline':
+        env.context.budget.deadline = env.context.budget.clock() - 1
+    else:
+        for _ in range(20):
+            env.context.budget.take_step()
+    with pytest.raises(BudgetStopped) as error:
+        explore(env)
+    assert error.value.reason == ('CANCELLED' if stop == 'cancel' else 'EXHAUSTED')
+    assert env.requests == []
+
+
+@pytest.mark.parametrize('overflow', [False, True])
+def test_budget_progress_counts_final_messages_before_http(tmp_path, projects, facts, monkeypatch, overflow):
+    env = environment(tmp_path, projects, facts, answers=[
+        tool_reply('request_information', {'question': 'Need evidence'})])
+    threshold = env.runtime._agent.context_config.trigger_ratio * env.model.context_size
+    async def count_tokens(messages, tools=None, **kwargs):
+        # Simulate the token boundary, not the SDK message/HTTP assembly.
+        has_progress = any(getattr(m, 'name', '') == 'exploration-progress' for m in messages)
+        return threshold if has_progress and overflow else threshold - 1
+    monkeypatch.setattr(env.model, 'count_tokens', count_tokens)
+    if overflow:
+        with pytest.raises(BudgetStopped) as error:
+            explore(env)
+        assert error.value.reason == 'NEEDS_INFORMATION'
+        assert env.requests == [] and env.context.budget.steps_used == 0
+    else:
+        assert explore(env).kind == 'request_information'
+        assert len(env.requests) == 1 and env.context.budget.steps_used == 1
+    assert not any(getattr(m, 'name', '') == 'exploration-progress' for m in env.runtime.messages)
+
+
+@pytest.mark.parametrize('stop', ['finished', 'cancel', 'deadline', 'exhausted'])
+def test_budget_progress_stop_during_count_outranks_capacity(tmp_path, projects, facts, monkeypatch, stop):
+    env = environment(tmp_path, projects, facts, answers=[text_reply()])
+    async def count_tokens(messages, tools=None, **kwargs):
+        if not any(getattr(m, 'name', '') == 'exploration-progress' for m in messages):
+            return 1
+        if stop == 'finished':
+            env.gate.finish(PhaseResult('request_information', question='Need evidence'))
+        elif stop == 'cancel':
+            env.context.cancel_event.set()
+        elif stop == 'deadline':
+            env.context.budget.deadline = env.context.budget.clock() - 1
+        else:
+            for _ in range(20):
+                env.context.budget.take_step()
+        return env.model.context_size
+    monkeypatch.setattr(env.model, 'count_tokens', count_tokens)
+    if stop == 'finished':
+        assert explore(env).kind == 'request_information'
+    else:
+        with pytest.raises(BudgetStopped) as error:
+            explore(env)
+        assert error.value.reason == ('CANCELLED' if stop == 'cancel' else 'EXHAUSTED')
+    assert env.requests == []
+
+
 def pending_tasks():
     """Every task the running loop still has besides the one asking."""
     return {task for task in asyncio.all_tasks() if task is not asyncio.current_task() and not task.done()}
@@ -331,7 +499,13 @@ def measure_threshold(env):
     counts it: the round's message in the context, plus the system prompt and tool schemas.
     The candidate's own arguments are what pushes the *next* step over the threshold.
     """
-    env.runtime._agent.state.context.append(env.runtime._message(agent_context(env)))
+    from agentscope.message import SystemMsg
+    from reproagent.core.exploration_progress import step_budget_view
+    from reproagent.adapters.agentscope.progress import render_progress
+    phase = agent_context(env)
+    env.runtime._agent.state.context.append(env.runtime._message(phase))
+    env.runtime._agent.state.context.append(SystemMsg(name='exploration-progress', content=render_progress(
+        step_budget_view(env.context.budget.limits.agent_steps, env.context.budget.steps_used), phase)))
     try:
         first = asyncio.run(env.runtime.middleware._estimated_tokens(env.runtime._agent))
     finally:
@@ -593,7 +767,9 @@ def test_original_issue_is_kept_when_contract_changes_between_phases(tmp_path, p
         await env.runtime.aclose()
         await env.factory.aclose()
     asyncio.run(run())
-    second_input = json.loads(env.requests[-1]['messages'][-1]['content'])
+    second_input = next(json.loads(message['content']) for message in reversed(env.requests[-1]['messages'])
+                        if message.get('role') == 'user' and '"contract"' in message.get('content', '')
+                        and '"issue"' in message.get('content', ''))
     assert second_input['issue']['text'] == issue.text
     assert second_input['contract']['version'] == 2
 
