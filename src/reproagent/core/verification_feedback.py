@@ -73,6 +73,17 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         data['issues'].pop(); counts['omitted_issues']+=1
         text=output()
         if text is not None: return text
+    # Equivalent identity aliases do not need to be repeated in the minimum form.
+    for key, equivalent in (('previous_candidate_id', data['candidate_id']),
+                            ('previous_run_ids', data['run_ids'])):
+        if key in payload and payload[key] == equivalent:
+            del payload[key]; counts['omitted_details'] += 1
+    # Replace long custom prose with a complete controlled action, never cut the verb.
+    if len(INSTRUCTIONS[recovery].encode('utf-8')) < len(payload['instruction'].encode('utf-8')):
+        payload['instruction'] = INSTRUCTIONS[recovery]; counts['omitted_details'] += 1
+    for key in ('uncertainties', 'evidence_refs', 'execution_diagnostic'):
+        if not data[key]:
+            del data[key]; counts['omitted_details'] += 1
     # Keep the main code/check/origin/recovery, every failed check and exact binding.
     # These cannot silently disappear to make an unusable phase fit.
     if len(data['reason'])>32:

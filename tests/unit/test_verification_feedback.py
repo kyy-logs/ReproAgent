@@ -68,3 +68,23 @@ def test_original_execution_and_replay_extras_are_preserved():
 def test_unknown_decision_and_extras_cannot_grant_new_actions():
     with pytest.raises(ValueError): render(sample(),byte_limit=8192,decision='force_done')
     with pytest.raises(ValueError): render(sample(),byte_limit=8192,extras={'permission':'allow'})
+
+
+def test_duplicate_context_block_feedback_fits_small_capacity_without_repeating_identity():
+    v=Verdict(None,'semantic evidence exceeds bounded context; narrow candidate',
+        candidate_id='candidate-'+('c'*32),manifest_hash='h'*64,contract_id='contract-'+('a'*32),
+        run_ids=('run-'+('r'*32),),unmet_checks=('review_context_fits',),next_action='narrow_candidate',
+        issues=(VerificationIssue('REVIEW_CONTEXT_TOO_LARGE','review_context_fits','program_check',
+            'semantic evidence exceeds bounded context; narrow candidate',
+            measurements={'needed_bytes':5000,'budget_bytes':1024},recovery='narrow_candidate'),))
+    from reproagent.core.verification_feedback import render_verification_feedback
+    text=render_verification_feedback(v,result_code='DUPLICATE_CANDIDATE',byte_limit=1024,
+        instruction='The same test and execution settings still exceed the review context. Narrow the test or request information; changing the hypothesis alone does not change evidence.',
+        extras={'previous_candidate_id':v.candidate_id,'previous_run_ids':list(v.run_ids),
+            'prior_result_code':'REVIEW_CONTEXT_TOO_LARGE'})
+    data=json.loads(text)
+    assert len(text.encode())<=1024
+    assert data['verdict']['issues'][0]['code']=='REVIEW_CONTEXT_TOO_LARGE'
+    assert data['verdict']['run_ids']==list(v.run_ids)
+    assert data['verdict']['issues'][0]['measurements']['needed_bytes']==5000
+    assert data['projection']['omitted_details']>0

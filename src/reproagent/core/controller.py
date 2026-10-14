@@ -23,6 +23,7 @@ import uuid
 from dataclasses import asdict, dataclass, field, replace
 
 from ..observability import span, mark
+from .verification_feedback import render_verification_feedback
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
@@ -195,6 +196,35 @@ class Controller:
             text = text.replace(secret, '[REDACTED]')
         return text.encode()[:8192].decode(errors='ignore')
 
+    def candidate_feedback(self, verdict, context, *, result_code, decision='continue', instruction='', extras=None):
+        """Project already-saved verification facts; advisory sinks cannot change acceptance."""
+        try:
+            text = render_verification_feedback(verdict, result_code=result_code,
+                byte_limit=min(8192, context.budget.limits.tool_response_bytes), decision=decision,
+                instruction=instruction, secrets=self.secrets, extras=extras)
+        except BudgetStopped:
+            if decision != 'stop':
+                raise
+            # An already-terminal branch sends no next request. Preserve its true stop
+            # cause; missing optional feedback cannot rewrite an environment block.
+            text = ''
+        projection = json.loads(text)['projection'] if text else {}
+        payload = {'result_code':result_code, 'decision':decision,
+            'diagnostic_codes':[item.code for item in verdict.issues],
+            'checks':list(verdict.unmet_checks),
+            'candidate_id':verdict.candidate_id, 'contract_id':verdict.contract_id,
+            'contract_version':verdict.contract_version, 'run_ids':list(verdict.run_ids),
+            'output_bytes':len(text.encode('utf-8')), 'projection':projection,
+            'feedback_state':'ready' if text else 'capacity_unavailable'}
+        refs = tuple('verdicts/verdict-' + run_id + '.json' for run_id in verdict.run_ids
+            if self.store.record_path('verdicts', 'verdict-' + run_id).is_file())
+        try:
+            self.store.append_event('verification.feedback', refs, payload)
+        except (ValueError, OSError):
+            pass
+        mark('verification.feedback', attributes=payload)
+        return text
+
     def observe_execution(self, lifecycle, run):
         # Execution facts are independent of whether later semantic review succeeds.
         key = (run.snapshot_id, run.environment_id, run.execution_role)
@@ -225,7 +255,9 @@ class Controller:
         if done:
             result = self.state(result, TaskState.BLOCKED, stop_reason=code,
                 uncertainties=(*result.uncertainties, f'{code}: {count} consecutive timeouts under unchanged execution conditions; {verdict.reason}'))
-        return result, self.feedback(payload), code, done
+        return result, self.candidate_feedback(verdict, context, result_code=code, decision='stop' if done else 'continue',
+            instruction=payload['instruction'], extras={key:payload[key] for key in
+                ('consecutive_command_timeouts','configured_command_timeout_seconds')}), code, done
 
     def steps_remaining(self, context):
         return max(0, context.budget.limits.agent_steps - context.budget.steps_used)
@@ -305,9 +337,10 @@ class Controller:
                     self.store.append_event('candidate.duplicate', (candidate.candidate_id, original.candidate_id, previous_run.run_id),
                         {'result_code':'DUPLICATE_CANDIDATE', 'prior_result_code':'REVIEW_CONTEXT_TOO_LARGE',
                          'contract_version':contract.version})
-                    return result, self.feedback({'result_code':'DUPLICATE_CANDIDATE',
-                        'previous_verdict':asdict(previous_verdict),
-                        'instruction':'The same test and execution settings still exceed the review context. Narrow the test or request information; changing the hypothesis alone does not change evidence.'}), 'DUPLICATE_CANDIDATE', False
+                    return result, self.candidate_feedback(previous_verdict, context, result_code='DUPLICATE_CANDIDATE',
+                        instruction='The same test and execution settings still exceed the review context. Narrow the test or request information; changing the hypothesis alone does not change evidence.',
+                        extras={'previous_candidate_id':original.candidate_id, 'previous_run_ids':[previous_run.run_id],
+                            'prior_result_code':'REVIEW_CONTEXT_TOO_LARGE'}), 'DUPLICATE_CANDIDATE', False
                 result = self.state(result, TaskState.EXECUTING)
                 run = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
                 self.observe_execution(lifecycle, run)
@@ -331,13 +364,13 @@ class Controller:
                 if not candidate.preconditions:
                     lifecycle.context_blocked[execution_key] = (candidate, run, verdict)
                 step.rejected('REVIEW_CONTEXT_TOO_LARGE')
-                return result, self.feedback(asdict(verdict)), 'REVIEW_CONTEXT_TOO_LARGE', False
+                return result, self.candidate_feedback(verdict, context, result_code='REVIEW_CONTEXT_TOO_LARGE', decision='continue'), 'REVIEW_CONTEXT_TOO_LARGE', False
             if verdict.classification == CandidateClass.ENVIRONMENT_BLOCKED:
                 result = self.state(result, TaskState.BLOCKED, stop_reason='ENVIRONMENT_BLOCKED',
                                     uncertainties=(*result.uncertainties, verdict.reason))
-                return result, self.feedback(asdict(verdict)), 'ENVIRONMENT_BLOCKED', True
+                return result, self.candidate_feedback(verdict, context, result_code='ENVIRONMENT_BLOCKED', decision='stop'), 'ENVIRONMENT_BLOCKED', True
             if verdict.classification != CandidateClass.REPRODUCED:
-                return result, self.feedback(asdict(verdict)), str(verdict.classification or 'NOT_REPRODUCED'), False
+                return result, self.candidate_feedback(verdict, context, result_code=str(verdict.classification or 'NOT_REPRODUCED')), str(verdict.classification or 'NOT_REPRODUCED'), False
             result = self.state(result, TaskState.VERIFYING, evidence_level=EvidenceLevel.SINGLE_OBSERVATION,
                                 accepted_candidate_id=candidate.candidate_id)
 
@@ -358,9 +391,9 @@ class Controller:
             self.store.save_record('verdicts', 'verdict-' + second.run_id, second_verdict)
             if not self.verifier.confirm(contract, candidate, run, second, (verdict, second_verdict)):
                 step.rejected('REPLAY_UNCONFIRMED')
-                return (result, self.feedback({'result_code':'REPLAY_UNCONFIRMED', 'verdict':asdict(second_verdict),
-                        'instruction':'Independent replay did not confirm the same failure; revise or request information.'}),
-                        'REPLAY_UNCONFIRMED', False)
+                return (result, self.candidate_feedback(second_verdict, context, result_code='REPLAY_UNCONFIRMED',
+                        instruction='Independent replay did not confirm the same failure; revise or request information.',
+                        extras={'previous_run_ids':[run.run_id]}), 'REPLAY_UNCONFIRMED', False)
             result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.REPEATED_OBSERVATION,
                                 accepted_candidate_id=candidate.candidate_id)
             result = await self.validate_fixed_version(lifecycle, candidate, run, contract, context, result)
