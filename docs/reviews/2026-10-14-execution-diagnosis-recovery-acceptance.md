@@ -28,6 +28,7 @@
 | 旧断言更新后的审阅/执行诊断/Verifier 回归 | 35 passed（32.74s），exit 0 |
 | 仓库外 SWT 对照评测 | 10 passed（32.15s） |
 | Windows 长路径定向复核 | 23 passed、2 skipped（23.48s） |
+| 合并到 E:/ReproAgent 后关键回归 | 52 passed（76.43s），exit 0 |
 | 补丁格式 | git diff --check 通过（最终提交前再次确认） |
 
 定向测试均使用本地解释器 `.venv/Scripts/python.exe`，早期定向检查曾使用 `.local` 专用目录；最终完整测试改用两个仓库之外的系统临时目录，不写经验默认库。最终完整测试命令：
@@ -81,5 +82,6 @@
 - ee15a58：审查发现的两项恢复边界修复。
 - e698b08：唯一旧测试断言对齐新的不完整执行诊断契约。
 
-无真实模型提供商请求、无新增模型 token 费用、未使用 Astra。实现位于独立工作树 `C:/Users/Dell/.codex/worktrees/experience-first-browse/ReproAgent`；主工作区 main 和用户本地评测 HTML 未修改。未 push、未合并，等待用户后续指令。
+无真实模型提供商请求、无新增模型 token 费用、未使用 Astra。实现分支已按用户指令快进合并到 `E:/ReproAgent` 的本地 main；未 push。用户本地评测 HTML 的 SHA-256 在合并前后一致。两份初版计划在替换为最终版前已备份到 `.local/merge-backups/execution-recovery-20261014-093651/`；实施日志与离线重放脚本保存在 `.local/execution-recovery-audit-20261014/`。
 
+合并后命令：`.venv/Scripts/python.exe -m pytest -q tests/unit/test_review_context.py tests/unit/test_execution_diagnostics.py tests/unit/test_verifier.py tests/unit/test_controller_execution_recovery.py tests/integration/test_runner_candidate_origins.py tests/integration/test_execution_diagnostic_reporting.py --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-merge-recovery-20261014`。解释器确认加载 `E:/ReproAgent/src/reproagent/runner.py`。
