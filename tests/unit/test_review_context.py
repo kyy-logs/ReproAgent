@@ -259,7 +259,10 @@ def test_real_collection_error_aborts_before_any_review(tmp_path, projects, fact
     model = CitingModel()
     verdict = asyncio.run(Verifier(workspace.store, runner.adapter, model).evaluate(contract, candidate, (execution,), facts.context()))
 
-    assert not execution.observation.probe_complete and verdict.classification == CandidateClass.INVALID_CANDIDATE
+    assert not execution.observation.probe_complete and verdict.classification is None
+    assert verdict.execution_diagnostic.code == 'PROBE_INCOMPLETE'
+    assert verdict.unmet_checks == ('probe_complete',)
+    assert verdict.next_action == 'revise_candidate_or_request_information'
     assert not model.calls
 
 
