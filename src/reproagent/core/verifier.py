@@ -12,8 +12,8 @@ from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict, Verifica
 VERIFIER_CHECKS = ("execution_evidence_present", "binding_and_integrity_ok",
                    "no_non_origin_framework_errors", "framework_not_blocked",
                    "tests_executed_and_valid", "candidate_reproduced",
-                   "expectation_is_grounded", "review_context_fits", "provider_semantic_claims",
-                   "citations_cover_expectation_and_failure")
+                   "expectation_is_grounded", "review_context_fits", "candidate_assertions_supported",
+                   "provider_semantic_claims", "citations_cover_expectation_and_failure")
 from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from reproagent.store import safe_child
@@ -89,6 +89,10 @@ class Verifier:
         def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore', diagnostic=None, unmet=(), code=None, check=None, measurements=None, issues=()):
             if code is not None:
                 issues = (self._issue(code, reason, check=check, refs=refs, measurements=measurements), *issues)
+            if issues:
+                # Diagnostic evidence is freshly verified. Do not leave discarded,
+                # altered references in the top-level failure feedback either.
+                refs = tuple(dict.fromkeys(ref for item in issues for ref in item.evidence_refs))
             if issues and not unmet:
                 unmet = tuple(dict.fromkeys(item.check for item in issues))
             for item in issues:
@@ -185,23 +189,50 @@ class Verifier:
                 error = str(exc)
                 protocol_code = 'MODEL_PROTOCOL_ERROR'
             else:
-                result = {}
+                context.budget.check()
+                if context.cancel_event.is_set():
+                    raise BudgetStopped('CANCELLED')
                 try:
                     result = parse_json(response.text)
-                    validate_verdict(result)
+                except ValueError as exc:
+                    # Ambiguous/unparseable JSON has no trustworthy object from
+                    # which to retain negative claims. A later yes must not erase
+                    # an earlier no hidden behind a duplicate key or syntax error.
+                    return verdict(None, f'semantic verdict invalid JSON ({type(exc).__name__}); no correction request',
+                        uncertainty=('MODEL_PROTOCOL_ERROR',), code='MODEL_PROTOCOL_ERROR',
+                        measurements={'attempts':attempt + 1, 'protocol_error':type(exc).__name__})
+                try:
+                    sites = {site['id']: site for site in review.payload['assertion_sites']}
+                    validate_verdict(result, tuple(sites))
                     classification = CandidateClass(result['classification']) if result['classification'] else None
                     refs = tuple(EvidenceRef(**ref) for ref in result['evidence_refs'])
                     if any(ref not in review.available_refs for ref in refs):
                         raise ValueError('unknown evidence citation; copy exact available_refs')
                     for ref in refs:
                         self.resolve(ref)
+                    for row in result['assertion_reviews']:
+                        if any(EvidenceRef(**ref) not in sources for ref in row['evidence_refs']):
+                            raise ValueError('assertion_reviews may cite only supplied expectation sources, not observed failures')
                 except (ValueError, TypeError, KeyError, OSError) as exc:
-                    if any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
+                    rows = result.get('assertion_reviews', [])
+                    negative_audit = isinstance(rows, list) and any(isinstance(row, dict) and row.get('supported') is False for row in rows)
+                    if negative_audit or any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
                         return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success',
                             code='MODEL_PROTOCOL_ERROR', measurements={'attempts':attempt + 1, 'protocol_error':'invalid_negative_response'})
                     error = str(exc)
                     protocol_code = 'MODEL_PROTOCOL_ERROR'
                 else:
+                    unsupported = [row for row in result['assertion_reviews'] if not row['supported']]
+                    if not record_check('candidate_assertions_supported', not unsupported, source='provider_claim'):
+                        notes = []
+                        for row in unsupported:
+                            site = sites[row['assertion_id']]
+                            notes.append(f"{site['path']}:{site['start_line']}: {row['reason']}")
+                        return verdict(CandidateClass.INVALID_CANDIDATE,
+                            'unsupported candidate assertion(s): ' + '; '.join(notes), refs,
+                            origin='provider', unmet=('candidate_assertions_supported',), code='CANDIDATE_ASSERTIONS_UNCONFIRMED',
+                            measurements={'assertion_ids':[row['assertion_id'] for row in unsupported[:16]],
+                                'omitted_assertions':max(0,len(unsupported)-16)})
                     semantic_issues = tuple(self._issue(code, result['reason'], check=key, refs=refs)
                         for key,code in (('expected_assertion','EXPECTED_ASSERTION_UNCONFIRMED'),
                             ('target_triggered','TARGET_TRIGGER_UNCONFIRMED'),

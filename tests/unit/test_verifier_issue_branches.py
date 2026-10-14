@@ -57,6 +57,8 @@ class Claims(EvidenceModel):
         if self.citations == 'unknown': refs=[dict(refs[0], content_hash='bad')]
         reply=dict(classification='REPRODUCED', reason='需核查目标调用', evidence_refs=refs,
             expected_assertion=True,target_triggered=True,failure_matches_issue=True)
+        from tests.assertion_support import approved_assertions
+        reply['assertion_reviews']=approved_assertions(data)
         reply.update(self.values)
         if self.invalid: reply.pop('reason')
         return ModelResponse(json.dumps(reply))
@@ -134,3 +136,43 @@ def test_redaction_expansion_reports_measured_review_overflow(tmp_path,projects,
     item=verdict.issues[0]
     assert item.code=='REVIEW_CONTEXT_TOO_LARGE' and item.measurements['stage']=='redaction'
     assert item.measurements['needed_bytes']>cap and not model.calls
+
+
+def test_new_assertion_audit_refusal_has_a_provider_gap(tmp_path,projects,facts):
+    from tests.unit.test_assertion_audit import AuditModel
+    def unsupported(reply, data):
+        reply['assertion_reviews'][0].update(supported=False,reason='source does not support assertion',evidence_refs=[])
+    model=AuditModel(unsupported)
+    contract,candidate,run,verifier,*_=prepare(tmp_path,projects,facts,model=model)
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context()))
+    assert verdict.classification==CandidateClass.INVALID_CANDIDATE
+    assert verdict.issues[0].code=='CANDIDATE_ASSERTIONS_UNCONFIRMED'
+    assert verdict.issues[0].origin=='provider_claim'
+    assert verdict.issues[0].measurements['assertion_ids']
+
+
+def test_ambiguous_json_is_terminal_and_reports_only_protocol_gap(tmp_path,projects,facts):
+    class Ambiguous(EvidenceModel):
+        async def complete(self,request,context):
+            self.calls.append(request)
+            return ModelResponse('{"classification":"REPRODUCED","classification":null}')
+    model=Ambiguous()
+    contract,candidate,run,verifier,*_=prepare(tmp_path,projects,facts,model=model)
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context()))
+    assert len(model.calls)==1 and verdict.classification is None
+    assert verdict.issues[0].code=='MODEL_PROTOCOL_ERROR'
+    assert verdict.issues[0].origin=='program_check' and not verdict.issues[0].evidence_refs
+
+
+def test_changed_failure_reference_is_not_attached_to_rejection_feedback(tmp_path,projects,facts):
+    contract,candidate,run,verifier,*_=prepare(tmp_path,projects,facts)
+    from reproagent.store import safe_child
+    ref=run.observation.failure_refs[0]
+    path=safe_child(verifier.store.root,ref.path)
+    path.write_bytes(path.read_bytes()+b'changed')
+    run=replace(run,observation=replace(run.observation,
+        tests=({'when':'call','outcome':'skipped','wasxfail':'known'},)))
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context()))
+    assert verdict.classification==CandidateClass.INVALID_CANDIDATE
+    assert not verdict.issues[0].evidence_refs
+    assert not verdict.evidence_refs

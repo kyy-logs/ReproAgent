@@ -8,6 +8,7 @@ import pytest
 from reproagent.core.models import CandidateClass, EvidenceRef, IssueContract, ModelResponse, SourceRef
 from reproagent.core.serialization import bytes_hash
 from tests.integration.test_runner import setup_runner, execute
+from tests.assertion_support import approved_assertions
 
 
 class EvidenceModel:
@@ -19,7 +20,8 @@ class EvidenceModel:
         data = json.loads(request.messages[-1]['content'])
         refs = data['available_refs'] if self.references else [{'path':'unknown','content_hash':'bad'}]
         return ModelResponse(json.dumps({'classification':self.classification, 'reason':'Empty input raises the reported IndexError', 'evidence_refs':refs,
-            'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':True}))
+            'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':True,
+            'assertion_reviews': approved_assertions(data)}))
 
 
 def prepare(tmp_path, projects, facts, text=None, model=None):

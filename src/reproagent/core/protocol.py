@@ -121,18 +121,22 @@ def validate_keys(result, required):
         raise ValueError(f'response fields mismatch: missing {sorted(missing)}, unexpected {sorted(extra)}')
 
 
-def verdict_schema():
+def verdict_schema(assertion_ids=()):
     from .models import CandidateClass
     properties = {'classification':{'type':['string','null'],'enum':[c.value for c in CandidateClass] + [None]},
                   'reason':{'type':'string'}, 'evidence_refs':{'type':'array','minItems':1,'items':object_schema({
                       'path':{'type':'string'}, 'content_hash':{'type':'string'},
                       'start_line':{'type':'integer','minimum':1},'end_line':{'type':'integer','minimum':1}})}}
     properties.update({name:{'type':'boolean'} for name in ('expected_assertion','target_triggered','failure_matches_issue')})
+    properties['assertion_reviews'] = {'type': 'array', 'minItems': len(assertion_ids), 'maxItems': len(assertion_ids),
+        'items': object_schema({'assertion_id': {'type': 'string', **({'enum': list(assertion_ids)} if assertion_ids else {})},
+            'supported': {'type': 'boolean'}, 'reason': {'type': 'string'},
+            'evidence_refs': {'type': 'array', 'items': properties['evidence_refs']['items']}})}
     return object_schema(properties)
 
 
-def validate_verdict(result):
-    validate_keys(result, verdict_schema()['required'])
+def validate_verdict(result, assertion_ids=()):
+    validate_keys(result, verdict_schema(assertion_ids)['required'])
     if result['classification'] not in verdict_schema()['properties']['classification']['enum']:
         raise ValueError('classification must be an allowed verdict or null')
     if type(result['reason']) is not str:
@@ -148,6 +152,31 @@ def validate_verdict(result):
         validate_keys(ref, ('path','content_hash','start_line','end_line'))
         if any(type(ref[name]) is not str for name in ('path','content_hash')) or any(type(ref[name]) is not int for name in ('start_line','end_line')):
             raise ValueError('invalid evidence reference types')
+    rows = result['assertion_reviews']
+    if not isinstance(rows, list):
+        raise ValueError('assertion_reviews must be an array covering every assertion_id')
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError('invalid assertion_reviews entry')
+        validate_keys(row, ('assertion_id', 'supported', 'reason', 'evidence_refs'))
+        identifier = row['assertion_id']
+        if type(identifier) is not str or identifier not in assertion_ids or identifier in seen:
+            raise ValueError('assertion_reviews contains unknown or duplicate assertion_id')
+        seen.add(identifier)
+        if type(row['supported']) is not bool or type(row['reason']) is not str or not row['reason'].strip():
+            raise ValueError('assertion_reviews requires supported boolean and nonempty reason')
+        refs = row['evidence_refs']
+        if not isinstance(refs, list) or (row['supported'] and not refs):
+            raise ValueError('supported assertion_reviews require expectation source citations')
+        for ref in refs:
+            if not isinstance(ref, dict):
+                raise ValueError('invalid assertion_reviews evidence reference')
+            validate_keys(ref, ('path', 'content_hash', 'start_line', 'end_line'))
+            if any(type(ref[name]) is not str for name in ('path', 'content_hash')) or any(type(ref[name]) is not int for name in ('start_line', 'end_line')):
+                raise ValueError('invalid assertion_reviews evidence reference types')
+    if seen != set(assertion_ids):
+        raise ValueError('assertion_reviews must cover every assertion_id exactly once')
     return result
 
 def learning_schema():

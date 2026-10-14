@@ -17,6 +17,7 @@ from typing import Any, Callable
 from .models import Candidate, EvidenceRef, ExecutionResult, FileEntry, IssueContract
 from .protocol import verdict_schema
 from .serialization import bytes_hash, canonical_bytes, parse_json
+from .assertion_audit import assertion_sites
 
 # Stable marker for the run root: necessary paths stay readable without exporting the
 # machine-specific absolute prefix that made the recorded observation overflow.
@@ -256,6 +257,7 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'observations': asdict(run.observation), 'available_refs': [asdict(ref) for ref in available],
         'response_schema': verdict_schema()}))
     phases = [_phase(phase, run_root) for phase in run.observation.tests]
+    sites = assertion_sites(candidate_files)
     payload = {'contract': _contract_view(contract),
         'expectation_sources': [_segment(texts[ref.path], ref, run_root) for ref in sources],
         'candidate': candidate_files,
@@ -263,7 +265,8 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'observation': _observation_view(run, run_root, phases),
         'available_refs': [asdict(ref) for ref in available],
         'projection': {'paths': f'absolute run paths are shown as {RUN_ROOT}', 'summarized_fields': list(SUMMARIZED_FIELDS)},
-        'response_schema': verdict_schema()}
+        'assertion_sites': sites,
+        'response_schema': verdict_schema(tuple(site['id'] for site in sites))}
     if protocol_error:
         payload['protocol_error'] = protocol_error
     output_bytes = len(canonical_bytes(payload))

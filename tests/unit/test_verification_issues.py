@@ -32,10 +32,10 @@ def test_unknown_or_malformed_diagnostics_are_rejected(overrides):
         issue(**overrides)
 
 
-def test_semantic_issue_stays_a_claim_and_schema_stays_six_fields():
+def test_semantic_issue_stays_a_claim_and_preserves_current_schema():
     item = issue(code='TARGET_TRIGGER_UNCONFIRMED', check='target_triggered', origin='provider_claim',
         message='未确认', measurements={}, recovery='inspect_evidence')
     assert item.origin == 'provider_claim'
     from reproagent.core.protocol import verdict_schema
     assert set(verdict_schema()['required']) == {'classification','reason','evidence_refs',
-        'expected_assertion','target_triggered','failure_matches_issue'}
+        'expected_assertion','target_triggered','failure_matches_issue','assertion_reviews'}

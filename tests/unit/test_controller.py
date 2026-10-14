@@ -22,6 +22,7 @@ from reproagent.core.phase import PhaseResult
 from reproagent.core.protocol import ModelProtocolError
 from reproagent.core.agent import ReproAgent
 from reproagent.paths import relative_name
+from tests.assertion_support import approved_assertions
 
 BUGGY = 'from example.parser import parse\ndef test_empty(): assert parse([]) == []\n'
 PASSING = 'from example.parser import parse\ndef test_nonempty(): assert parse([1]) == [1]\n'
@@ -53,7 +54,8 @@ class ScriptedModel:
                 'observable_checks':[],'assumptions':[]}
         elif request.response_kind == 'verdict':
             result = {'classification':self.classification,'reason':'reported IndexError on empty input','evidence_refs':data['available_refs'],
-                'expected_assertion':True,'target_triggered':self.classification == 'REPRODUCED','failure_matches_issue':True}
+                'expected_assertion':True,'target_triggered':self.classification == 'REPRODUCED','failure_matches_issue':True,
+                'assertion_reviews': approved_assertions(data)}
         else:
             raise AssertionError(f'the Controller makes no {request.response_kind} request to the domain model')
         return ModelResponse(json.dumps(result))

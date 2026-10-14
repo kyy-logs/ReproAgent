@@ -28,6 +28,7 @@ ISSUE_SPECS = {
     'TARGET_TRIGGER_UNCONFIRMED': (('target_triggered',), 'provider_claim','inspect_evidence'),
     'ISSUE_FAILURE_MATCH_UNCONFIRMED': (('failure_matches_issue',), 'provider_claim','inspect_evidence'),
     'SEMANTIC_REPRODUCTION_UNCONFIRMED': (('provider_semantic_claims',), 'provider_claim','inspect_evidence'),
+    'CANDIDATE_ASSERTIONS_UNCONFIRMED': (('candidate_assertions_supported',), 'provider_claim','revise_candidate'),
     'SEMANTIC_CITATIONS_INCOMPLETE': (('citations_cover_expectation_and_failure',), 'program_check','inspect_evidence'),
     'MODEL_PROTOCOL_ERROR': (('semantic_response_valid',), 'program_check','inspect_evidence'),
 }
@@ -39,6 +40,7 @@ for code in _RUNTIME:
 for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVALID','CANDIDATE_IMPORT_BLOCKED'):
     _ALLOWED[code] = frozenset({'framework_errors','collected','executed'})
 _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage'})
+_ALLOWED['CANDIDATE_ASSERTIONS_UNCONFIRMED'] = frozenset({'assertion_ids','omitted_assertions'})
 _ALLOWED['MODEL_PROTOCOL_ERROR'] = frozenset({'attempts','needed_bytes','budget_bytes','stage','protocol_error'})
 
 
@@ -59,11 +61,11 @@ def validate_issue(code, check, origin, recovery, message, measurements):
     for key, value in measurements.items():
         if key in ('probe_complete','protection_checked','collected','executed'):
             ok = type(value) is bool
-        elif key in ('needed_bytes','budget_bytes','attempts'):
+        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions'):
             ok = type(value) is int and value >= 0
         elif key == 'duration_seconds':
             ok = type(value) in (int,float) and math.isfinite(value) and value >= 0
-        elif key == 'framework_errors':
+        elif key in ('framework_errors','assertion_ids'):
             ok = isinstance(value, (list,tuple)) and len(value) <= 16 and all(type(v) is str for v in value)
         else:
             ok = type(value) is str and len(value) <= 512
