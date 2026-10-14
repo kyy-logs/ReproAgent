@@ -532,3 +532,50 @@ def test_citation_batch_preserves_external_path_refusal(tmp_path, projects, fact
         'reason': 'outside'})
     assert result.state is ToolResultState.ERROR and not env.gate.finished
     assert 'secret example' not in text_of(result) and 'available_refs' not in text_of(result)
+
+
+def test_batch_suggestion_validation_reads_scale_by_files_not_errors(tmp_path, projects, facts, monkeypatch):
+    from reproagent.adapters.agentscope.snapshot_backend import FrozenSnapshot
+    env = environment(tmp_path, projects, facts)
+    path = env.root/'example/big.py'
+    issued = []
+    for start in range(1, 11):
+        issued.extend(sidecar_refs(text_of(call(env, 'Read', {
+            'file_path': str(path), 'offset': start, 'limit': 20}))))
+    original, reads = FrozenSnapshot.read_verified, []
+    def counted(snapshot, item):
+        reads.append(item.path)
+        return original(snapshot, item)
+    monkeypatch.setattr(FrozenSnapshot, 'read_verified', counted)
+    bad = {**issued[0], 'content_hash': 'f' * 64}
+    result = call(env, 'revise_contract', {'source_refs': [bad] * 20, 'reason': 'one file, many refusals'})
+    payload = json.loads(text_of(result))
+    assert payload['error_count'] == 20 and not env.gate.finished
+    # Each submitted reference is still revalidated; displayed suggestions are verified once.
+    assert 20 <= len(reads) <= 20 + len(issued)
+    assert all(entry['available_refs'] for entry in payload['errors'])
+    # No cross-call cache: a subsequent file change must invalidate the source.
+    path.write_text(path.read_text(encoding='utf-8')+'# modified\n', encoding='utf-8')
+    next_result = call(env, 'revise_contract', {'source_refs': [bad], 'reason': 'stale source'})
+    assert next_result.state is ToolResultState.ERROR and not env.gate.finished
+    assert 'available_refs' not in text_of(next_result)
+
+
+def test_batch_suggestion_cache_rechecks_source_between_submissions(tmp_path, projects, facts, monkeypatch):
+    from reproagent.adapters.agentscope.snapshot_backend import FrozenSnapshot
+    env = environment(tmp_path, projects, facts)
+    issued = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
+    original, reads = FrozenSnapshot.read_verified, []
+    def change_after_suggestion_check(snapshot, item):
+        reads.append(item.path)
+        data = original(snapshot, item)
+        if len(reads) == 2:
+            # First submission and its suggestion were verified. Change before the next.
+            Path(env.module).write_bytes(data + b'# modified between submissions\n')
+        return data
+    monkeypatch.setattr(FrozenSnapshot, 'read_verified', change_after_suggestion_check)
+    bad = {**issued, 'content_hash': 'f' * 64}
+    result = call(env, 'revise_contract', {'source_refs': [bad, bad], 'reason': 'source changes mid-call'})
+    assert len(reads) == 3
+    assert result.state is ToolResultState.ERROR and not env.gate.finished
+    assert 'available_refs' not in text_of(result)

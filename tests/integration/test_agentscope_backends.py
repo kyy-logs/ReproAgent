@@ -343,7 +343,7 @@ def test_external_original_issue_reaches_exploration_without_known_key(tmp_path,
     phase = next(payload for payload in wire if payload.get('tools'))
     text = json.dumps(phase, ensure_ascii=False)
     assert issue_text.strip() in text
-    phase_data = json.loads(phase['messages'][-1]['content'])
+    phase_data = json.loads(next(message['content'] for message in phase['messages'] if message.get('role') == 'user'))
     assert phase_data['issue']['content_hash'] == bytes_hash(external.read_bytes())
     assert key not in text and '[REDACTED]' in phase_data['issue']['text']
     assert result.status.value == 'NEEDS_INFORMATION'

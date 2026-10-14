@@ -533,10 +533,11 @@ class ReviseContract(_DomainTool):
         self._open()
         params = _ReviseContractParams(**kwargs)
         refs, errors, suggestions_truncated = [], [], False
+        verified_refs = {}
         for index, item in enumerate(params.source_refs):
             self._open()
             try:
-                refs.append(self._cite(item))
+                refs.append(self._cite(item, verified_refs=verified_refs))
             except _CitationRefusal as exc:
                 errors.append({'index': index, 'code': exc.code, 'submitted': item.model_dump(),
                                'available_refs': list(exc.available_refs)})
@@ -555,7 +556,7 @@ class ReviseContract(_DomainTool):
                                               "start_line": ref.start_line, "end_line": ref.end_line} for ref in refs],
                              "note": "The controller decides the revision; this tool did not change the contract."})
 
-    def _cite(self, item: _SourceRefParams) -> EvidenceRef:
+    def _cite(self, item: _SourceRefParams, *, verified_refs=None) -> EvidenceRef:
         """The canonical citation for *item*, or a refusal.
 
         Raises:
@@ -564,24 +565,35 @@ class ReviseContract(_DomainTool):
         """
         canonical = canonical_ref(self.views.search, item.path, item.start_line, item.end_line)
         if canonical.content_hash != item.content_hash:
-            available, truncated = self._displayed_alternatives(item, canonical)
+            available, truncated = self._displayed_alternatives(item, canonical, verified_refs=verified_refs)
             raise _CitationRefusal("SOURCE_HASH_MISMATCH", f"the cited hash is not the frozen hash of {item.path!r}; copy the hash an evidence block listed",
                                   available_refs=available, available_refs_truncated=truncated)
         if not self.views.contains(canonical):
-            available, truncated = self._displayed_alternatives(item, canonical)
+            available, truncated = self._displayed_alternatives(item, canonical, verified_refs=verified_refs)
             raise _CitationRefusal("SOURCE_RANGE_NOT_DISPLAYED", f"range {item.start_line}-{item.end_line} of {item.path!r} is not an exact issued reference; "
                                     "copy a displayed evidence block exactly, or Read the exact narrower range first",
                                   available_refs=available, available_refs_truncated=truncated)
         return canonical
 
-    def _displayed_alternatives(self, item: _SourceRefParams, canonical: EvidenceRef) -> tuple[tuple[dict, ...], bool]:
-        """Suggest existing verified references, without issuing or applying new ones."""
-        refs = []
-        for ref in dict.fromkeys(self.views.issued_refs):
-            self._open()
-            if (ref.path == canonical.path and ref.content_hash == canonical.content_hash
-                    and self.views.contains(ref)):
-                refs.append(ref)
+    def _displayed_alternatives(self, item: _SourceRefParams, canonical: EvidenceRef, *,
+                               verified_refs=None) -> tuple[tuple[dict, ...], bool]:
+        """Suggest issued references, verified once per file in this call, never across calls.
+
+        canonical_ref has just re-read every submitted reference's original bytes. That
+        fresh hash also vouches for this call's cached, previously checked suggestions;
+        a changed file is refused before the cache can be consulted.
+        """
+        cache = verified_refs if verified_refs is not None else {}
+        key = (canonical.path, canonical.content_hash)
+        if key not in cache:
+            checked = []
+            for ref in dict.fromkeys(self.views.issued_refs):
+                self._open()
+                if (ref.path == canonical.path and ref.content_hash == canonical.content_hash
+                        and self.views.contains(ref)):
+                    checked.append(ref)
+            cache[key] = tuple(checked)
+        refs = list(cache[key])
 
         def priority(ref):
             contains = ref.start_line <= item.start_line <= item.end_line <= ref.end_line
