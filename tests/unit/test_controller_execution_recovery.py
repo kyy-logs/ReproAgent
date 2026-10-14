@@ -112,3 +112,41 @@ def test_fixed_timeout_is_blocked_and_preserves_original_confirmation(tmp_path, 
     assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
     assert result.fix_validation_status == 'blocked'
     assert any('COMMAND_TIMEOUT' in text for text in result.uncertainties)
+
+@pytest.mark.parametrize('error_kind', ['model', 'value'])
+def test_actual_completed_execution_resets_streak_even_when_verifier_raises(tmp_path, projects, facts, error_kind):
+    from reproagent.core.protocol import ModelOutputError
+    request, _, controller, ctx = setup(tmp_path, projects, facts,
+        plan=[publish(), publish(hypothesis='second'), publish(hypothesis='third'), ask()])
+    seen = fault_sequence(controller, ['COMMAND_TIMEOUT', 'EXITED', 'COMMAND_TIMEOUT'])
+    evaluate = controller.verifier.evaluate
+    async def wrapped(contract, candidate, runs, context):
+        if runs[-1].raw.stop_reason == 'EXITED':
+            if error_kind == 'model':
+                raise ModelOutputError('provider response invalid')
+            raise ValueError('unavailable semantic evidence')
+        return await evaluate(contract, candidate, runs, context)
+    controller.verifier.evaluate = wrapped
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION and len(seen) == 3
+    feedback = json.loads(controller.explorer.contexts[3].feedback)
+    assert feedback['consecutive_command_timeouts'] == 1
+
+
+def test_fixed_completed_protection_failure_is_failed_not_incomplete(tmp_path, projects, facts):
+    request, _, controller, ctx = setup(tmp_path, projects, facts)
+    fixed = projects.fixed(tmp_path / 'fixed')
+    execute = controller.runner.backend.execute
+    async def wrapped(spec, context):
+        raw = await execute(spec, context)
+        if spec.candidate_id and spec.execution_role == 'fixed':
+            path = spec.cwd / 'example/parser.py'
+            path.write_bytes(path.read_bytes() + b'\n# modified after execution\n')
+        return raw
+    controller.runner.backend.execute = wrapped
+    result = asyncio.run(controller.run(request, ctx, FixValidationRequest(fixed)))
+    assert result.status == TaskState.DONE
+    assert result.evidence_level == EvidenceLevel.REPEATED_OBSERVATION
+    assert result.fix_validation_status == 'failed'
+    assert any('SOURCE_PROTECTION_FAILED' in text for text in result.uncertainties)
+    assert not any('execution incomplete' in text for text in result.uncertainties)

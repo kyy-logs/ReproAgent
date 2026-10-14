@@ -195,17 +195,20 @@ class Controller:
             text = text.replace(secret, '[REDACTED]')
         return text.encode()[:8192].decode(errors='ignore')
 
+    def observe_execution(self, lifecycle, run):
+        # Execution facts are independent of whether later semantic review succeeds.
+        key = (run.snapshot_id, run.environment_id, run.execution_role)
+        if run.raw.stop_reason == 'COMMAND_TIMEOUT':
+            lifecycle.command_timeout_streaks[key] = lifecycle.command_timeout_streaks.get(key, 0) + 1
+        else:
+            lifecycle.command_timeout_streaks.pop(key, None)
+
     def execution_outcome(self, lifecycle, run, verdict, result, context):
         key = (run.snapshot_id, run.environment_id, run.execution_role)
-        if run.raw.stop_reason != 'COMMAND_TIMEOUT':
-            lifecycle.command_timeout_streaks.pop(key, None)
         diagnostic = verdict.execution_diagnostic
         if diagnostic is None or diagnostic.code not in EXECUTION_FAILURE_CODES:
             return None
         count = lifecycle.command_timeout_streaks.get(key, 0)
-        if diagnostic.code == 'COMMAND_TIMEOUT':
-            count += 1
-            lifecycle.command_timeout_streaks[key] = count
         done = count >= MAX_CONSECUTIVE_COMMAND_TIMEOUTS
         code = 'REPEATED_COMMAND_TIMEOUT' if done else diagnostic.code
         payload = {'result_code': code, 'verdict': asdict(verdict), 'consecutive_command_timeouts': count,
@@ -307,6 +310,7 @@ class Controller:
                         'instruction':'The same test and execution settings still exceed the review context. Narrow the test or request information; changing the hypothesis alone does not change evidence.'}), 'DUPLICATE_CANDIDATE', False
                 result = self.state(result, TaskState.EXECUTING)
                 run = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
+                self.observe_execution(lifecycle, run)
                 self.check_execution(run)
                 result = self.state(result, TaskState.VERIFYING)
                 verdict = await self.verifier.evaluate(contract, candidate, (run,), context)
@@ -341,6 +345,7 @@ class Controller:
             try:
                 result = self.state(result, TaskState.REPLAYING)
                 second = await self.runner.execute(candidate, lifecycle.snapshot, lifecycle.environment, context)
+                self.observe_execution(lifecycle, second)
                 self.check_execution(second)
                 second_verdict = await self.verifier.evaluate(contract, candidate, (second,), context)
             except ModelOutputError as exc:
@@ -386,8 +391,11 @@ class Controller:
                     'candidate_id':candidate.candidate_id, 'diagnostic':asdict(diagnostic), 'unmet_checks':list(failed)})
                 mark('execution.diagnosed', attributes={'result_code':diagnostic.code,
                     'execution_role':'fixed', 'run_id':fixed_run.run_id, 'checks':list(failed)})
-                return replace(result, fix_validation_status='blocked',
-                    uncertainties=(*result.uncertainties, 'Fixed-version execution incomplete: ' + diagnostic_reason(diagnostic, failed)))
+                protection_failed = diagnostic.code == 'SOURCE_PROTECTION_FAILED'
+                return replace(result, fix_validation_status='failed' if protection_failed else 'blocked',
+                    uncertainties=(*result.uncertainties,
+                        ('Fixed-version validation failed: ' if protection_failed else 'Fixed-version execution incomplete: ')
+                        + diagnostic_reason(diagnostic, failed)))
             checks = self.runner.adapter.check_framework(candidate, fixed_run.observation)
             same_nodes = set(fixed_run.observation.framework_details.get('completed_nodeids', [])) == set(first.observation.framework_details.get('completed_nodeids', []))
             passed = same_nodes and fixed_run.raw.exit_code == 0 and fixed_run.raw.stop_reason == 'EXITED' and fixed_run.protection.ok and fixed_run.observation.executed and fixed_run.observation.probe_complete and not checks.invalid and not checks.blocked
