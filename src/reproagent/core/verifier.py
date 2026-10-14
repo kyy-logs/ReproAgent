@@ -11,8 +11,8 @@ from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict
 VERIFIER_CHECKS = ("execution_evidence_present", "binding_and_integrity_ok",
                    "no_non_origin_framework_errors", "framework_not_blocked",
                    "tests_executed_and_valid", "candidate_reproduced",
-                   "expectation_is_grounded", "review_context_fits", "provider_semantic_claims",
-                   "citations_cover_expectation_and_failure")
+                   "expectation_is_grounded", "review_context_fits", "candidate_assertions_supported",
+                   "provider_semantic_claims", "citations_cover_expectation_and_failure")
 from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from reproagent.store import safe_child
@@ -153,21 +153,45 @@ class Verifier:
                     raise
                 error = str(exc)
             else:
-                result = {}
+                context.budget.check()
+                if context.cancel_event.is_set():
+                    raise BudgetStopped('CANCELLED')
                 try:
                     result = parse_json(response.text)
-                    validate_verdict(result)
+                except ValueError as exc:
+                    # Ambiguous/unparseable JSON has no trustworthy object from
+                    # which to retain negative claims. A later yes must not erase
+                    # an earlier no hidden behind a duplicate key or syntax error.
+                    return verdict(None, f'semantic verdict invalid JSON ({type(exc).__name__}); no correction request',
+                        uncertainty=('MODEL_PROTOCOL_ERROR',))
+                try:
+                    sites = {site['id']: site for site in review.payload['assertion_sites']}
+                    validate_verdict(result, tuple(sites))
                     classification = CandidateClass(result['classification']) if result['classification'] else None
                     refs = tuple(EvidenceRef(**ref) for ref in result['evidence_refs'])
                     if any(ref not in review.available_refs for ref in refs):
                         raise ValueError('unknown evidence citation; copy exact available_refs')
                     for ref in refs:
                         self.resolve(ref)
+                    for row in result['assertion_reviews']:
+                        if any(EvidenceRef(**ref) not in sources for ref in row['evidence_refs']):
+                            raise ValueError('assertion_reviews may cite only supplied expectation sources, not observed failures')
                 except (ValueError, TypeError, KeyError, OSError) as exc:
-                    if any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
+                    rows = result.get('assertion_reviews', [])
+                    negative_audit = isinstance(rows, list) and any(isinstance(row, dict) and row.get('supported') is False for row in rows)
+                    if negative_audit or any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
                         return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success')
                     error = str(exc)
                 else:
+                    unsupported = [row for row in result['assertion_reviews'] if not row['supported']]
+                    if not record_check('candidate_assertions_supported', not unsupported, source='provider_claim'):
+                        notes = []
+                        for row in unsupported:
+                            site = sites[row['assertion_id']]
+                            notes.append(f"{site['path']}:{site['start_line']}: {row['reason']}")
+                        return verdict(CandidateClass.INVALID_CANDIDATE,
+                            'unsupported candidate assertion(s): ' + '; '.join(notes), refs,
+                            origin='provider', unmet=('candidate_assertions_supported',))
                     if classification == CandidateClass.REPRODUCED:
                         # The three booleans are the model's own claim, and are recorded
                         # as a claim -- they are not the program accepting anything.
