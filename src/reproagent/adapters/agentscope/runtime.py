@@ -30,7 +30,7 @@ from .tools import TOOL_NAMES, EXPERIENCE_TOOL_NAMES
 from ...core.budget import BudgetStopped
 from ...core.models import AgentContext
 from ...core.phase import PhaseGate, PhaseResult
-from ...core.serialization import bytes_hash, canonical_bytes
+from ...core.serialization import bytes_hash, canonical_bytes, parse_json
 from ...observability import mark, tracing_enabled
 from ...experience_triggers import trigger_from_fact
 
@@ -338,7 +338,18 @@ class AgentScopeRuntime:
             if isinstance(value, (list, tuple)):
                 return [redact(item) for item in value]
             return value
+        # Feedback is a serialized object inside the outer phase object. Redacting
+        # that encoded string could replace JSON escapes or controlled field names.
+        # Redact decoded values first, then encode it exactly once. Legacy plain text
+        # keeps the old redaction path; the final phase capacity check still applies.
+        raw_feedback = data.pop('feedback')
         data = redact(data)
+        try:
+            feedback_object = parse_json(raw_feedback)
+        except (ValueError, TypeError, RecursionError):
+            data['feedback'] = redact(raw_feedback)
+        else:
+            data['feedback'] = canonical_bytes(redact(feedback_object)).decode('utf-8')
         text = canonical_bytes(data).decode("utf-8")
         while len(text.encode("utf-8")) > cap and data["history"]:
             data["history"].pop(0)

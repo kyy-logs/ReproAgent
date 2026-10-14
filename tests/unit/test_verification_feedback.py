@@ -88,3 +88,19 @@ def test_duplicate_context_block_feedback_fits_small_capacity_without_repeating_
     assert data['verdict']['run_ids']==list(v.run_ids)
     assert data['verdict']['issues'][0]['measurements']['needed_bytes']==5000
     assert data['projection']['omitted_details']>0
+
+
+def test_capacity_fallback_instruction_cannot_reintroduce_redacted_secret():
+    secret='未确认不等于已证明错误'
+    item=VerificationIssue('EXECUTION_EVIDENCE_MISSING','execution_evidence_present',
+        'program_check','no execution')
+    v=Verdict(None,'no execution',candidate_id='candidate-'+('c'*32),
+        manifest_hash='h'*64,contract_id='contract-'+('a'*32),run_ids=('run-'+('r'*32),),
+        unmet_checks=('execution_evidence_present',),issues=(item,))
+    from reproagent.core.verification_feedback import render_verification_feedback
+    text=render_verification_feedback(v,result_code='NOT_REPRODUCED',byte_limit=1024,
+        instruction='long '*1000,secrets=(secret,))
+    data=json.loads(text)
+    assert len(text.encode())<=1024
+    assert secret not in data['instruction']
+    assert '[REDACTED]' in data['instruction']

@@ -79,8 +79,9 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         if key in payload and payload[key] == equivalent:
             del payload[key]; counts['omitted_details'] += 1
     # Replace long custom prose with a complete controlled action, never cut the verb.
-    if len(INSTRUCTIONS[recovery].encode('utf-8')) < len(payload['instruction'].encode('utf-8')):
-        payload['instruction'] = INSTRUCTIONS[recovery]; counts['omitted_details'] += 1
+    fallback_instruction = redact(INSTRUCTIONS[recovery])
+    if len(fallback_instruction.encode('utf-8')) < len(payload['instruction'].encode('utf-8')):
+        payload['instruction'] = fallback_instruction; counts['omitted_details'] += 1
     for key in ('uncertainties', 'evidence_refs', 'execution_diagnostic'):
         if not data[key]:
             del data[key]; counts['omitted_details'] += 1

@@ -12,7 +12,7 @@
 ## Global Constraints
 
 - Use only C:/Users/Dell/.codex/worktrees/verifier-failure-feedback/ReproAgent for product changes; keep main's uncommitted P12 and HTML untouched.
-- Keep candidate classes, action/phase result codes, six-field semantic schema, strict citations, hash/source protection, repeat confirmation, optional fixed isolation and export completion gates unchanged.
+- Keep candidate classes, action/phase result codes, current main semantic schema (seven fields including assertion_reviews), strict citations, hash/source protection, repeat confirmation, optional fixed isolation and export completion gates unchanged.
 - Existing original timeout threshold is 2 consecutive attempts per snapshot/environment/role; no new retry policy, permissions or diagnostics model.
 - Optional issues defaults to (). New reader supports old records; old strict reader need not support new fields.
 - Provider false means unconfirmed, not a proven negative. No semantic claims from invalid answers; no promotion via protocol correction.
@@ -46,11 +46,11 @@
 **Files:** core/verification_issues.py, core/models.py, tests/unit/test_verification_issues.py (new).
 **Produces:** VerificationIssue and validated Verdict.issues tuple; vocabulary consumed by Tasks 2/3.
 
-- [ ] Write failing tests: new issue fields; nested encode/decode; old Verdict lacking issues; reject unknown codes/check-origin pairs/recovery, malformed measurements, non-finite floats and bool-as-count. Verify no new model schema fields.
-- [ ] Run pytest tests/unit/test_verification_issues.py; expected new field assertion fails before implementation.
-- [ ] Implement controlled mappings from spec, bounded keys/types per code and immutable outer records. Use existing serializer recursion; no migration dependency.
-- [ ] Run new tests plus tests/unit/test_serialization.py (if present) and tests/unit/test_execution_diagnostics.py; expect exit 0.
-- [ ] Commit types and tests, record RED/GREEN commands and BASE in ledger.
+- [x] Write failing tests: new issue fields; nested encode/decode; old Verdict lacking issues; reject unknown codes/check-origin pairs/recovery, malformed measurements, non-finite floats and bool-as-count. Verify no new model schema fields.
+- [x] Run pytest tests/unit/test_verification_issues.py; expected new field assertion fails before implementation.
+- [x] Implement controlled mappings from spec, bounded keys/types per code and immutable outer records. Use existing serializer recursion; no migration dependency.
+- [x] Run new tests plus tests/unit/test_serialization.py (if present) and tests/unit/test_execution_diagnostics.py; expect exit 0.
+- [x] Commit types and tests, record RED/GREEN commands and BASE in ledger.
 
 ## Task 2: Verifier branch coverage and claim boundaries
 
@@ -58,12 +58,12 @@
 **Consumes:** VerificationIssue and vocabulary.
 **Produces:** all returned non-REPRODUCED Verdicts have issues and actual unmet checks; success has none.
 
-- [ ] Write failing tests using real Runner fixture where needed: no execution, binding/probe fault, framework error, unavailable import, environment blocked, no executed tests, original pass, missing expectation, changed candidate, review over-cap/redaction over-cap, unavailable evidence, provider false/null/non-success classification, invalid response with false, bad citations and correction-only overflow.
-- [ ] Run new branch tests; expected empty issues/false-as-unconfirmed assertions fail.
-- [ ] Wire issue helper into actual returns. Validate issue evidence with resolve before inclusion; an unavailable/changed reference must not be attached. Preserve short circuit and gateway request count. Populate actual failed check(s), retain execution diagnostics and negative-format guard.
-- [ ] Track protocol failure kind deterministically (schema/unknown citation/missing two-sided citation); do not derive codes by searching exception prose. Retain max 3 existing attempts; final invalid output is MODEL_PROTOCOL_ERROR, with citation-specific issue when known.
-- [ ] Run branch tests + test_verifier.py + test_review_context.py + test_review_regressions.py; expected existing gates and new diagnostics all pass.
-- [ ] Commit and ledger; no real provider calls.
+- [x] Write failing tests using real Runner fixture where needed: no execution, binding/probe fault, framework error, unavailable import, environment blocked, no executed tests, original pass, missing expectation, changed candidate, review over-cap/redaction over-cap, unavailable evidence, provider false/null/non-success classification, invalid response with false, bad citations and correction-only overflow.
+- [x] Run new branch tests; expected empty issues/false-as-unconfirmed assertions fail.
+- [x] Wire issue helper into actual returns. Validate issue evidence with resolve before inclusion; an unavailable/changed reference must not be attached. Preserve short circuit and gateway request count. Populate actual failed check(s), retain execution diagnostics and negative-format guard.
+- [x] Track protocol failure kind deterministically (schema/unknown citation/missing two-sided citation); do not derive codes by searching exception prose. Retain max 3 existing attempts; final invalid output is MODEL_PROTOCOL_ERROR, with citation-specific issue when known.
+- [x] Run branch tests + test_verifier.py + test_review_context.py + test_review_regressions.py; expected existing gates and new diagnostics all pass.
+- [x] Commit and ledger; no real provider calls.
 
 ## Task 3: Bounded feedback projection
 
@@ -71,11 +71,11 @@
 **Consumes:** validated Verdict and issues.
 **Produces:** render_verification_feedback interface above; complete JSON or BudgetStopped('NEEDS_INFORMATION').
 
-- [ ] Write failing tests for full roundtrip, metadata/diagnostic preservation, Chinese byte boundary, huge reason/references/measurements, extras, secret expansion, minimum envelope failure and input non-mutation.
-- [ ] Run tests; expected module/feature missing.
-- [ ] Render existing verdict nesting for execution/replay callers; keep original top-level codes. Preserve main issue/checks/binding/decision/instruction. Shrink optional measurements and refs, excerpt text with omitted markers, omit trailing issues last; do not slice JSON. Minimum retains main issue and all mandatory identity/checks. Reject arbitrary extras keys/oversized mandatory data instead of losing them silently.
-- [ ] Run feedback tests + issue serialization; expect exit 0, every emitted JSON <= cap.
-- [ ] Commit and ledger.
+- [x] Write failing tests for full roundtrip, metadata/diagnostic preservation, Chinese byte boundary, huge reason/references/measurements, extras, secret expansion, minimum envelope failure and input non-mutation.
+- [x] Run tests; expected module/feature missing.
+- [x] Render existing verdict nesting for execution/replay callers; keep original top-level codes. Preserve main issue/checks/binding/decision/instruction. Shrink optional measurements and refs, excerpt text with omitted markers, omit trailing issues last; do not slice JSON. Minimum retains main issue and all mandatory identity/checks. Reject arbitrary extras keys/oversized mandatory data instead of losing them silently.
+- [x] Run feedback tests + issue serialization; expect exit 0, every emitted JSON <= cap.
+- [x] Commit and ledger.
 
 ## Task 4: Controller decision and feedback delivery
 
@@ -83,12 +83,12 @@
 **Consumes:** actual Verdict; render_verification_feedback.
 **Produces:** saved Verdict followed by verification.feedback event and next AgentContext feedback, existing control outcomes unchanged.
 
-- [ ] Write failing tests using existing scripted Controller: semantic rejection then corrected candidate; original pass; one timeout then success; two timeouts stop; protocol failure not retried automatically; narrow duplicate guard; replay rejection keeps both IDs and first observation; tiny feedback cap stops; event linkage and saved Verdict remain complete.
-- [ ] Run new tests; expected new structured issues/decision event absent.
-- [ ] Add candidate_feedback wrapper, replace candidate-verdict branches only. Keep timeout counters, environment blocking, next_action=narrow_candidate, replay/fixed behavior and root result codes. New issue recovery informs instruction, never grants tool permissions.
-- [ ] Record bounded verification.feedback with diagnostic_codes, candidate/contract/run identities, decision, output bytes and omissions; reference persisted verdict paths, no long model reason in OTel metadata. Observation sink faults must not change result.
-- [ ] Run new tests + existing controller/execution recovery/regression tests; expect exit 0.
-- [ ] Commit and ledger.
+- [x] Write failing tests using existing scripted Controller: semantic rejection then corrected candidate; original pass; one timeout then success; two timeouts stop; protocol failure not retried automatically; narrow duplicate guard; replay rejection keeps both IDs and first observation; tiny feedback cap stops; event linkage and saved Verdict remain complete.
+- [x] Run new tests; expected new structured issues/decision event absent.
+- [x] Add candidate_feedback wrapper, replace candidate-verdict branches only. Keep timeout counters, environment blocking, next_action=narrow_candidate, replay/fixed behavior and root result codes. New issue recovery informs instruction, never grants tool permissions.
+- [x] Record bounded verification.feedback with diagnostic_codes, candidate/contract/run identities, decision, output bytes and omissions; reference persisted verdict paths, no long model reason in OTel metadata. Observation sink faults must not change result.
+- [x] Run new tests + existing controller/execution recovery/regression tests; expect exit 0.
+- [x] Commit and ledger.
 
 ## Task 5: Actual SDK request, trace and report
 
@@ -96,13 +96,13 @@
 **Consumes:** Controller candidate feedback and saved typed issues.
 **Produces:** actual next wire request and report/trace details retain code/check/source/recovery/binding and omissions.
 
-- [ ] Write failing request test: produce a real Verifier refusal and Controller feedback, feed it through real AgentScopeRuntime + MockTransport, capture next serialized request and assert exact structured payload. Test phase cap refusal preserves original Issue/contract and sends no request. Bind generated identity to actual refusal, not a handwritten feedback string.
-- [ ] Write failing report/trace tests for program vs provider labels, malicious Markdown/HTML safety, old Verdict fallback and truncated feedback metadata.
-- [ ] Run tests; expected missing report/trace fields or missing prompt guidance.
-- [ ] Add bound verdict issues to run report summaries; display limited codes, checks and recovery in existing evidence section. Use existing escaping and section caps. Safe old fallback does not infer old codes.
-- [ ] Keep trace existing event detail path; prove code/check source survives exported trace JSON. Add short prompt guidance; no viewer layout rewrite.
-- [ ] Run SDK/report tests + first browse/progress/observability regressions; expect exit 0.
-- [ ] Commit; write acceptance doc and mark spec implementation status with actual evidence, no real success-rate claim.
+- [x] Write failing request test: produce a real Verifier refusal and Controller feedback, feed it through real AgentScopeRuntime + MockTransport, capture next serialized request and assert exact structured payload. Test phase cap refusal preserves original Issue/contract and sends no request. Bind generated identity to actual refusal, not a handwritten feedback string.
+- [x] Write failing report/trace tests for program vs provider labels, malicious Markdown/HTML safety, old Verdict fallback and truncated feedback metadata.
+- [x] Run tests; expected missing report/trace fields or missing prompt guidance.
+- [x] Add bound verdict issues to run report summaries; display limited codes, checks and recovery in existing evidence section. Use existing escaping and section caps. Safe old fallback does not infer old codes.
+- [x] Keep trace existing event detail path; prove code/check source survives exported trace JSON. Add short prompt guidance; no viewer layout rewrite.
+- [x] Run SDK/report tests + first browse/progress/observability regressions; expect exit 0.
+- [x] Commit; write acceptance doc and mark spec implementation status with actual evidence, no real success-rate claim.
 
 ## Task 6: Whole-branch verification and later integration
 

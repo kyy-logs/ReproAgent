@@ -109,3 +109,39 @@ def test_report_diagnostics_escape_untrusted_text_and_legacy_fallback():
     assert '<script>' not in text and '[click](https://bad)' not in text
     old = render_report(report_data())
     assert 'TARGET_TRIGGER_UNCONFIRMED' not in old
+
+
+@pytest.mark.parametrize('structured',[True,False])
+def test_runtime_redacts_feedback_values_without_corrupting_json_escapes(tmp_path,projects,facts,structured):
+    from reproagent.core.models import Verdict, VerificationIssue
+    from reproagent.core.verification_feedback import render_verification_feedback
+    env=environment(tmp_path,projects,facts,answers=[
+        tool_reply('request_information',{'question':'need source'},call_id='request')])
+    env.runtime.secrets=('\\',)
+    if structured:
+        issue=VerificationIssue('TARGET_TRIGGER_UNCONFIRMED','target_triggered','provider_claim',
+            'contains "quoted" text',recovery='inspect_evidence')
+        feedback=render_verification_feedback(Verdict(None,'unconfirmed',issues=(issue,)),
+            result_code='NOT_REPRODUCED',byte_limit=8192,secrets=env.runtime.secrets)
+        assert json.loads(feedback)['verdict']['issues'][0]['message']=='contains "quoted" text'
+    else:
+        feedback='legacy path\\token'
+    async def run():
+        try:
+            return await env.runtime.explore(agent_context(env,feedback=feedback))
+        finally:
+            await env.runtime.aclose(); await env.factory.aclose()
+    assert asyncio.run(run()).kind=='request_information'
+    phases=[]
+    for message in env.requests[0]['messages']:
+        if message['role']=='user' and isinstance(message['content'],str):
+            try: phase=json.loads(message['content'])
+            except ValueError: continue
+            if 'feedback' in phase: phases.append(phase)
+    actual=phases[-1]['feedback']
+    if structured:
+        nested=json.loads(actual)
+        assert nested['verdict']['issues'][0]['code']=='TARGET_TRIGGER_UNCONFIRMED'
+        assert nested['verdict']['issues'][0]['message']=='contains "quoted" text'
+    else:
+        assert actual=='legacy path[REDACTED]token'
