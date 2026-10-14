@@ -129,11 +129,17 @@ def test_the_fixed_version_never_reaches_the_exploration(tmp_path, projects, fac
     request, controller, context, requests, _ = exploration(tmp_path / 'fixed', projects, facts, [
         tool_reply('write_candidate', write_payload(content=BUGGY), call_id='call-1')])
     fixed = projects.fixed(tmp_path / 'fixed-secret-location')
+    hidden_marker = 'FIXED_ONLY_SOURCE_CANARY_84d299'
+    fixed_source = fixed / 'example' / 'parser.py'
+    fixed_source.write_text(fixed_source.read_text(encoding='utf-8') + '\n# ' + hidden_marker + '\n', encoding='utf-8')
     result = run_task(request, controller, context, FixValidationRequest(fixed, sys.executable))
     assert result.status == TaskState.DONE and result.evidence_level == EvidenceLevel.DIFFERENTIAL_VALIDATED
     assert len(requests) == 1
-    assert str(fixed) not in json.dumps(requests)
-    assert 'fixed' not in json.dumps(requests[0]['messages']) or 'fixed' in json.dumps(BUGGY)
+    sent = json.dumps(requests)
+    # Policy may mention a "fixed version"; its actual location and private source may not leak.
+    # The basename also works in serialized Windows paths, whose backslashes are escaped.
+    assert fixed.name not in sent
+    assert hidden_marker not in sent
 
 
 def test_a_large_snapshot_never_enters_the_phase_input(tmp_path, projects, facts):
