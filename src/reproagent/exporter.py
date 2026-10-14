@@ -155,16 +155,23 @@ class Exporter:
             if success and run.candidate_id == candidate.candidate_id and run.manifest_hash == candidate.manifest_hash and run.contract_version == candidate.contract_version and run.execution_role == 'original':
                 report['accepted_run_ids'].append(run.run_id)
             diagnostic, failed = diagnose_runtime(run)
+            verification_issues = []
+            verification_available = False
             verdict_path = safe_child(store.root, 'verdicts/verdict-' + run.run_id + '.json')
             if verdict_path.is_file():
                 saved_verdict = store.load_record('verdicts', 'verdict-' + run.run_id)
                 if (saved_verdict.candidate_id == run.candidate_id and saved_verdict.manifest_hash == run.manifest_hash
                     and saved_verdict.contract_id == run.contract_id and saved_verdict.contract_version == run.contract_version
-                    and run.run_id in saved_verdict.run_ids and saved_verdict.execution_diagnostic is not None):
-                    diagnostic, failed = saved_verdict.execution_diagnostic, saved_verdict.unmet_checks
+                    and run.run_id in saved_verdict.run_ids):
+                    verification_available = 'issues' in json.loads(read(verdict_path))
+                    verification_issues = [asdict(issue) for issue in saved_verdict.issues]
+                    failed = saved_verdict.unmet_checks
+                    if saved_verdict.execution_diagnostic is not None:
+                        diagnostic = saved_verdict.execution_diagnostic
             report['runs'].append({'run_id':run.run_id, 'role':run.execution_role, 'exit_code':run.raw.exit_code, 'cleanup_ok':run.raw.cleanup_ok,
                 'candidate_id':run.candidate_id, 'snapshot_id':run.snapshot_id, 'failure_refs':[asdict(r) for r in run.observation.failure_refs],
-                'execution_diagnostic':asdict(diagnostic) if diagnostic is not None else None, 'unmet_checks':list(failed)})
+                'execution_diagnostic':asdict(diagnostic) if diagnostic is not None else None, 'unmet_checks':list(failed),
+                'verification_issues':redact_record(verification_issues), 'verification_issues_available':verification_available})
             for ref in (run.raw.stdout_ref, run.raw.stderr_ref, *run.observation.failure_refs):
                 if any(m['source_path'] == ref.path for m in report['log_mapping']):
                     continue

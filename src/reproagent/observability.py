@@ -45,6 +45,7 @@ ALLOWED_ATTRIBUTES = frozenset({
     "permission_result", "error_category", "classification_source",
     "experience_ids", "experience_trigger",
     "checks", "reason_origin", "exit_code", "stop_reason", "cleanup_ok", "health",
+    "diagnostic_code", "diagnostic_codes", "decision", "run_ids", "projection", "output_bytes", "feedback_state",
     "attempt", "output_limit", "budget", "usage", "cost", "unknown", "http_status_code",
 })
 

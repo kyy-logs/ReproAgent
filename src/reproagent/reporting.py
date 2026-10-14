@@ -175,6 +175,18 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
                 f'- 最后观测阶段：{_code(diagnostic.get("last_test_stage", "unknown"))}。未收到 call 报告不等于测试没有开始。',
                 '- 失败检查：' + '、'.join(_code(item) for item in run.get('unmet_checks', ())),
                 '- 建议：先处理具体执行障碍或缩小候选；不要仅更改假设反复提交。']
+    gap_runs = [run for run in runs if run.get('verification_issues')]
+    if gap_runs:
+        lines += ['', '### 验收缺口与恢复建议']
+        for run in gap_runs[:4]:
+            for issue in run['verification_issues'][:3]:
+                source = '模型审阅意见（未确认，不是程序证明）' if issue.get('origin') == 'provider_claim' else '程序检查'
+                lines += ['', f'- 运行 {_code(run["run_id"])}：{_code(issue.get("code", "unknown"))}；{source}。',
+                    '- 检查：' + _code(issue.get('check', 'unknown')) + '；建议动作：' + _code(issue.get('recovery', 'inspect_evidence')),
+                    '- 说明：' + _text(issue.get('message', ''))]
+        lines += ['', '恢复建议不保证问题必然可修复，也不改变本任务的权限或完成标准；完整诊断见 report.json 和核验记录。']
+    elif runs and any(not run.get('verification_issues_available', False) for run in runs):
+        lines += ['', '部分运行尚无结构化验收诊断或使用旧格式；请结合原核验理由与执行记录审查，不能从缺失字段推断错误码。']
     if first_log:
         lines += ['', '### 首次可用运行日志节选', '', _link('完整日志', first_log), '', _block(previews[first_log])]
     if report.get('verdict_mapping'):
