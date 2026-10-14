@@ -73,13 +73,13 @@
 - `render_citation_feedback(*, code: str, errors: list[dict], byte_limit: int, available_refs_truncated: bool = False) -> str` 位于新 helper：输入仅程序已验证的结构化错误；输出 UTF-8 上限内正文。错误条目字段精确为 index/code/submitted/available_refs；总对象精确为 code/message/error_count/errors/omitted_errors/available_refs_truncated。
 - `ReviseContract._cite` 的成功返回和接受条件不变；call 逐项收集两种 _CitationRefusal，将任意一项建议截断标记传给 renderer，失败统一 ToolResultState.ERROR，metadata 使用首错误码，phase 保持打开。其他拒绝/参数异常保持旧路径。
 
-- [ ] **Step 1：写批量失败与授权反例。** 新增 test_revision_feedback_contains_all_controlled_errors：真实 Toolkit Read 两个原版文件，提交至少三个同时无效的引用（混合错误哈希与已显示范围的子范围），断言一次响应包含全部 index/错误码、首错误码 metadata、有效已签发建议、gate.result is None。旧代码只有第一句错误，RED 应失败。
-- [ ] **Step 2：写纯渲染边界。** test_feedback_fits_utf8_budget 参数化中文路径和 byte_limit=32768/1024/256/64/2/1/0；所有输出字节不超限。容量允许最小对象时 json.loads 成功；初始建议先被减少，随后错误被省略，error_count 不变、omitted_errors 精确、标记明确；不足最小对象则固定 ASCII 短文切到上限，不包含半个 JSON。新增 test_feedback_order_is_stable，相同输入产生相同正文。
-- [ ] **Step 3：运行 RED。** `.venv/Scripts/python.exe -u -m pytest -q tests/unit/test_citation_feedback.py tests/integration/test_agentscope_domain_tools.py --basetemp "$env:TEMP/reproagent-citation-feedback-red"`。允许新增 helper 不存在或新批量断言失败；区分既有失败，先记录不掩盖。
-- [ ] **Step 4：实现 helper 与受控汇总。** renderer 使用 compact JSON/UTF-8 长度，先删建议，后从尾部删错误；临界长度用重新序列化实际计数。固定首错误码，失败不 finish。不要修改全局 _capped，不包住 BudgetStopped/未知异常，不在校验中执行新工具或读模型。建议校验只使用既有冻结文件/ledger，未显示来源不能输出建议。
-- [ ] **Step 5：补安全边界。** test_revision_feedback_never_suggests_unissued_or_stale_refs、test_revision_batch_does_not_partially_finish、test_available_reference_suggestions_are_snapshot_relative_and_copyable：覆盖 Grep 文件名模式/Glob、截断行、源文件变更、外部路径、子范围拒绝；只有全有效请求才原样 revision_requested。若期望消息从字符串变成 JSON，只更新正文表达断言，原来 ERROR、未结束和拒绝权限的断言必须保留。
-- [ ] **Step 6：运行 GREEN。** 重跑 Task 2 命令，再跑 tests/integration/test_experience_rejection_triggers.py 和 tests/unit/test_experience_triggers.py；预期 exit 0，metadata 错误码保持，拒绝计数没有因 errors 条目增倍。
-- [ ] **Step 7：定向提交。** 仅提交本任务 helper、tools 和测试，提交信息 `fix: return bounded batch feedback for source citations`。
+- [x] **Step 1：写批量失败与授权反例。** 新增 test_revision_feedback_contains_all_controlled_errors：真实 Toolkit Read 两个原版文件，提交至少三个同时无效的引用（混合错误哈希与已显示范围的子范围），断言一次响应包含全部 index/错误码、首错误码 metadata、有效已签发建议、gate.result is None。旧代码只有第一句错误，RED 应失败。
+- [x] **Step 2：写纯渲染边界。** test_feedback_fits_utf8_budget 参数化中文路径和 byte_limit=32768/1024/256/64/2/1/0；所有输出字节不超限。容量允许最小对象时 json.loads 成功；初始建议先被减少，随后错误被省略，error_count 不变、omitted_errors 精确、标记明确；不足最小对象则固定 ASCII 短文切到上限，不包含半个 JSON。新增 test_feedback_order_is_stable，相同输入产生相同正文。
+- [x] **Step 3：运行 RED。** `.venv/Scripts/python.exe -u -m pytest -q tests/unit/test_citation_feedback.py tests/integration/test_agentscope_domain_tools.py --basetemp "$env:TEMP/reproagent-citation-feedback-red"`。允许新增 helper 不存在或新批量断言失败；区分既有失败，先记录不掩盖。
+- [x] **Step 4：实现 helper 与受控汇总。** renderer 使用 compact JSON/UTF-8 长度，先删建议，后从尾部删错误；临界长度用重新序列化实际计数。固定首错误码，失败不 finish。不要修改全局 _capped，不包住 BudgetStopped/未知异常，不在校验中执行新工具或读模型。建议校验只使用既有冻结文件/ledger，未显示来源不能输出建议。
+- [x] **Step 5：补安全边界。** test_revision_feedback_never_suggests_unissued_or_stale_refs、test_revision_batch_does_not_partially_finish、test_available_reference_suggestions_are_snapshot_relative_and_copyable：覆盖 Grep 文件名模式/Glob、截断行、源文件变更、外部路径、子范围拒绝；只有全有效请求才原样 revision_requested。若期望消息从字符串变成 JSON，只更新正文表达断言，原来 ERROR、未结束和拒绝权限的断言必须保留。
+- [x] **Step 6：运行 GREEN。** 重跑 Task 2 命令，再跑 tests/integration/test_experience_rejection_triggers.py 和 tests/unit/test_experience_triggers.py；预期 exit 0，metadata 错误码保持，拒绝计数没有因 errors 条目增倍。
+- [x] **Step 7：定向提交。** 仅提交本任务 helper、tools 和测试，提交信息 `fix: return bounded batch feedback for source citations`。
 
 ### Task 3：证明反馈送达、核对 8906、完成验收
 

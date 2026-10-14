@@ -445,3 +445,90 @@ def test_a_small_response_budget_still_yields_a_bounded_response(tmp_path, proje
     text = text_of(call(tiny, "Read", {"file_path": tiny.module}))
     assert 0 < len(text.encode("utf-8")) <= 50
     assert sidecar_refs(text) == []
+
+
+def test_revision_feedback_contains_all_controlled_errors(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    first = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
+    other = sidecar_refs(text_of(call(env, 'Read', {'file_path': str(env.root/'example/long_lines.py')})))[0]
+    submitted = [{**first, 'content_hash': 'f' * 64},
+                 {**first, 'end_line': first['start_line']},
+                 {**other, 'end_line': other['start_line']}]
+    result = call(env, 'revise_contract', {'source_refs': submitted, 'reason': 'three citation errors'})
+    assert result.state is ToolResultState.ERROR and env.gate.result is None
+    payload = json.loads(text_of(result))
+    assert payload['code'] == result.metadata['reproagent_error_code'] == 'SOURCE_HASH_MISMATCH'
+    assert payload['error_count'] == 3 and payload['omitted_errors'] == 0
+    assert [e['index'] for e in payload['errors']] == [0, 1, 2]
+    assert [e['code'] for e in payload['errors']] == [
+        'SOURCE_HASH_MISMATCH', 'SOURCE_RANGE_NOT_DISPLAYED', 'SOURCE_RANGE_NOT_DISPLAYED']
+    assert [e['submitted'] for e in payload['errors']] == submitted
+    assert [e['available_refs'][0] for e in payload['errors']] == [first, first, other]
+    # Suggestions are copyable but the program did not apply them on our behalf.
+    repaired = call(env, 'revise_contract', {'source_refs': [first, other], 'reason': 'copy displayed refs'})
+    assert repaired.state is ToolResultState.SUCCESS
+    assert env.gate.result.kind == 'revise_contract'
+
+
+def test_revision_batch_does_not_partially_finish(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    issued = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
+    result = call(env, 'revise_contract', {'source_refs': [issued, {**issued, 'end_line': 1}],
+                                          'reason': 'one valid and one invalid'})
+    payload = json.loads(text_of(result))
+    assert result.state is ToolResultState.ERROR and not env.gate.finished
+    assert payload['error_count'] == 1 and payload['errors'][0]['index'] == 1
+    assert payload['errors'][0]['available_refs'] == [issued]
+
+
+def test_revision_feedback_never_suggests_unissued_or_stale_refs(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts, rg=find_ripgrep())
+    # A filename or a registered manifest is not displayed evidence.
+    call(env, 'Glob', {'pattern': '**/*.py', 'path': str(env.root)})
+    raw = {'path': 'example/中文模块.py', 'content_hash': bytes_hash(MODULE_TEXT.encode()),
+           'start_line': 1, 'end_line': 1}
+    payload = json.loads(text_of(call(env, 'revise_contract', {'source_refs': [raw], 'reason': 'unread'})))
+    assert payload['errors'][0]['available_refs'] == []
+    issued = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
+    # Changing a displayed file does not authorize the old hash or produce new suggestions.
+    Path(env.module).write_text(MODULE_TEXT + '# changed\n', encoding='utf-8')
+    result = call(env, 'revise_contract', {'source_refs': [issued], 'reason': 'stale'})
+    assert result.state is ToolResultState.ERROR and not env.gate.finished
+    assert 'available_refs' not in text_of(result)
+
+
+def test_citation_suggestions_rank_and_limit_only_verified_displayed_refs(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    for start, limit in [(1, 7), (2, 6), (3, 5), (4, 4), (5, 3)]:
+        call(env, 'Read', {'file_path': env.module, 'offset': start, 'limit': limit})
+    submitted = {'path': 'example/中文模块.py', 'content_hash': bytes_hash(MODULE_TEXT.encode()),
+                 'start_line': 6, 'end_line': 6}
+    payload = json.loads(text_of(call(env, 'revise_contract', {'source_refs': [submitted], 'reason': 'narrow'})))
+    assert payload['available_refs_truncated']
+    assert [(r['start_line'], r['end_line']) for r in payload['errors'][0]['available_refs']] == [
+        (5, 7), (4, 7), (3, 7)]
+    assert not env.gate.finished
+
+
+def test_citation_feedback_does_not_suggest_truncated_lines(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    path = env.root/'example/long_lines.py'
+    shown = sidecar_refs(text_of(call(env, 'Read', {'file_path': str(path)})))
+    assert [(r['start_line'], r['end_line']) for r in shown] == [(1, 2)]
+    bad = {'path': 'example/long_lines.py', 'content_hash': bytes_hash(path.read_bytes()),
+           'start_line': 3, 'end_line': 3}
+    result = call(env, 'revise_contract', {'source_refs': [bad], 'reason': 'truncated line'})
+    payload = json.loads(text_of(result))
+    assert result.state is ToolResultState.ERROR and not env.gate.finished
+    assert payload['errors'][0]['available_refs'] == shown
+    assert all(r['end_line'] < 3 for r in payload['errors'][0]['available_refs'])
+
+
+def test_citation_batch_preserves_external_path_refusal(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    outside = tmp_path/'outside.py'; outside.write_text('secret example', encoding='utf-8')
+    result = call(env, 'revise_contract', {'source_refs': [
+        {'path': str(outside), 'content_hash': bytes_hash(outside.read_bytes()), 'start_line': 1, 'end_line': 1}],
+        'reason': 'outside'})
+    assert result.state is ToolResultState.ERROR and not env.gate.finished
+    assert 'secret example' not in text_of(result) and 'available_refs' not in text_of(result)

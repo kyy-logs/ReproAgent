@@ -30,6 +30,7 @@ from agentscope.permission import PermissionBehavior, PermissionDecision
 from agentscope.tool import Glob, Grep, ParamsBase, Read, ToolBase, ToolChunk, ToolMiddlewareBase, Toolkit
 from pydantic import ConfigDict, Field
 
+from .citation_feedback import render_citation_feedback
 from .dependency import require_agentscope
 from .evidence import READ_LINE_CHARACTERS, EvidenceLedger, original_lines
 from .snapshot_backend import SnapshotRefusal, UnverifiedContent
@@ -509,9 +510,11 @@ class WriteCandidate(_DomainTool):
 
 
 class _CitationRefusal(UnverifiedContent):
-    def __init__(self, code, message):
+    def __init__(self, code, message, *, available_refs=(), available_refs_truncated=False):
         super().__init__(message)
         self.code = code
+        self.available_refs = available_refs
+        self.available_refs_truncated = available_refs_truncated
 
 
 class ReviseContract(_DomainTool):
@@ -529,11 +532,23 @@ class ReviseContract(_DomainTool):
         """Accept the revision request if every citation is a displayed original range."""
         self._open()
         params = _ReviseContractParams(**kwargs)
-        try:
-            refs = tuple(self._cite(item) for item in params.source_refs)
-        except _CitationRefusal as exc:
-            return ToolChunk(content=[TextBlock(text=_capped(self.context, str(exc)))],
-                state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
+        refs, errors, suggestions_truncated = [], [], False
+        for index, item in enumerate(params.source_refs):
+            self._open()
+            try:
+                refs.append(self._cite(item))
+            except _CitationRefusal as exc:
+                errors.append({'index': index, 'code': exc.code, 'submitted': item.model_dump(),
+                               'available_refs': list(exc.available_refs)})
+                suggestions_truncated |= exc.available_refs_truncated
+        if errors:
+            code = errors[0]['code']
+            text = render_citation_feedback(code=code, errors=errors,
+                byte_limit=self.context.budget.limits.tool_response_bytes,
+                available_refs_truncated=suggestions_truncated)
+            return ToolChunk(content=[TextBlock(text=text)], state=ToolResultState.ERROR,
+                             is_last=True, metadata={ERROR_METADATA: code})
+        refs = tuple(refs)
         self.gate.finish(PhaseResult("revise_contract", source_refs=refs, reason=params.reason))
         return self._result({"status": "revision_requested", "reason": params.reason,
                              "source_refs": [{"path": ref.path, "content_hash": ref.content_hash,
@@ -549,11 +564,37 @@ class ReviseContract(_DomainTool):
         """
         canonical = canonical_ref(self.views.search, item.path, item.start_line, item.end_line)
         if canonical.content_hash != item.content_hash:
-            raise _CitationRefusal("SOURCE_HASH_MISMATCH", f"the cited hash is not the frozen hash of {item.path!r}; copy the hash an evidence block listed")
+            available, truncated = self._displayed_alternatives(item, canonical)
+            raise _CitationRefusal("SOURCE_HASH_MISMATCH", f"the cited hash is not the frozen hash of {item.path!r}; copy the hash an evidence block listed",
+                                  available_refs=available, available_refs_truncated=truncated)
         if not self.views.contains(canonical):
-            raise _CitationRefusal("SOURCE_RANGE_NOT_DISPLAYED", f"lines {item.start_line}-{item.end_line} of {item.path!r} were not displayed whole by Read or Grep; "
-                                    "cite a range an evidence block listed exactly, and Read the exact lines first if you need a narrower one")
+            available, truncated = self._displayed_alternatives(item, canonical)
+            raise _CitationRefusal("SOURCE_RANGE_NOT_DISPLAYED", f"range {item.start_line}-{item.end_line} of {item.path!r} is not an exact issued reference; "
+                                    "copy a displayed evidence block exactly, or Read the exact narrower range first",
+                                  available_refs=available, available_refs_truncated=truncated)
         return canonical
+
+    def _displayed_alternatives(self, item: _SourceRefParams, canonical: EvidenceRef) -> tuple[tuple[dict, ...], bool]:
+        """Suggest existing verified references, without issuing or applying new ones."""
+        refs = []
+        for ref in dict.fromkeys(self.views.issued_refs):
+            self._open()
+            if (ref.path == canonical.path and ref.content_hash == canonical.content_hash
+                    and self.views.contains(ref)):
+                refs.append(ref)
+
+        def priority(ref):
+            contains = ref.start_line <= item.start_line <= item.end_line <= ref.end_line
+            overlaps = ref.start_line <= item.end_line and item.start_line <= ref.end_line
+            return (0 if contains else 1 if overlaps else 2,
+                    ref.end_line - ref.start_line, ref.start_line, ref.end_line)
+
+        refs.sort(key=priority)
+        ledger = self.views.search
+        available = tuple({'path': relative_name(ledger.store.root.joinpath(*ref.path.split('/')), ledger.snapshot.root),
+                           'content_hash': ref.content_hash, 'start_line': ref.start_line,
+                           'end_line': ref.end_line} for ref in refs[:3])
+        return available, len(refs) > 3
 
 
 class RequestInformation(_DomainTool):
