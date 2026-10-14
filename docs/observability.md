@@ -121,6 +121,30 @@ CSP 仅允许固定模块源码的 SHA-256 hash，并禁止连接、图片、ifr
 
 ## 失败时去哪看
 
+### 探索步骤软收敛
+
+默认 20 个探索步骤，第 16 次逻辑模型请求开始进入 `converging`：该请求的
+`used_steps=15`、`remaining_steps=5`，remaining 包含本轮。前 15 次为 `normal`。
+达到 20 步后不能再发新的探索请求；软收敛只提示聚焦当前路径，不提前停止，也不降低验收标准。
+现有最后 3 步读工具保留机制仍生效；本次只支持步骤软阈值，不代表已有时间、费用或风险软收敛。
+
+每轮有一条临时 `exploration-progress` 系统消息，最多 1024 UTF-8 字节，
+提供当前预算、契约缺失项数量和可确认的候选信息，不复制用户自由文本或推理总结。
+它不永久追加到 SDK 历史。没有额外模型调用，但增加少量输入 token；不改变 thinking 配置。
+最终消息组装后仍检查上下文容量，超限返回 NEEDS_INFORMATION，不压缩或截断事实。
+
+| 观察位置 | 含义 |
+| --- | --- |
+| `events.jsonl` 的 `exploration.step` | 原 `steps_remaining` 是扣步后；新增 `steps_used_before_call`、`remaining_steps_before_call`、`next_call_index`、`budget_mode`、`soft_threshold` 是本轮准入前快照 |
+| `budget.convergence` 事件/trace 点 | 同一任务首次准入收敛调用，跨阶段不重复 |
+| 每轮 `budget.progress` trace 点 | 在现有详情的 budget 属性内查看扣步前快照，HTTP 重试不重复生成逻辑步骤 |
+| 对应 HTTP 节点的 `wire_request` | 核对最终请求中是否实际带上该轮 budget/facts/guidance；相同重试正文会去重，并由多个 HTTP span 引用 |
+
+准入事件不代表 HTTP 已发送，捕获请求也不等于模型采纳建议。真实效果还需对照实验。
+日志或 trace 故障不会改变候选发布结果；现有容量、脱敏与不完整标记仍适用。
+
+### 诊断入口
+
 | 现象 | 排查位置 |
 | --- | --- |
 | 模型答得不对 | `trace.html` 的调用树节点详情：`wire_request` 看它收到了什么，`provider_response` 看它返回了什么 |

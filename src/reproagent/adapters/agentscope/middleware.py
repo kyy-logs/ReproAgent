@@ -24,6 +24,7 @@ No provider response, reasoning text or tool argument ever enters them.
 from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version
+from dataclasses import asdict
 
 from agentscope.message import SystemMsg, ToolCallBlock, ToolResultBlock, TextBlock
 from agentscope.middleware import MiddlewareBase
@@ -120,6 +121,7 @@ class ExplorationMiddleware(MiddlewareBase):
         self.experience_event, self.experience_input = experience_event, experience_input
         self.browse_gate = browse_gate
         self._browse_delivery_info = {}
+        self._convergence_recorded = False
 
     @property
     def steps_remaining(self) -> int:
@@ -148,8 +150,33 @@ class ExplorationMiddleware(MiddlewareBase):
         if self.context.cancel_event.is_set():
             raise BudgetStopped("CANCELLED")
         self.context.budget.check()
+        view = step_budget_view(self.context.budget.limits.agent_steps, self.context.budget.steps_used)
         self.context.budget.take_step()
-        self.record("exploration.step", action="", result_code="STEP")
+        self._record_budget_progress(view)
+
+    def _record_budget_progress(self, view) -> None:
+        """Observe admission, not HTTP delivery or adoption; never spend another step."""
+        converted = view.mode == 'converging' and not self._convergence_recorded
+        if converted:
+            self._convergence_recorded = True
+        operations = [
+            lambda: self.record('exploration.step', result_code='STEP', budget_mode=view.mode,
+                soft_threshold=view.soft_threshold, steps_used_before_call=view.used_steps,
+                remaining_steps_before_call=view.remaining_steps, next_call_index=view.next_call_index),
+            lambda: mark('budget.progress', attributes={'budget': asdict(view)}),
+        ]
+        if converted:
+            operations.extend([
+                lambda: self.record('budget.convergence', result_code='CONVERGING', budget=asdict(view)),
+                lambda: mark('budget.convergence', attributes={'budget': asdict(view)}),
+            ])
+        for operation in operations:
+            try:
+                operation()
+            except BudgetStopped:
+                raise
+            except Exception:
+                pass  # Each optional sink is independent; a failed one cannot block reproduction.
 
     # =======================================================================
     # SDK hooks
