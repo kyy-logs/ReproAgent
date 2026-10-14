@@ -366,3 +366,56 @@ def test_prompts_ask_for_chinese_prose_and_verbatim_identifiers():
         text = files('reproagent').joinpath(f'prompts/{name}.md').read_text(encoding='utf-8')
         assert '中文' in text, name
         assert 'never translate' in text, name
+
+
+def test_contract_scope_rules_reach_analysis_request(facts):
+    """Scripted answers prove input delivery and storage, not model judgment."""
+    text = ('Module-level skip raises an error that omits allow_module_level=True. '
+            'Explain the existing option; alternatively introduce skip_module(reason).')
+    docs = 'pytest.skip(reason, allow_module_level=True) skips the module.'
+    source = SourceRef('input/issue.md', 'issue-hash')
+    documented = SourceRef('input/docs.md', 'docs-hash')
+    response = {
+        'trigger': 'module-level pytest.skip without allow_module_level',
+        'expected': 'error guidance explains the documented allow_module_level option',
+        'reported_actual': 'the error omits that option',
+        'observable_checks': ['inspect guidance for the documented module-level option'],
+        'assumptions': ['skip_module is an unconfirmed optional proposal, not this target'],
+        'missing_information': [], 'source_indices': [0, 1],
+    }
+    model = Responses(response)
+    context = facts.context()
+    result = asyncio.run(ReproAgent(BudgetedGateway(model), context).analyze(
+        IssueDescription(text, 'issue-hash'), EvidenceContext((source, documented), (text, docs))))
+    assert len(model.requests) == 1
+    actual = model.requests[0]
+    assert 'Only unknown facts essential to this reproduction target belong in missing_information.' in actual.messages[0]['content']
+    assert 'a proposal the supplied sources do not confirm' not in actual.messages[0]['content']
+    supplied = json.loads(actual.messages[1]['content'])
+    assert supplied['description'] == text and supplied['texts'] == [text, docs]
+    assert result.sources == (source, documented)
+    assert result.expected == response['expected']
+    assert result.observable_checks == tuple(response['observable_checks'])
+    assert result.assumptions == tuple(response['assumptions'])
+    assert result.missing_information == ()
+
+
+def test_core_missing_information_is_never_cleared(facts):
+    missing = 'Which input triggers the crash and what result is correct?'
+    model = Responses({**VALID_CONTRACT, 'expected': '', 'source_indices': [],
+                       'missing_information': [missing], 'assumptions': ['optional new API']})
+    result, _ = analyze(model, facts)
+    assert result.missing_information[0] == missing
+    assert not result.expected and not result.sources
+    assert result.assumptions == ('optional new API',)
+    assert len(model.requests) == 1
+
+
+def test_contract_scope_prompts_share_behavior_not_proposal_rule():
+    from importlib.resources import files
+    for name in ('analyze_issue', 'explore', 'review_evidence'):
+        text = files('reproagent').joinpath(f'prompts/{name}.md').read_text(encoding='utf-8')
+        assert 'assumptions are not expectation evidence' in text
+        assert 'optional' in text and 'proposal' in text
+        assert 'already-working behavior' in text
+        assert 'correctness standard' in text

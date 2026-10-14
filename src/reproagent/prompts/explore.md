@@ -15,7 +15,8 @@ Candidate rules:
 
 Contract rules:
 - Preserve the observable behavior the contract states, including return-versus-raise semantics: an API may RETURN a validation-error object (a false-valued object) instead of raising it. Assert the returned value when that is the expected result.
-- An interface or display change proposed by the issue is not the correctness standard. A proposed name (for example a `mode="b"` parameter or a specific column name such as Domain) must be confirmed by the original documentation, signature or existing tests before a candidate asserts it. When the sources do not confirm the proposal, read the relevant original evidence and revise_contract, or request_information.
+- An interface or display change proposed by the issue is not the correctness standard. A proposed name (for example mode="b" or Domain) asserted by a candidate must be confirmed by original documentation, signature or existing tests. An optional unconfirmed proposal may remain a nonblocking caveat when the supported reproduction target does not depend on it; assumptions are not expectation evidence. If the core trigger or correct behavior depends on an unknown interface, preserve missing_information and read relevant evidence, revise_contract or request_information.
+- Preserve the reported defect when narrowing scope. Never substitute already-working behavior for the bug, erase a real blocker, or assert exact display wording the sources do not define. A misleading error-guidance target may check an explicitly requested documented option without requiring a separately proposed new API. If the contract mixed these, revise it through displayed original evidence; do not change the candidate target silently.
 - If the contract contradicts its sources, read the original project evidence and revise_contract rather than inventing an expectation.
 
 Citations:

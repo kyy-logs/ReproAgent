@@ -1,6 +1,6 @@
 # ReproAgent Contract Scope and Citation Feedback Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task in the current session. Steps use checkbox (`- [ ]`) syntax for tracking. 如用户另外选择委派，再使用对应执行技能。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task in the current session. Steps use checkbox (`- [x]`) syntax for tracking. 如用户另外选择委派，再使用对应执行技能。
 
 **Goal:** 避免非必要提案阻塞有依据的复现目标，并一次反馈引用请求中的全部受控错误与已展示可用引用。
 
@@ -55,12 +55,12 @@
 
 **Interfaces:** 保留 ReproAgent.analyze(description, evidence)、IssueContract 和 contract_schema；只是原请求的 system 文本变化。复用 Responses/ProposalModel 和 analyze 测试 helper；不新增模型调用。
 
-- [ ] **Step 1：补有意义的离线回归。** 新增 test_contract_scope_rules_reach_analysis_request：构造“错误提示遗漏已有参数 + 可选新 API”描述，捕获实际 ModelRequest，确认原 Issue/来源完整保留、system 含“只有必要未知项阻塞”的精确新规则；验证返回的 expected/checks/非阻塞备注不被程序搬移。新增 test_core_missing_information_is_never_cleared，假模型返回缺核心预期的契约，断言缺失项原样保留；保留 test_interface_proposal_is_missing_information_not_an_expectation 的发布拒绝反例。明确这些假模型测试只证明输入/程序行为，不证明真实模型识别。
-- [ ] **Step 2：运行 RED。** `.venv/Scripts/python.exe -u -m pytest -q tests/unit/test_model_protocol_regressions.py --basetemp "$env:TEMP/reproagent-contract-scope-red"`。新规则未送达的断言应失败；不修改原有拒绝断言来掩盖失败。
-- [ ] **Step 3：修改分析提示。** 替换“任何未确认提案都进入 missing_information”为条件规则：先定有来源目标，只有依赖提案且未确认时阻塞，否则以明确未确认备注保留。加入 8906 类正例与“只有新 API/核心输出未知”的反例；不删除结构校验、纠错上限和新来源规则。
-- [ ] **Step 4：同步探索与语义审阅。** 明确历史契约错误要引用原始来源修订；不能用备注充当证据，不能把目标换成已有正常功能；提示内容判断可依据明确语义，不要求来源未定义的整句文字。增加 test_contract_scope_prompts_share_behavior_not_proposal_rule 检查三处关键规则及旧接口提案防护仍存在，不要求整篇提示逐字相同。
-- [ ] **Step 5：运行 GREEN 并检查协议。** 重跑 Task 1 命令，并运行 tests/unit/test_phase.py 与 tests/integration/test_agentscope_domain_tools.py 中候选发布相关回归；预期 exit 0，核心缺失仍禁止发布。记录“模型能力未验证”。
-- [ ] **Step 6：定向提交。** 只提交三个提示词及对应测试，提交信息 `fix: separate reproduction blockers from optional proposals`；不提交用户评测 HTML。
+- [x] **Step 1：补有意义的离线回归。** 新增 test_contract_scope_rules_reach_analysis_request：构造“错误提示遗漏已有参数 + 可选新 API”描述，捕获实际 ModelRequest，确认原 Issue/来源完整保留、system 含“只有必要未知项阻塞”的精确新规则；验证返回的 expected/checks/非阻塞备注不被程序搬移。新增 test_core_missing_information_is_never_cleared，假模型返回缺核心预期的契约，断言缺失项原样保留；保留 test_interface_proposal_is_missing_information_not_an_expectation 的发布拒绝反例。明确这些假模型测试只证明输入/程序行为，不证明真实模型识别。
+- [x] **Step 2：运行 RED。** `.venv/Scripts/python.exe -u -m pytest -q tests/unit/test_model_protocol_regressions.py --basetemp "$env:TEMP/reproagent-contract-scope-red"`。新规则未送达的断言应失败；不修改原有拒绝断言来掩盖失败。
+- [x] **Step 3：修改分析提示。** 替换“任何未确认提案都进入 missing_information”为条件规则：先定有来源目标，只有依赖提案且未确认时阻塞，否则以明确未确认备注保留。加入 8906 类正例与“只有新 API/核心输出未知”的反例；不删除结构校验、纠错上限和新来源规则。
+- [x] **Step 4：同步探索与语义审阅。** 明确历史契约错误要引用原始来源修订；不能用备注充当证据，不能把目标换成已有正常功能；提示内容判断可依据明确语义，不要求来源未定义的整句文字。增加 test_contract_scope_prompts_share_behavior_not_proposal_rule 检查三处关键规则及旧接口提案防护仍存在，不要求整篇提示逐字相同。
+- [x] **Step 5：运行 GREEN 并检查协议。** 重跑 Task 1 命令，并运行 tests/unit/test_phase.py 与 tests/integration/test_agentscope_domain_tools.py 中候选发布相关回归；预期 exit 0，核心缺失仍禁止发布。记录“模型能力未验证”。
+- [x] **Step 6：定向提交。** 只提交三个提示词及对应测试，提交信息 `fix: separate reproduction blockers from optional proposals`；不提交用户评测 HTML。
 
 ### Task 2：批量、受限且不扩大权限的引用反馈
 
