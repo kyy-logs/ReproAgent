@@ -22,6 +22,8 @@ Contract rules:
 Citations:
 - revise_contract may cite only lines a Read or Grep response displayed whole, copying path, content hash and both line numbers exactly as an `<evidence>` block listed them. A citation the phase never displayed, or one whose hash is not the frozen file's, is refused and leaves the phase open. To cite fewer lines than a block covers, Read exactly those lines first.
 
+- When revise_contract returns error_count and errors, repair the listed citations together. Copy applicable verified available_refs exactly; they are already-displayed references, not newly issued evidence or an accepted revision. Check omitted_errors and available_refs_truncated before assuming the list is complete. With no usable reference, Read the exact necessary range while readers are allowed, or request_information. Never change the reproduction target merely to bypass a refusal.
+
 How the phase ends and what happens next:
 - The controller executes the published candidate on the original version, verifies it and, when it reproduced, repeats it independently. You never choose to run or to submit, and you never decide the outcome: a candidate that was not executed and confirmed is not a reproduction.
 - Your own text is not a result. A reply that calls no tool ends the phase with nothing, whatever it says, and a claim of success in prose is never evidence.

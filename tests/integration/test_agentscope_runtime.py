@@ -834,3 +834,91 @@ def test_the_last_steps_are_reserved_for_publishing(tmp_path, projects, facts):
     assert check("request_information", {"question": "still missing"}).behavior is PermissionBehavior.ALLOW
 
     assert "RESERVED_FOR_PUBLISHING" in [payload["result_code"] for payload in events(env, "exploration.action")]
+
+
+@pytest.mark.parametrize('try_reserved_read', [False, True])
+def test_batch_citation_feedback_reaches_next_wire_request(tmp_path, projects, facts, try_reserved_read):
+    """The real formatter/SDK sends the complete result; answers are scripted."""
+    env = None
+    requests, issued = [], []
+
+    def handler(request):
+        actual = json.loads(request.content)
+        requests.append(actual)
+        n = len(requests)
+        if n == 1:
+            return read_reply(env.module, 'read-source')
+        if n == 2:
+            result = next(m for m in actual['messages'] if m.get('tool_call_id') == 'read-source')
+            import re
+            shown = json.loads(re.search(r'<evidence>(.*?)</evidence>', result['content']).group(1))['refs'][0]
+            issued.append(shown)
+            return tool_reply('revise_contract', {'source_refs': [
+                {**shown, 'content_hash': 'f' * 64}, {**shown, 'end_line': shown['start_line']}],
+                'reason': 'two invalid citations'}, call_id='bad-revision')
+        feedback = next(m for m in actual['messages'] if m.get('tool_call_id') == 'bad-revision')
+        payload = json.loads(feedback['content'])
+        assert payload['error_count'] == 2 and payload['omitted_errors'] == 0
+        assert [e['code'] for e in payload['errors']] == ['SOURCE_HASH_MISMATCH', 'SOURCE_RANGE_NOT_DISPLAYED']
+        assert all(e['available_refs'] == issued for e in payload['errors'])
+        assert not env.gate.finished
+        if try_reserved_read and n == 3:
+            return read_reply(env.module, 'reserved-read')
+        if try_reserved_read:
+            refusal = next(m for m in actual['messages'] if m.get('tool_call_id') == 'reserved-read')
+            assert 'refused' in refusal['content']
+        return tool_reply('revise_contract', {'source_refs': issued, 'reason': 'copy exact displayed references'},
+                          call_id='fixed-revision')
+
+    env = environment(tmp_path, projects, facts, handler=handler)
+    # Enter the already shipped convergence mode; reads are initially still allowed.
+    for _ in range(15):
+        env.context.budget.take_step()
+
+    async def go():
+        try:
+            return await env.runtime.explore(agent_context(env))
+        finally:
+            await env.runtime.aclose()
+            await env.factory.aclose()
+    result = asyncio.run(go())
+    expected = 4 if try_reserved_read else 3
+    assert result.kind == 'revise_contract'
+    assert len(requests) == expected and env.context.budget.steps_used == 15 + expected
+    assert len(events(env, 'exploration.action')) == expected
+    assert len(events(env, 'exploration.tool_error')) == 1
+    assert events(env, 'exploration.tool_error')[0]['result_code'] == 'SOURCE_HASH_MISMATCH'
+    if try_reserved_read:
+        assert events(env, 'exploration.action')[2]['result_code'] == 'RESERVED_FOR_PUBLISHING'
+    for offset, request in enumerate(requests):
+        progress = wire_progress(request)
+        assert progress['budget']['mode'] == 'converging'
+        assert progress['budget']['used_steps'] == 15 + offset
+
+
+def test_batch_feedback_preserves_experience_browse_gate(tmp_path, projects, facts):
+    from tests.integration.test_agentscope_experience_triggers import configured, run
+    from reproagent.core.serialization import bytes_hash
+    env = configured(tmp_path, projects, facts)
+    ref = {'path': 'example/parser.py', 'content_hash': bytes_hash(env.module.read_bytes()),
+           'start_line': 1, 'end_line': 2}
+    env.answers.extend([
+        read_reply(env.module, 'read-source'),
+        tool_reply('revise_contract', {'source_refs': [{**ref, 'content_hash': 'f' * 64},
+            {**ref, 'end_line': 1}], 'reason': 'batch refusal'}, call_id='bad-revision'),
+        tool_reply('revise_contract', {'source_refs': [ref], 'reason': 'copy displayed'}, call_id='fixed-revision')])
+    assert run(env).kind == 'revise_contract'
+    assert env.runtime.browse_gate.state == 'satisfied'
+    assert env.context.budget.steps_used == len(env.requests) == 4
+    feedback = next(m for m in env.requests[-1]['messages'] if m.get('tool_call_id') == 'bad-revision')
+    assert json.loads(feedback['content'])['error_count'] == 2
+    assert 'Current experience browse state: satisfied' in json.dumps(env.requests[-1]['messages'])
+    assert len(events(env, 'exploration.tool_error')) == 1
+
+
+def test_exploration_prompt_explains_batch_citation_repair(tmp_path, projects, facts):
+    from reproagent.core.agent import exploration_prompt
+    env = environment(tmp_path, projects, facts)
+    text = exploration_prompt(agent_context(env))
+    assert 'When revise_contract returns error_count and errors' in text
+    assert 'available_refs' in text and 'omitted_errors' in text
