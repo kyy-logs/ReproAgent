@@ -61,7 +61,16 @@
 
 审查保留两项不作效果判断的范围：真实模型是否更早发布/减少读取/提高成功率，以及 trace 页面的视觉与点击表现。前者须另行授权实验，后者被浏览器安全策略阻止；均不能由离线通过代替。
 
-最终保留功能分支和工作区，未合并、未 push。执行账本与日志另存 `E:/ReproAgent/.local/convergence-audit-20261014/`。
+独立审查完成时保留功能分支和工作区，未合并、未 push。执行账本与日志另存 `E:/ReproAgent/.local/convergence-audit-20261014/`。
+
+## 本地 main 合并验证
+
+用户随后授权合并。2026-10-14 将 main 从 `766f7f8` 快进到 `a5bf419`，未执行 push。
+对 main 使用上面的同一组十个测试文件、独立 basetemp `C:/Users/Dell/AppData/Local/Temp/reproagent-convergence-main-merge-20261014` 再验收：**175 passed，40.34s，exit 0**。
+
+main 中四份同步文档先与分支内容核对一致，再备份到 `.local/merge-backups/convergence-20261014-123706/` 后合并。
+用户原有评测 HTML 保留，SHA256 为 `aaa7f31a825f9c89e80bb8249f364d2c2b2be59aceb972d29c76d0b67551c0e2`。
+合并测试日志保存在 `.local/convergence-audit-20261014/main-merge-tests.log`。
 
 ## 尚未证明的事项
 
