@@ -85,4 +85,14 @@
 - df4d348：实际 wire、收敛与经验门禁兼容测试。
 - 02a5e98：审查开销修复与基线旧断言对齐。
 
-当前保留独立功能分支和 managed worktree；未合并、未 push。用户本地未跟踪的评测 HTML 未改动。
+2026-10-14 按用户指令将功能分支快进合并到 `E:/ReproAgent` 的本地 `main`，产品提交为 `8c8d8aa`。未 push。
+
+合并后确认实际导入 `E:/ReproAgent/src`，运行如下离线回归，结果为 **112 passed，63.24s，exit 0**：
+
+```powershell
+.venv/Scripts/python.exe -u -m pytest -q tests/unit/test_citation_feedback.py tests/unit/test_model_protocol_regressions.py tests/unit/test_action_correction.py tests/integration/test_agentscope_domain_tools.py tests/integration/test_agentscope_runtime.py tests/integration/test_agentscope_backends.py::test_external_original_issue_reaches_exploration_without_known_key --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-contract-citation-main-merge-20261014
+```
+
+本次未重复全量测试、未调用真实模型、未重跑真实用例。上文完整全量结果和验证边界仍有效。
+
+两份同名未跟踪设计文档在合并前按 SHA-256 校验备份到 `E:/ReproAgent/.local/merge-backups/contract-citation-20261014/`，文件清单及哈希见 `manifest.json`。用户未跟踪的评测 HTML 保留原位，合并前后 SHA-256 相同：`AAA7F31A825F9C89E80BB8249F364D2C2B2BE59ACEB972D29C76D0B67551C0E2`。实施日志及离线重放资产保留在 `.local/contract-citation-audit-20261014/`。
