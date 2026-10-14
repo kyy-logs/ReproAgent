@@ -35,8 +35,16 @@ def test_independent_scenarios_and_platform_rules_reach_all_model_roles(tmp_path
         assert 'independent scenarios' in system
         assert 'platform' in system
         assert 'gold patch' in system
+        assert 'incidental wording' in system
+        assert 'test names' in system
     exploration = next(payload for payload in wire if payload.get('tools'))
     system = '\n'.join(message['content'] for message in exploration['messages'] if message['role'] == 'system')
     assert 'separate test functions' in system
     assert 'one focused regression test' not in system
     assert context.budget.steps_used == 1
+    reviews = [json.loads(message['content']) for payload in wire for message in payload['messages']
+               if message['role'] == 'user' and '"assertion_sites"' in message.get('content', '')]
+    assert len(reviews) == 2
+    for review in reviews:
+        assert review['assertion_sites']
+        assert 'assertion_reviews' in review['response_schema']['required']
