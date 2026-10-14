@@ -101,7 +101,7 @@
 - [ ] **Step 3：验证故障和展示（自动验证完成；file: 被浏览器安全策略禁止，点击验收未完成）。** `test_progress_observation_fault_does_not_change_phase_result` 注入新增观测写入异常，候选/步骤/权限结果保持一致；开启与关闭 trace 都跑。离线生成一份真实 SDK 请求的本地 trace.html，使用现有渲染入口和 workspace_path 路径机制；用浏览器确认预算详情与 wire 正文可见，明确是模拟回复而非真实模型行为。不新增 UI 功能。
 - [x] **Step 4：更新说明与验收文档。** 写清默认第16轮开始、1024 B、最后3步读限制仍在、无新增模型调用但提示有少量输入 token、exhausted 与 convergence 的区别；记录全部实际运行命令/结果/异常和未进行真实效果实验。问题挑战文档 P11 标注待实现；只有验收通过后才能更新为已实现，并附本次记录。
 - [x] **Step 5：运行集中回归。** `.venv/Scripts/python.exe -m pytest -q tests/unit/test_exploration_progress.py tests/unit/test_budget.py tests/integration/test_agentscope_runtime.py tests/integration/test_agentscope_gateway.py tests/integration/test_exploration_progress_observability.py tests/unit/test_trace_view_model.py tests/unit/test_trace_rendering.py --basetemp "$env:TEMP/reproagent-convergence-acceptance"`，预期 exit 0；另跑既有首次经验浏览相关测试（先用 `rg -l 'browse_gate|EXPERIENCE_BROWSE_REQUIRED' tests` 找实际文件，再定向执行）。集中回归通过且无新风险时，不重复无关全量测试。
-- [ ] **Step 6：审查与定向提交（提交后执行独立审查）。** 核对软阈值未改变硬准入、来源/语义验收及无额外 provider 请求；验收按仓库适用流程独立审查，不使用 Astra。只提交本功能文件和验收文档，保留用户既有 evaluation HTML 及其他无关改动。提交 `feat: expose exploration budget convergence diagnostics`；未获 push/merge 请求不自行执行。
+- [x] **Step 6：审查与定向提交。** 核对软阈值未改变硬准入、来源/语义验收及无额外 provider 请求；gpt-6.1-sol 独立审查无问题，另42项定向验证通过，未用 Astra。只提交本功能文件和验收文档，保留用户既有 evaluation HTML 及其他无关改动。已提交 `feat: expose exploration budget convergence diagnostics`；未获 push/merge 请求不自行执行。
 
 ## 通过标准与后续效果实验
 
