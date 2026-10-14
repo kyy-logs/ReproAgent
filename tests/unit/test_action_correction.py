@@ -44,7 +44,9 @@ def test_a_rejected_response_is_corrected_and_each_attempt_is_counted(tmp_path, 
     assert len(env.requests) == 3 == env.context.budget.steps_used
     assert [payload["result_code"] for payload in
             [event for event in _events(env, "exploration.protocol_error")]] == ["UNKNOWN_TOOL", "INVALID_TOOL_INPUT"]
-    correction = env.requests[1]["messages"][-1]["content"]
+    correction = next(message["content"] for message in env.requests[1]["messages"]
+                      if message.get("role") == "user" and
+                      message["content"].startswith("<system-reminder>Your previous response was rejected"))
     assert "write_candidate" in correction and "revise_contract" in correction
     assert "Write" not in json.dumps(env.requests[2])
 
