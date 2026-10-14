@@ -257,7 +257,8 @@ def test_a_failed_json_write_skips_the_page_and_keeps_the_result(tmp_path, monke
         attempted.append(task_dir)
         raise OSError('trace destination unavailable')
 
-    monkeypatch.setattr(cli, 'write_trace', unavailable)
+    from reproagent import trace_output
+    monkeypatch.setattr(trace_output, 'write_trace', unavailable)
     code, request = stub_cli(tmp_path, monkeypatch)
 
     assert attempted, 'the trace was actually attempted'

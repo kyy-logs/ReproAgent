@@ -42,6 +42,7 @@ from ...core.serialization import canonical_hash, parse_json
 from ...observability import mark, tool_call_key
 from ...experience_triggers import ERROR_METADATA, trigger_from_fact
 from .progress import render_progress
+from .protocol_diagnostics import ToolInputDiagnostic, tool_input_diagnostic
 
 #: The phase these events belong to; one runtime runs the exploration phases of one task.
 PHASE = "EXPLORATION"
@@ -80,11 +81,26 @@ class PhaseProtocolError(ModelProtocolError):
         code: one of :data:`PHASE_PROTOCOL_CODES`.
     """
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, diagnostic: ToolInputDiagnostic | None = None) -> None:
         if code not in PHASE_PROTOCOL_CODES:
             raise ValueError(f"unknown phase protocol code: {code}")
-        super().__init__(f"{code}: the exploration response was rejected in all {PROTOCOL_ATTEMPTS} attempts")
         self.code = code
+        self.diagnostic = diagnostic or ToolInputDiagnostic(code)
+        self.failures: tuple[str, ...] = ()
+        super().__init__(f'{code}: exploration response rejected ({self.diagnostic.error_category})')
+
+    def set_failures(self, failures: tuple[str, ...]) -> None:
+        if not 1 <= len(failures) <= PROTOCOL_ATTEMPTS or any(code not in PHASE_PROTOCOL_CODES for code in failures):
+            raise ValueError('invalid phase protocol refusal history')
+        self.failures = tuple(failures)
+        location = (f' at line {self.diagnostic.line} column {self.diagnostic.column}'
+                    if self.diagnostic.line is not None else '')
+        self.args = (f'{self.code}: phase protocol refusals {len(failures)}/{PROTOCOL_ATTEMPTS}: '
+                     f'{" -> ".join(failures)}; {self.diagnostic.error_category}{location}',)
+
+    def details(self) -> dict:
+        return {**self.diagnostic.fields(), 'protocol_failures_used': len(self.failures),
+                'protocol_failures_limit': PROTOCOL_ATTEMPTS, 'protocol_failure_codes': list(self.failures)}
 
 
 def component_versions() -> dict:
@@ -471,6 +487,22 @@ class ExplorationMiddleware(MiddlewareBase):
         except (OSError, ValueError, RuntimeError):
             pass
 
+    def record_protocol_failure(self, failure: PhaseProtocolError) -> None:
+        details = failure.details()
+        operations = (
+            lambda: self.record('exploration.protocol_error', result_code=failure.code, **details),
+            lambda: mark('exploration.protocol_error', attributes={
+                'result_code': failure.code, 'error_category': failure.diagnostic.error_category,
+                'budget': details}),
+        )
+        for operation in operations:
+            try:
+                operation()
+            except BudgetStopped:
+                raise
+            except Exception:
+                pass  # Diagnostic sinks cannot replace the actual protocol decision.
+
     @staticmethod
     def output_limit(model) -> dict:
         """The configured output ceiling, as the provider request must carry it.
@@ -503,10 +535,9 @@ class ExplorationMiddleware(MiddlewareBase):
             return
         if calls[0].name not in allowed_tools:
             raise PhaseProtocolError("UNKNOWN_TOOL")
-        try:
-            parse_json(calls[0].input)
-        except (TypeError, ValueError):
-            raise PhaseProtocolError("INVALID_TOOL_INPUT") from None
+        diagnostic = tool_input_diagnostic(calls[0].input)
+        if diagnostic is not None:
+            raise PhaseProtocolError('INVALID_TOOL_INPUT', diagnostic=diagnostic)
 
     async def _estimated_tokens(self, agent) -> int:
         """What the SDK is about to send, counted the way its own compression gate counts it."""

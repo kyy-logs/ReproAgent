@@ -90,6 +90,10 @@ ready 表示原版/修复版的 Python、pytest 和指定目标模块来源探�
 
 在启动终端配置 `examples/model.deepseek.json` 所需的 `DEEPSEEK_API_KEY` 环境变量，按已授权模型配置运行。不要把密钥放入数据或配置。run 会调用模型服务；默认串行，20 动作、单命令 60 秒、每任务 900 秒。
 
+每个案例默认生成 `cases/<instance>/task/observability/trace.json` 与 `trace.html`，无需额外命令参数。
+协议失败也保留接口实际返回的工具参数及累计拒绝诊断；内容仍受脱敏/容量限制。不同案例 trace 独立，
+采集结束或落盘失败只警告，不改变模型调用次数、主结果或分母。参见[观测说明](observability.md)。
+
 ```powershell
 .\.venv\Scripts\python.exe -m evals.swt_bench run `
   --catalog .local/swt-bench/data/catalog.json `

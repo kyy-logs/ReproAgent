@@ -11,8 +11,12 @@ from .core.budget import Budget
 from .core.models import FixValidationRequest, ModelConfig, RunContext, TaskState
 from .core.serialization import decode_record, parse_json
 from .experience import default_experience_path
-from .observability import trace_session, write_trace
+from .observability import trace_session
 from .trace_rendering import read_trace, write_trace_html
+from .trace_output import (
+    TRACE_WRITE_WARNING, TRACE_PAGE_WARNING, finish_trace_or_warn,
+    write_trace_or_warn as _write_trace_or_warn,
+)
 from .paths import display_path
 from .store import TaskStore
 
@@ -21,34 +25,6 @@ EXIT_CODES = {TaskState.DONE:0, TaskState.BLOCKED:1, TaskState.NEEDS_INFORMATION
 # own words, instead of leaving a silent DeprecationWarning to stand for it.
 BACKEND_DEPRECATION = ('--model-backend/--agent-backend are deprecated and no longer select a runtime: '
                        'ReproAgent runs on the AgentScope infrastructure only.')
-#: A trace is a local diagnostic. If it cannot be written that is worth saying once, and
-#: worth saying without touching the task's own JSON, its package or its exit code.
-TRACE_WRITE_WARNING = 'reproagent: could not write the activity trace; the task result is unchanged.'
-TRACE_PAGE_WARNING = 'reproagent: could not write the trace page; the trace itself is intact.'
-
-
-def _write_trace_or_warn(task_dir, document) -> bool:
-    """Write the trace, then the page built from the same document.
-
-    The page is not attempted unless the JSON landed: a page rendered from a JSON that
-    failed to write would be the only record of the run, and the next ``trace`` command
-    would have nothing to rebuild from.  Either failure is one warning, and neither
-    changes the task's own result.
-    """
-    try:
-        write_trace(task_dir, document)
-    except (OSError, ValueError, TypeError):
-        # TypeError is in the list because ``write_trace`` is public: a document it
-        # cannot encode is a failed observation, not a failed task.
-        print(TRACE_WRITE_WARNING, file=sys.stderr)
-        return False
-    try:
-        write_trace_html(task_dir, document)
-    except (OSError, ValueError, TypeError):
-        print(TRACE_PAGE_WARNING, file=sys.stderr)
-    return True
-
-
 def load_request(path):
     path = Path(path).resolve()
     data = parse_json(path.read_text(encoding='utf-8'))
@@ -90,10 +66,7 @@ def run_command(args):
     trace_document = None
     with trace_session(enabled=not args.no_trace, secrets=(os.environ.get(model.api_key_env, ''),)) as recorder:
         result = asyncio.run(run())
-        if recorder is not None:
-            learning = asdict(controller.learning_result) if getattr(controller, 'learning_result', None) is not None else None
-            trace_document = recorder.finish(task_id=result.task_id, status=result.status.value,
-                                             main_duration=result.duration, learning=learning)
+        trace_document = finish_trace_or_warn(recorder, result, learning=getattr(controller, 'learning_result', None))
     summary = {'task_id':result.task_id, 'status':result.status.value, 'evidence_level':result.evidence_level.value,
         'export_state':result.export_state, 'output_dir':display_path(output)}
     if getattr(controller, 'learning_result', None) is not None:

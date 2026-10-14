@@ -20,11 +20,19 @@ REGISTRY = {
 }
 
 
+class DuplicateJSONFieldError(ValueError):
+    """A duplicate field, distinct from JSON syntax and root-type errors."""
+
+
+class NonFiniteJSONValueError(ValueError):
+    """A non-standard NaN or infinity literal."""
+
+
 def _pairs(pairs):
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError(f"duplicate JSON field: {key}")
+            raise DuplicateJSONFieldError(f"duplicate JSON field: {key}")
         result[key] = value
     return result
 
@@ -35,7 +43,7 @@ class ObjectRootError(ValueError):
 
 def parse_json(text: str) -> dict[str, Any]:
     def invalid(value):
-        raise ValueError(f"non-finite JSON value: {value}")
+        raise NonFiniteJSONValueError(f"non-finite JSON value: {value}")
     data = json.loads(text, object_pairs_hook=_pairs, parse_constant=invalid)
     if not isinstance(data, dict):
         raise ObjectRootError("JSON root must be an object")

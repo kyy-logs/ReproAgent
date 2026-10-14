@@ -22,6 +22,22 @@ OpenTelemetry 管理统一 trace/span ID 和父子上下文。一个任务的主
 
 ## 使用方式
 
+`evals.run.run_case` 与 SWT 批量运行也默认采集，每个案例单独写入
+`<round>/cases/<instance>/task/observability/trace.json` 和 `trace.html`，不同案例不共享 trace。
+CLI 与评测复用同一套结束/落盘逻辑：JSON 写入失败不继续生成孤立页面，结束或落盘失败只发固定警告，
+不改变主结果、请求数或评测分母。直接调用 Python `run_case(..., trace=False)` 可关闭采集；日常命令无需新增参数。
+
+工具参数被拒时，`exploration.protocol_error` 保留原 `result_code`，并增加：
+
+- `error_category`：`JSON_SYNTAX_ERROR`、`JSON_ROOT_NOT_OBJECT`、`JSON_DUPLICATE_KEY`、
+  `JSON_NON_FINITE`、`TOOL_INPUT_TYPE_ERROR`、`JSON_NESTING_LIMIT` 或 `JSON_PARSE_ERROR`。
+- JSON 语法错误包含 parser 的 `line`、`column`（从 1 开始）与 `position`（从 0 开始）；不复制解析器错误原文。
+- `protocol_failures_used` / `protocol_failures_limit` / `protocol_failure_codes`：本 phase 累计拒绝次数、上限及真实顺序，成功工具调用不重置，仍最多三次。
+
+下一次纠错请求只收到受控原因/位置与计数，不收到被拒绝参数的回放；模型仍需自行生成合法调用。
+原始参数从对应 HTTP 节点的 `provider_response` 查看，继续受已知凭据脱敏和内容容量上限约束，
+省略或采集错误保留明确标记，不承诺所有正文始终完整。观测本身不增加模型调用；新增纠错提示会占少量输入 token。
+
 ```powershell
 cd E:\ReproAgent
 # 正常运行：默认采集，并自动写出两个文件

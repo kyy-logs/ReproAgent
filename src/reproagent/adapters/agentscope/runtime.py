@@ -177,6 +177,7 @@ class AgentScopeRuntime:
                                                            - self.context.budget.clock()), 3)}})
         message = self._message(context)
         end_reason = ""
+        protocol_failures = []
         for attempt in range(PROTOCOL_ATTEMPTS):
             try:
                 reply = await self._reply(message)
@@ -189,7 +190,9 @@ class AgentScopeRuntime:
                 end_reason = REPLY_STOPPED_BY_PHASE     # ... and so does a stop that follows it
                 break
             except PhaseProtocolError as failure:
-                self.middleware.record("exploration.protocol_error", action="", result_code=failure.code)
+                protocol_failures.append(failure.code)
+                failure.set_failures(tuple(protocol_failures))
+                self.middleware.record_protocol_failure(failure)
                 self._experience_event({"kind":"protocol_error", "tool":"", "code":failure.code})
                 if attempt + 1 == PROTOCOL_ATTEMPTS:
                     raise
@@ -351,7 +354,8 @@ class AgentScopeRuntime:
         return UserMsg(name="user", content=(
             "<system-reminder>Your previous response was rejected before any of it ran: "
             f"{failure.code}. Answer again with at most one tool call, its arguments a single complete "
-            f"JSON object, and its name one of: {', '.join(self.allowed_tools)}.</system-reminder>"))
+            f"JSON object, and its name one of: {', '.join(self.allowed_tools)}. "
+            f"Diagnostic: {canonical_bytes(failure.details()).decode('utf-8')}</system-reminder>"))
 
     def _steps_remaining(self) -> int:
         return self.context.budget.limits.agent_steps - self.context.budget.steps_used

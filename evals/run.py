@@ -1,11 +1,14 @@
 from dataclasses import asdict
 from pathlib import Path
+import os
 
 from reproagent.app import create_controller
 from reproagent.core.budget import Budget
 from reproagent.core.models import INFRASTRUCTURE, BudgetLimits, FixValidationRequest, PythonPytestConfig, RunContext, TaskRequest
 from reproagent.core.serialization import bytes_hash
 from reproagent.store import atomic_write
+from reproagent.observability import trace_session
+from reproagent.trace_output import finish_trace_or_warn, write_trace_or_warn
 from .schema import EvalResult
 
 
@@ -15,7 +18,7 @@ def generation_input(case):
         'python':case.buggy_python, 'target_modules':list(case.target_modules), 'source_roots':list(case.source_roots)}
 
 
-async def run_case(case, model, output_dir, *, limits=None, model_backend=None, agent_backend=None,cancel_event=None, experience_file=None, learn_experience=False):
+async def run_case(case, model, output_dir, *, limits=None, model_backend=None, agent_backend=None,cancel_event=None, experience_file=None, learn_experience=False, trace=True):
     if case.review_status != 'approved':
         raise ValueError('historical case must be manually reviewed before evaluation')
     output_dir = Path(output_dir)
@@ -41,7 +44,11 @@ async def run_case(case, model, output_dir, *, limits=None, model_backend=None, 
     if cancel_event is not None:
         from dataclasses import replace
         context=replace(context,cancel_event=cancel_event)
-    result = await controller.run(request, context, FixValidationRequest(case.fixed_repo, case.fixed_python))
+    with trace_session(enabled=trace, secrets=(os.environ.get(model.api_key_env, ''),)) as recorder:
+        result = await controller.run(request, context, FixValidationRequest(case.fixed_repo, case.fixed_python))
+        document = finish_trace_or_warn(recorder, result, learning=getattr(controller, 'learning_result', None))
+    if document is not None:
+        write_trace_or_warn(request.output_dir, document)
     events, _ = controller.store.read_events()
     attempts = [e.payload for e in events if e.kind == 'model.attempt']
     calls = attempts or [e.payload for e in events if e.kind == 'model.completed']
