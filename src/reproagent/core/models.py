@@ -475,6 +475,25 @@ class ExecutionDiagnostic:
 
 
 @dataclass(frozen=True, slots=True)
+class VerificationIssue:
+    code: str
+    check: str
+    origin: str
+    message: str
+    evidence_refs: tuple[EvidenceRef, ...] = ()
+    measurements: dict[str, Any] = field(default_factory=dict)
+    recovery: str = "inspect_evidence"
+
+    def __post_init__(self):
+        from copy import deepcopy
+        from .verification_issues import validate_issue
+        validate_issue(self.code, self.check, self.origin, self.recovery, self.message, self.measurements)
+        if not isinstance(self.evidence_refs, tuple) or any(not isinstance(ref, EvidenceRef) for ref in self.evidence_refs):
+            raise ValueError('invalid diagnostic evidence references')
+        object.__setattr__(self, 'measurements', deepcopy(self.measurements))
+
+
+@dataclass(frozen=True, slots=True)
 class Verdict:
     classification: CandidateClass | None
     reason: str
@@ -488,6 +507,7 @@ class Verdict:
     contract_version: int = 1
     run_ids: tuple[str, ...] = ()
     execution_diagnostic: ExecutionDiagnostic | None = None
+    issues: tuple[VerificationIssue, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
