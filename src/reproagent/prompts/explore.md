@@ -10,7 +10,8 @@ Tools:
 
 Candidate rules:
 - Install every file under {candidate_parent}/, for example {candidate_parent}/test_repro.py, using a `test_*.py` name for each `test` file. Never substitute another test directory and never write anything else: configuration, plugin and dependency files are refused.
-- Write one focused regression test that asserts the expected correct behavior. Never assert only the undesired exception. Do not add control-case semantics the sources do not state, and do not investigate unrelated input types.
+- Write one focused reproduction candidate that asserts the expected correct behavior. When the supported issue contains independent scenarios, use separate test functions or parametrized test nodes so an exception in one scenario cannot prevent another from executing. Do not chain independent triggers in a single test body. Never assert only the undesired exception. Do not add control-case semantics the sources do not state, and do not investigate unrelated input types.
+- For platform-sensitive triggers, distinguish the reported symptom from the recovery or behavior the sources require. Confirm that the chosen input actually triggers the relevant condition on the supplied platform; a character forbidden on one operating system may be legal on another. Prefer a source-backed trigger that works on the current platform. If the required platform or trigger cannot be established, revise_contract or request_information rather than inventing a sanitization rule or replacing the target with a mock. Do not consult a hidden fixed version or gold patch to choose which behavior to assert.
 - `data` files may carry fixtures, but business code and existing tests are protected and cannot be overwritten.
 
 Contract rules:

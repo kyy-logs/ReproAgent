@@ -1,0 +1,2 @@
+# This executable is mounted into Linux evaluation containers from Windows checkouts.
+evals/repairs/sphinx-legacy/tox text eol=lf

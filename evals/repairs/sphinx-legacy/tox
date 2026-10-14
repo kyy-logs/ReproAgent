@@ -1,0 +1,6 @@
+#!/bin/sh
+# Mount read-only over the tox entry point of a disposable SWT Sphinx container.
+set -eu
+exec /opt/miniconda3/envs/testbed/bin/python -m tox \
+    -x 'testenv.install_command=python -I -m pip install --constraint /opt/reproagent-repair/constraints.txt {opts} {packages}' \
+    "$@"
