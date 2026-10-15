@@ -1,6 +1,6 @@
 # 有依据的等价关系：契约误阻塞修复验收
 
-日期：2026-10-15。基线 0c17d53，分支 codex/relational-contracts。状态：针对性离线回归通过；完整回归与独立审查待完成。没有合并、push 或新增真实模型评测。
+日期：2026-10-15。基线 0c17d53，分支 codex/relational-contracts。状态：针对性回归、完整离线套件与独立审查均通过。没有合并、push 或新增真实模型评测。
 
 ## 修复范围
 
@@ -35,3 +35,12 @@ CandidateService、Controller、引用授权、领域工具输入 Schema、Issue
 没有修改 002/003 的 Issue、来源、候选、结果、补丁或官方分数，没有读取修复源码或 gold 测试，没有调用付费模型。下一步应仅新跑 15678：检查契约是否支持有依据的关系、能否修订并发布、两个场景分别执行、oracle 计算是否正确，再进行新的官方判分。仍须记录模型波动，不能承诺本轮必过。
 
 精确日志与账本位于本 worktree 的 .local/relational-contracts-acceptance/。完整回归和独立审查以下方追加结果为准。
+
+## 最终验收
+
+- 完整离线命令：`.venv/Scripts/python.exe -X utf8 -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-relational-full-20261015`。产品提交 161086d0c50e471fc109fc19285788ae6bf20b76，**1147 passed, 6 skipped in 1159.92s (0:19:19)，exit 0**。
+- 非 Astra 的 gpt-6.1-sol 完成独立只读审查，无 Critical / Important / Minor 待修问题；单独运行五项新增测试，5 passed in 11.78s。完整套件由本会话执行，没有让审查者重复运行。
+- 审查没有独立判断真实模型采纳率、新 15678 官方效果、未来 oracle 的数学正确性或通用未定义变量防护；这些都保留为未验证边界。历史记录依据本会话的诊断与机读核验，未冒称审查者重新验证。
+- 没有延期缺陷或自动清空缺口的后门。分支仍隔离、未合并、未 push。下一步实际效果验证仅需新跑 15678，不应覆盖旧记录或直接重复十例。
+
+原始 RED/GREEN/完整日志和独立审查已另存到 E:/ReproAgent/.local/relational-contracts-20261015/final-audit/，供后续归档工作区后继续核对。
