@@ -2,7 +2,7 @@
 
 开始日期：2026-10-14；整合日期：2026-10-15。初始基线 `804ac7b`，实施中合入并行 main `2e1f967`。独立分支 `codex/verifier-failure-feedback`；工作区 `C:/Users/Dell/.codex/worktrees/verifier-failure-feedback/ReproAgent`。
 
-状态：产品实现、独立审查修复和最终完整离线回归已完成；待核对主目录后本地合并，未 push。以下只记录实际结果。
+状态：产品实现、独立审查修复和最终完整离线回归已完成；已快进合入本地 main（09fcebb），合并后关键回归通过，未 push。以下只记录实际结果。
 
 ## 最终行为
 
@@ -48,7 +48,7 @@
 .venv/Scripts/python.exe -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-vf-complete-20261015
 ```
 
-精确命令、输出及执行账本位于本 worktree `.superpowers/sdd/2026-10-14-verifier-failure-feedback/`。最终保留这些验收资产后再清理工作区；不删除其他计划目录。
+精确命令、输出及执行账本已逐文件校验并保留到主目录 `.local/verifier-failure-feedback-audit-20261015/`；随后仅清理本任务的 managed worktree，不处理其他计划或工作区。
 
 ## 并行开发与裁决
 
@@ -77,6 +77,12 @@ Declined to judge 的裁决：真实模型修复收益没有授权也没有证�
 
 没有新增依赖、工具、探索阶段限制、经验写入/检索、人工验收、trace viewer 布局、预算阈值或完成判断模型。没有重新验收 HTML 的视觉交互；只验证 trace 结构与既有属性详情的数据路径。
 
-主目录未跟踪评测 HTML 和已修改 P12 记录保留原位。本分支在另一代理期间独立实施；后续合并需再次检查主目录状态，不能覆盖另一个会话未提交文件。
+主目录未跟踪评测 HTML 和已修改 P12 记录保留原位。本分支在另一代理期间独立实施；合并前已再次核对 main 提交和两份本地文件的哈希，没有覆盖另一个会话的未提交文件。
 
 最终回归补充：Trace 的 FAIL 表示该项未满足接受条件，不表示程序证明模型语义为假；check_source 仍保留 provider_claim。旧端到端消费约定通过原测试验证，而非修改消费者跳过新事件。
+
+## 本地集成验收（2026-10-15）
+
+main 从 2e1f967 快进到 09fcebb；src/tests 与完整回归树一致，实际 import 来自 E:/ReproAgent/src。合并后关键链路再次验证 **22 passed in 44.11s，exit 0**，覆盖 JSON 容量、SDK 反馈交付与脱敏、check 事件字段、程序拒绝矛盾成功声明。没有重复运行相同代码的全部套件。
+
+原有评测 HTML 的 SHA-256 保持不变；原有 P12 本地修改仅补充本轮实施状态并保留为未提交。未自动提交这些原有本地文件。没有 push、真实模型运行或费用。
