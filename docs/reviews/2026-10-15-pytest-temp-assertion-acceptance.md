@@ -1,6 +1,6 @@
 # Pytest 8906 / 5221：实施与验收
 
-日期：2026-10-15。基线 main c7c6a09，隔离分支 codex/pytest-temp-and-assertions。状态：针对性实现与离线验收完成；完整套件和独立审查待完成。没有合并或 push。
+日期：2026-10-15。基线 main c7c6a09，隔离分支 codex/pytest-temp-and-assertions。状态：针对性实现、完整离线回归和独立审查完成。没有合并或 push。
 
 ## 范围与计划更正
 
@@ -46,3 +46,20 @@
 另一个代理的评测挂接、上下文清单等工作区与 main 未提交文件不属于此分支，没有复制或修改。测试依赖通过 worktree-local .pth 复用，实际产品 import 来自本工作区；main 虚拟环境不变。
 
 精确日志、原始计划备份及账本在本工作区 .superpowers/sdd/2026-10-15-pytest-8906-windows-temp-path/。完整回归和独立审查结论以追加记录为准。
+
+## 最终回归与独立审查
+
+- 测试产品提交：3bd1fadd46c77941bb55666f71f8fe70dba9c575。最终全量离线命令为 `.venv/Scripts/python.exe -X utf8 -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-temp-assertion-final-20261015`，结果 **1142 passed, 6 skipped in 932.26s (0:15:32)，exit 0**。
+- 第一次完整测试出现两项启动器失败后中断。定向重现确认，本地 `.pth` 使用 sys.path.insert(0) 覆盖了测试通过 PYTHONPATH 提供的假 CLI，导致真实 CLI 读取不存在的 task.json。改为原位替换 main 的 editable source，保留 PYTHONPATH 优先级；启动器组 6 passed in 6.78s，再重新运行上述完整套件。只改隔离环境，没有修改产品或测试来消除失败。
+- 独立审查使用非 Astra 的 gpt-6.1-sol；Critical / Important / Minor 均为 0。审查者独立运行四项新增测试，4 passed in 5.09s，并核对原候选和重放候选 SHA-256 相同。最终完整套件由本会话负责，未让审查者重复运行。
+- 分支保持隔离，未合并、未 push。main 并行会话的未提交变更未纳入本次测试结论。
+
+## 取舍与尚未验证的边界
+
+1. 撤回漏查 Runner 导致的 adapter 前缀方案，验证已上线的短独占临时目录；代价是该回放不能保证所有 Windows 机器和路径均有效，其他环境仍需各自验收。
+2. Windows 下用 PowerShell/Python 保留任务账本与精确日志，替代 Bash 辅助封装；代价是若手工记录遗漏，需用已保留的原始日志核验。
+3. 不用脚本 SDK 测试替代真实模型采纳率 / 5221 成功率，也不把 8906 单次原版运行升级成语义验收或官方分数；代价是改善幅度与官方结果仍未知，需要新的真实评测。
+4. 不扩展为通用 Windows 临时目录鲁棒性承诺，不改其他会话的 main 代码；代价是相关外部环境与并行实现不受此回归结论覆盖。
+5. 审查者没有重复完整套件，本会话以最终全量日志作为验收依据；代价是全量结果只有一个执行方，但四项新增测试有独立复核。
+
+没有延期 Minor 项。没有追加语义请求、预算、步骤闸门或官方候选替换。

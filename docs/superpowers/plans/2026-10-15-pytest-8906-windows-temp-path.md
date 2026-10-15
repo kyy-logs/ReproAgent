@@ -60,7 +60,7 @@ The 002 failure paths (270/276 characters) belong to older execution code. Curre
 
 ## Task 3: Whole-branch acceptance
 
-- [ ] Run the complete offline suite once after both scopes are stable; save exact command, commit, exit and passed/skipped counts. Do not add concurrent main edits to this run.
-- [ ] One fresh non-Astra reviewer examines c7c6a09..HEAD and these five review-focus boundaries. Fix accepted Important/Critical findings in one RED/GREEN pass, without a second review dispatch.
-- [ ] Write acceptance and update checkboxes with actual results. Do not claim latest real 5221 agent success, original 8906 bug validation or official score without the corresponding new evaluation.
-- [ ] Keep the isolated branch for later integration; merge/push only under applicable user authorization and after checking fresh main status. Preserve ignored audit assets before any managed-worktree archive.
+- [x] Run the complete offline suite once after both scopes are stable; save exact command, commit, exit and passed/skipped counts. Do not add concurrent main edits to this run.
+- [x] One fresh non-Astra reviewer examines c7c6a09..HEAD and these five review-focus boundaries. Fix accepted Important/Critical findings in one RED/GREEN pass, without a second review dispatch.
+- [x] Write acceptance and update checkboxes with actual results. Do not claim latest real 5221 agent success, original 8906 bug validation or official score without the corresponding new evaluation.
+- [x] Keep the isolated branch for later integration; merge/push only under applicable user authorization and after checking fresh main status. Preserve ignored audit assets before any managed-worktree archive.
