@@ -11,6 +11,9 @@ INSTRUCTIONS = {
     'request_information': '当前条件阻塞；报告缺失信息，不把未完成执行当作已复现。',
     'inspect_evidence': '检查列出的证据与缺口，再决定修订候选、契约或请求信息；未确认不等于已证明错误。',
 }
+# An observed passing run is a fact; metadata contamination is only a possibility to inspect.
+ORIGINAL_PASS_GUIDANCE = ('候选在原版通过，尚未复现。检查断言是否被测试名称、说明或回显输入满足；'
+                          '验证目标行为后再提交，不能只改假设。')
 _EXTRA_KEYS = frozenset({'consecutive_command_timeouts','configured_command_timeout_seconds',
     'previous_candidate_id','previous_run_ids','prior_result_code'})
 
@@ -30,8 +33,11 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         if not ok: raise ValueError('invalid verification feedback extra')
     data = asdict(verdict)
     recovery = verdict.issues[0].recovery if verdict.issues else 'inspect_evidence'
+    default_instruction = (ORIGINAL_PASS_GUIDANCE
+        if verdict.issues and verdict.issues[0].code == 'CANDIDATE_NOT_REPRODUCED'
+        else INSTRUCTIONS[recovery])
     payload = {'result_code':result_code, 'decision':decision, 'verdict':data,
-        'instruction':instruction or INSTRUCTIONS[recovery],
+        'instruction':instruction or default_instruction,
         'projection':{'omitted_issues':0,'omitted_refs':0,'omitted_details':0}, **extras}
     def redact(value):
         if isinstance(value,str):
@@ -79,7 +85,7 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         if key in payload and payload[key] == equivalent:
             del payload[key]; counts['omitted_details'] += 1
     # Replace long custom prose with a complete controlled action, never cut the verb.
-    fallback_instruction = redact(INSTRUCTIONS[recovery])
+    fallback_instruction = redact(default_instruction)
     if len(fallback_instruction.encode('utf-8')) < len(payload['instruction'].encode('utf-8')):
         payload['instruction'] = fallback_instruction; counts['omitted_details'] += 1
     for key in ('uncertainties', 'evidence_refs', 'execution_diagnostic'):
