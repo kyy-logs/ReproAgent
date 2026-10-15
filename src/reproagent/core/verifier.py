@@ -96,7 +96,7 @@ class Verifier:
             if issues and not unmet:
                 unmet = tuple(dict.fromkeys(item.check for item in issues))
             for item in issues:
-                mark('verification.issue', attributes={'diagnostic_code': item.code, 'check': item.check,
+                mark('verification.issue', attributes={'diagnostic_code': item.code, 'check': item.check, 'result_code': 'FAIL',
                     'check_source': item.origin, 'candidate_id': candidate.candidate_id,
                     'contract_version': contract.version})
             mark('verdict', attributes={'result_code': classification.value if classification else 'UNCLASSIFIED',
@@ -247,7 +247,7 @@ class Verifier:
                                                                           'failure_matches_issue')),
                                               source='provider_claim')
                         if not claims:
-                            return verdict(None, 'semantic reproduction checks are not all true', refs, origin='provider', issues=semantic_issues)
+                            return verdict(None, 'semantic reproduction checks are not all true', refs, issues=semantic_issues)
                         # ...and this one is the program's own check that the citations
                         # cover both the expectation and the observed failure.
                         cites_both = (any(ref in sources for ref in refs)

@@ -176,3 +176,22 @@ def test_changed_failure_reference_is_not_attached_to_rejection_feedback(tmp_pat
     assert verdict.classification==CandidateClass.INVALID_CANDIDATE
     assert not verdict.issues[0].evidence_refs
     assert not verdict.evidence_refs
+
+
+@pytest.mark.parametrize('contract_check', ['result_code', 'reason_origin'])
+def test_rejected_claim_preserves_trace_contract(tmp_path, projects, facts, monkeypatch, contract_check):
+    import importlib
+    events = []
+    module = importlib.import_module('reproagent.core.verifier')
+    monkeypatch.setattr(module, 'mark', lambda name, *, attributes: events.append((name, attributes)))
+    model = Claims({'target_triggered': False})
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, model=model)
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert verdict.classification is None
+    assert verdict.issues[0].origin == 'provider_claim'
+    if contract_check == 'result_code':
+        diagnostics = [attrs for name, attrs in events if name == 'verification.issue']
+        assert diagnostics and all(attrs['result_code'] == 'FAIL' for attrs in diagnostics)
+    else:
+        decisions = [attrs for name, attrs in events if name == 'verdict']
+        assert decisions and all(attrs['reason_origin'] == 'program' for attrs in decisions)
