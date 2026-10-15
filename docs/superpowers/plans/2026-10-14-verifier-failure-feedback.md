@@ -106,7 +106,7 @@
 
 ## Task 6: Whole-branch verification and later integration
 
-- [ ] Review diff and unchanged acceptance gates. Run full pytest -q in isolated .venv with external basetemp, save log and exact exit/count; no model/key calls.
-- [ ] One fresh non-Astra reviewer checks base 804ac7b..HEAD for Critical/Important problems. No implementer subagents. Fix any accepted findings through RED/GREEN and relevant regression; preserve uncertainty.
-- [ ] Record commands, full results, review and any limitations in acceptance/ledger. Verify branch clean and main changes untouched.
+- [x] Review diff and unchanged acceptance gates. Run full pytest -q in isolated .venv with external basetemp, save log and exact exit/count; no model/key calls.
+- [x] One fresh non-Astra reviewer checks integrated base 2e1f967..1bd80a0 for Critical/Important problems. No implementer subagents. Fix any accepted findings through RED/GREEN and relevant regression; preserve uncertainty.
+- [x] Record commands, full results, review and any limitations in acceptance/ledger. Verify branch clean and main changes untouched.
 - [ ] Keep managed worktree until safe integration. User authorized later merge; inspect fresh main before integrating, resolve committed overlap through tests; never overwrite/stash another session's uncommitted edits. Do not push. If another session still edits overlapping main files, deliver clean feature branch for later merge.

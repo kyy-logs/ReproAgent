@@ -2,7 +2,7 @@
 
 开始日期：2026-10-14；整合日期：2026-10-15。初始基线 `804ac7b`，实施中合入并行 main `2e1f967`。独立分支 `codex/verifier-failure-feedback`；工作区 `C:/Users/Dell/.codex/worktrees/verifier-failure-feedback/ReproAgent`。
 
-状态：产品实现和整合回归完成；独立审查两项 Important 已修复，最终全量测试待完成，尚未向 main 合并或 push。以下只记录实际结果。
+状态：产品实现、独立审查修复和最终完整离线回归已完成；待核对主目录后本地合并，未 push。以下只记录实际结果。
 
 ## 最终行为
 
@@ -40,10 +40,12 @@
 | 顶层失效引用 RED | 1 failed：issue 已去除变化引用，顶层仍保留 |
 | 修复顶层失效引用后组合 | 32 passed，29.81s，exit 0 |
 
-首轮全量在 25% 时为审查修复中止，未取得完整结果，不计为通过。已确认该轮进程全部退出。最终全量命令（结果待记录）：
+首轮全量在 25% 时为审查修复中止；第二轮日志停在 44%，会话中断，未取得完整结果。这两轮均不计为通过。第二轮暴露原端到端测试失败：新增 verification.issue 带 check 却缺少 result_code，破坏原 Trace 消费约定；并且程序拒绝模型矛盾声明时，决定来源应为 program，底层未确认意见仍为 provider_claim。独立小测试先复现 2 failed，再补齐 FAIL 并恢复程序决定来源，未放宽验收条件。相关 Verifier / 端到端观测 / 实际 SDK 交付组合 **40 passed，105.63s，exit 0**。
+
+最终完整全量结果：**1138 passed, 6 skipped in 967.94s (0:16:07)，exit 0**。日志 complete-full-suite.log；没有将部分进度当作通过。命令：
 
 ```powershell
-.venv/Scripts/python.exe -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-vf-final-20261015
+.venv/Scripts/python.exe -u -m pytest -q --basetemp C:/Users/Dell/AppData/Local/Temp/reproagent-vf-complete-20261015
 ```
 
 精确命令、输出及执行账本位于本 worktree `.superpowers/sdd/2026-10-14-verifier-failure-feedback/`。最终保留这些验收资产后再清理工作区；不删除其他计划目录。
@@ -76,3 +78,5 @@ Declined to judge 的裁决：真实模型修复收益没有授权也没有证�
 没有新增依赖、工具、探索阶段限制、经验写入/检索、人工验收、trace viewer 布局、预算阈值或完成判断模型。没有重新验收 HTML 的视觉交互；只验证 trace 结构与既有属性详情的数据路径。
 
 主目录未跟踪评测 HTML 和已修改 P12 记录保留原位。本分支在另一代理期间独立实施；后续合并需再次检查主目录状态，不能覆盖另一个会话未提交文件。
+
+最终回归补充：Trace 的 FAIL 表示该项未满足接受条件，不表示程序证明模型语义为假；check_source 仍保留 provider_claim。旧端到端消费约定通过原测试验证，而非修改消费者跳过新事件。
