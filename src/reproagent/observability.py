@@ -47,6 +47,7 @@ ALLOWED_ATTRIBUTES = frozenset({
     "checks", "reason_origin", "exit_code", "stop_reason", "cleanup_ok", "health",
     "diagnostic_code", "diagnostic_codes", "decision", "run_ids", "projection", "output_bytes", "feedback_state",
     "attempt", "output_limit", "budget", "usage", "cost", "unknown", "http_status_code",
+    "context_manifest_state",
 })
 
 #: The one capture mode this version has: metadata plus the content it can copy.

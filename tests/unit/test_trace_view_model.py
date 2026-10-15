@@ -54,6 +54,22 @@ def test_shared_content_has_one_descriptor_and_no_embedded_text():
     assert "text" not in view["contents"][0]
 
 
+def test_model_parent_links_only_its_actual_http_input_inventories():
+    doc = fixture()
+    root = doc['spans'][0]['span_id']
+    doc['spans'] = [doc['spans'][0], node('1'*16, 'sdk.model_call', root),
+                    node('2'*16, 'model.http_attempt', '1'*16),
+                    node('3'*16, 'sdk.model_call', root)]
+    doc['contents'] = [{'content_id': 'inventory', 'source': 'context_manifest',
+                        'availability': 'captured', 'text': '{"items":[]}', 'truncated': False}]
+    doc['spans'][2]['content_refs'] = ['inventory']
+    view = build_trace_view(doc)
+    assert view['nodes'][1]['context_manifest_keys'] == [0]
+    assert view['nodes'][2]['context_manifest_keys'] == [0]
+    assert view['nodes'][3]['context_manifest_keys'] == []
+    assert '{"items":[]}' not in json.dumps(view)
+
+
 def test_time_geometry_handles_unknown_zero_and_nonfinite_values():
     doc=fixture(); doc["spans"][2].update(offset_seconds=2,duration_seconds=3)
     view=build_trace_view(doc)

@@ -71,6 +71,42 @@ def page_for(doc):
     return html
 
 
+def test_input_inventory_is_a_readable_table_with_escaped_identifiers():
+    inventory = {'schema_version': 1, 'basis': 'http_request_body', 'message_count': 2,
+                 'tool_definition_count': 6, 'request_bytes': 1234, 'inventory_complete': True,
+                 'unclassified_messages': 0, 'omitted_items': 0, 'missing': [], 'omissions': [],
+                 'items': [{'kind': 'contract', 'message_index': 1, 'scope': 'current', 'version': 3,
+                            'contract_id': '<script>bad()</script>', 'bytes': 100},
+                           {'kind': 'experience_body', 'message_index': 0, 'experience_id': 'card-1',
+                            'bytes': 180}]}
+    doc = document(contents=[{'content_id': 'inventory', 'source': 'context_manifest',
+                              'availability': 'captured', 'text': json.dumps(inventory),
+                              'truncated': False}])
+    doc['spans'][4]['content_refs'] = ['inventory']
+    page = page_for(doc)
+    assert 'class="input-inventory"' in page
+    assert '当前契约' in page and '经验正文' in page
+    assert '&lt;script&gt;bad()&lt;/script&gt;' in page
+    assert '<script>bad()</script>' not in page
+    assert 'card-1' in page
+
+
+def test_truncated_inventory_is_not_presented_as_a_complete_input_table():
+    doc = document(contents=[{'content_id': 'cut', 'source': 'context_manifest',
+                              'availability': 'captured', 'text': '{"items":[]}', 'truncated': True}])
+    page = page_for(doc)
+    assert '输入清单未完整保留' in page
+    assert 'class="input-inventory"' not in page
+
+
+def test_hand_edited_inventory_metadata_cannot_break_offline_viewer():
+    inventory = {'schema_version': 1, 'basis': 'http_request_body', 'items': [
+        {'kind': 'contract', 'scope': [], 'location': 123, 'section': 'contract'}]}
+    page = page_for(document(contents=[{'content_id': 'edited', 'source': 'context_manifest',
+                                        'availability': 'captured', 'text': json.dumps(inventory)}]))
+    assert 'class="input-inventory"' in page
+
+
 def test_trace_html_renders_failure_and_cost_breakdown(tmp_path):
     html = page_for(document())
 

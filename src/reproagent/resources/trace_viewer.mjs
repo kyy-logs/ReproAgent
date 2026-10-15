@@ -134,6 +134,13 @@ export function mountTraceViewer(root, view) {
     showTab(false);restoreCaptures();detail.replaceChildren();state.selectedKey=key;
     detail.hidden=false;workspace.classList.add('has-detail');
     const head=el('div','detail-head');head.append(el('h3','',n.label),button('关闭',closeDetail));detail.append(head);
+    const inventoryKeys=n.context_manifest_keys||[];
+    if(n.kind_tag==='LLM'||n.kind_tag==='HTTP') {
+      detail.append(el('h4','','本轮输入清单'));
+      if(!inventoryKeys.length)detail.append(el('p','unknown',
+        '未采集输入清单（旧 trace 或该调用未记录）。采集状态：'+(n.attributes.context_manifest_state||'未记录')));
+      for(const k of inventoryKeys) {const c=captures.get(k);if(c){c.open=true;detail.append(c);}}
+    }
     const fields=el('dl','detail-fields');
     const pairs=[['Span ID',n.span_id],['实际父节点',figure(n.actual_parent_span_id)],['来源',n.source],
       ['展示状态',n.display_status],['原始 OTel 状态',figure(n.otel_status)],['开始偏移',seconds(n.offset_seconds)],
@@ -142,7 +149,7 @@ export function mountTraceViewer(root, view) {
     if(n.permission_result)pairs.push(['权限结果',n.permission_result]);
     for(const [label,value] of pairs)fields.append(el('dt','',label),el('dd','',value));
     detail.append(fields,el('h4','','受控属性 / 程序依据'),el('pre','',JSON.stringify(n.attributes,null,2)));
-    for(const k of n.content_keys) { const c=captures.get(k); if(c) {c.open=true;detail.append(c);} }
+    for(const k of n.content_keys.filter(k=>!inventoryKeys.includes(k))) { const c=captures.get(k); if(c) {c.open=true;detail.append(c);} }
     if(!n.content_keys.length)detail.append(el('p','unknown','未保留正文；不补写推理、参数或结果。'));
     drawRows();head.querySelector('button').focus();
   }

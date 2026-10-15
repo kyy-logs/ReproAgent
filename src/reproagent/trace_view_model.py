@@ -74,6 +74,7 @@ def build_trace_view(document: dict) -> dict:
                           otel_status=entry.get("otel_status"), attributes=attrs,
                           source=entry.get("instrumentation_scope", "unknown"),
                           content_keys=list(dict.fromkeys(content_map[r] for r in entry.get("content_refs") or [])),
+                          context_manifest_keys=[],
                           offset_seconds=offset, duration_seconds=duration,
                           start_percent=None, width_percent=None,
                           missing_parent=parent is not None and parent not in id_map,
@@ -100,6 +101,19 @@ def build_trace_view(document: dict) -> dict:
     for group in groups.values():
         refs = list(dict.fromkeys(k for n in group for k in n["content_keys"]))
         for n in group: n["content_keys"] = list(refs)
+    # HTTP attempts own the inventory. Their model ancestors expose links to it,
+    # without copying text or attaching a neighboring call's input to this branch.
+    for n in nodes:
+        if n['kind_tag'] != 'HTTP': continue
+        inventories = [key for key in n['content_keys']
+                       if contents[key]['source'] == 'context_manifest']
+        walker = n['key']
+        while walker is not None:
+            host = nodes[walker]
+            if host['kind_tag'] in ('HTTP', 'LLM'):
+                host['context_manifest_keys'] = list(dict.fromkeys(
+                    [*host['context_manifest_keys'], *inventories]))
+            walker = host['parent_key']
     http_by_content = {}
     for n in nodes:
         if n["kind_tag"] == "HTTP":

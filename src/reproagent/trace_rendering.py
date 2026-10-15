@@ -35,6 +35,7 @@ SECTIONS = ("overview", "calls", "decisions")
 #: Plain words for where a capture came from.  The stored name is the contract between
 #: the recorder and this page; it was never meant to be the thing a person reads.
 SOURCE_LABELS = {
+    "context_manifest": "本轮输入清单",
     "wire_request": "request the model received",
     "provider_response": "what the model returned",
     "provider_reasoning": "model reasoning (as returned)",
@@ -263,6 +264,63 @@ def _order(entry: dict):
     return (entry.get("offset_seconds") is None, entry.get("offset_seconds") or 0.0)
 
 
+def _render_input_inventory(record: dict) -> str:
+    """Untrusted inventory values are text, never executable page markup."""
+    unavailable = '<p class="unknown">输入清单未完整保留；无法据此判断模型输入是否缺失。</p>'
+    if record.get('availability') != 'captured' or record.get('truncated'):
+        return unavailable
+    from .core.serialization import parse_json
+    try:
+        data = parse_json(record.get('text'))
+    except (ValueError, TypeError, RecursionError):
+        return unavailable
+    if (not isinstance(data, dict) or data.get('schema_version') != 1
+            or data.get('basis') != 'http_request_body' or not isinstance(data.get('items'), list)):
+        return unavailable
+    labels = {'system_prompt': '系统提示', 'contract': '契约', 'issue': 'Issue 原文',
+              'feedback': '验收反馈', 'budget': '阶段预算', 'budget_progress': '本轮预算提醒',
+              'phase_history': '阶段记录', 'experience_notice': '经验库提示',
+              'experience_browse': '经验浏览状态', 'source_result': '源码工具结果',
+              'tool_result': '工具结果', 'experience_catalog': '经验目录',
+              'experience_body': '经验正文', 'experience_result': '经验工具反馈',
+              'assistant_message': '模型历史输出', 'tool_definitions': '工具定义', 'unknown': '来源未知'}
+    rows = []
+    for item in data['items'][:256]:
+        if not isinstance(item, dict): continue
+        scope = {'current': '当前', 'historical': '历史'}.get(str(item.get('scope')), '')
+        label = scope + labels.get(str(item.get('kind')), '来源未知')
+        refs = [f'{key}={item[key]}' for key in ('contract_id', 'version', 'result_code', 'tool',
+                'tool_call_id', 'experience_id', 'experience_ids', 'source_hash') if item.get(key) is not None]
+        source_refs = item.get('source_refs')
+        if isinstance(source_refs, list):
+            for ref in source_refs[:8]:
+                if isinstance(ref, dict):
+                    refs.append(f"{ref.get('path', '?')}:{ref.get('start_line', '?')}-{ref.get('end_line', '?')}")
+        location = f"messages[{item['message_index']}]" if 'message_index' in item else str(item.get('location', '?'))
+        if item.get('section'): location += f" → {item['section']}"
+        rows.append('<tr>' + ''.join(f'<td>{_esc(v)}</td>' for v in
+                    (label, location, item.get('bytes', UNKNOWN_TEXT), '; '.join(refs) or '—')) + '</tr>')
+    intro = (f"实际请求：{_esc(data.get('message_count', UNKNOWN_TEXT))} 条消息 · "
+             f"{_esc(data.get('tool_definition_count', UNKNOWN_TEXT))} 个工具定义 · "
+             f"{_esc(data.get('request_bytes', UNKNOWN_TEXT))} 字节。字节数不是 token 数。")
+    warnings = []
+    if data.get('unclassified_messages'):
+        warnings.append(f"{data['unclassified_messages']} 条消息来源未分类，仍已进入请求。")
+    if data.get('inventory_complete') is not True:
+        warnings.append(f"清单受容量限制，省略 {data.get('omitted_items', UNKNOWN_TEXT)} 项；不代表请求省略了这些内容。")
+    for item in data.get('omissions', [])[:256] if isinstance(data.get('omissions'), list) else []:
+        if isinstance(item, dict):
+            warnings.append(f"组装时移除：{item.get('kind')}，{item.get('entry_count', '?')} 条；原因 {item.get('reason')}。")
+    for item in data.get('missing', [])[:256] if isinstance(data.get('missing'), list) else []:
+        if isinstance(item, dict):
+            warnings.append(f"预期材料未进入请求：{item.get('kind')}；原因 {item.get('reason')}。")
+    notes = ''.join(f'<p class="warn">{_esc(w)}</p>' for w in warnings)
+    return (f'<p>{intro}</p>{notes}<table class="input-inventory"><thead><tr>'
+            '<th>材料</th><th>请求内位置</th><th>字节</th><th>来源与版本</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table>'
+            '<p class="meta">表示内容已进入请求，不代表模型已理解或采纳。源码行号来自工具返回的引用旁注。</p>')
+
+
 def render_content_registry(document: dict) -> str:
     """One text container per capture, usable by static and enhanced views."""
     parts = ["<h2>Calls and content</h2>"]
@@ -274,6 +332,9 @@ def render_content_registry(document: dict) -> str:
         flags = ", ".join(k for k in ("truncated", "redacted", "excerpt_mode") if record.get(k))
         text = record.get("text")
         body = f'<pre data-content-body>{_esc(text)}</pre>' if text else f'<p class="unknown">{_esc(record.get("availability"))}</p>'
+        if record.get('source') == 'context_manifest':
+            body = (_render_input_inventory(record)
+                    + f'<details><summary>清单原始记录</summary>{body}</details>')
         parts.append(f'<details id="trace-content-{key}" class="capture"><summary>'
                      f'{_esc(_source_label(record.get("source")))} · {_esc(record.get("availability"))}'
                      f' · {_esc(flags)} · {_esc(record.get("captured_bytes", UNKNOWN_TEXT))} / {_esc(record.get("original_bytes", UNKNOWN_TEXT))} bytes</summary>{body}</details>')

@@ -7,6 +7,7 @@ own ``finish_reason``, usage and body size are read before the SDK converts the 
 and the purpose decides what a usable reply is.
 """
 import asyncio
+import hashlib
 import os
 
 import httpx
@@ -18,7 +19,7 @@ from ...core.budget import BudgetStopped
 from ...core.models import ModelRequest
 from ...core.protocol import ModelOutputError, ProviderRequestError, attempt_payload, classify_output
 from ...core.serialization import parse_json
-from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, capture, span, tracing_enabled
+from ...observability import HTTP_ATTEMPT_SPAN, LOGICAL_SPAN, capture, current_handle, span, tracing_enabled
 from ...observability_content import redact
 
 #: The most of a rejected response body the trace will keep, so a preview cannot itself
@@ -244,9 +245,23 @@ def _request_hook(purpose: str):
         try:
             body = request.content
             if len(body) > RESPONSE_LIMIT_BYTES:
+                capture('context_manifest', None, source='context_manifest', availability='unsupported')
+                current_handle().annotate(context_manifest_state='unsupported')
                 capture('wire_request', None, source='wire_request', availability='unsupported')
                 return
-            capture('wire_request', parse_json(body.decode('utf-8')), source='wire_request')
+            parsed = parse_json(body.decode('utf-8'))
+            # Inventory is derived before the retained body can be excerpted. A failed
+            # inventory must not skip ordinary capture or change/retry the HTTP call.
+            try:
+                from ...context_manifest import build_manifest
+                inventory = build_manifest(parsed, purpose=purpose, request_bytes=len(body),
+                                           request_hash=hashlib.sha256(body).hexdigest())
+                ident = capture('context_manifest', inventory, source='context_manifest')
+                current_handle().annotate(context_manifest_state='captured' if ident else 'omitted_limit')
+            except Exception:
+                capture('context_manifest', None, source='context_manifest', availability='capture_error')
+                current_handle().annotate(context_manifest_state='capture_error')
+            capture('wire_request', parsed, source='wire_request')
         except Exception:  # noqa: BLE001 - observation never escapes
             capture('wire_request', None, source='wire_request', availability='unsupported')
     return observe

@@ -39,7 +39,7 @@ from ...core.exploration_progress import step_budget_view
 from ...core.models import AgentContext
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
-from ...observability import mark, tool_call_key
+from ...observability import mark, tool_call_key, tracing_enabled
 from ...experience_triggers import ERROR_METADATA, trigger_from_fact
 from .progress import render_progress
 from .protocol_diagnostics import ToolInputDiagnostic, tool_input_diagnostic
@@ -138,6 +138,8 @@ class ExplorationMiddleware(MiddlewareBase):
         self.browse_gate = browse_gate
         self._browse_delivery_info = {}
         self._convergence_recorded = False
+        from ...context_manifest import InputSources
+        self.input_sources = InputSources()
 
     @property
     def steps_remaining(self) -> int:
@@ -245,9 +247,13 @@ class ExplorationMiddleware(MiddlewareBase):
                 SystemMsg(name='exploration-progress', content=progress)]}
             await self._check_progress_capacity(agent, input_kwargs['messages'], input_kwargs['tools'])
         model = input_kwargs["current_model"]
-        response = await model(
-            messages=input_kwargs["messages"], tools=input_kwargs["tools"],
-            tool_choice=input_kwargs["tool_choice"], **self.output_limit(model))
+        from ...context_manifest import input_sources, remember_notices
+        if tracing_enabled():
+            remember_notices(self.input_sources, input_kwargs['messages'])
+        with input_sources(self.input_sources):
+            response = await model(
+                messages=input_kwargs["messages"], tools=input_kwargs["tools"],
+                tool_choice=input_kwargs["tool_choice"], **self.output_limit(model))
         if self.browse_gate is not None:
             if self.browse_gate.confirm_delivery(results):
                 self.record_browse(**self._browse_delivery_info)

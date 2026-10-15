@@ -94,6 +94,9 @@ class AgentScopeRuntime:
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
             experience_event=self._experience_event if experience_view is not None else None,
             browse_gate=self.browse_gate)
+        if tracing_enabled():
+            from ...context_manifest import remember_prompt
+            remember_prompt(self.middleware.input_sources, system_prompt)
         self.middleware.record_browse()
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when
@@ -350,6 +353,7 @@ class AgentScopeRuntime:
             data['feedback'] = redact(raw_feedback)
         else:
             data['feedback'] = canonical_bytes(redact(feedback_object)).decode('utf-8')
+        history_count = len(data['history'])
         text = canonical_bytes(data).decode("utf-8")
         while len(text.encode("utf-8")) > cap and data["history"]:
             data["history"].pop(0)
@@ -358,6 +362,10 @@ class AgentScopeRuntime:
             raise BudgetStopped("NEEDS_INFORMATION",
                                 "the original issue and phase contract do not fit the configured context budget; "
                                 "no original fact or source reference is dropped to make them fit")
+        if tracing_enabled():
+            from ...context_manifest import remember_phase
+            remember_phase(self.middleware.input_sources, text, data,
+                           omitted_history=history_count - len(data['history']))
         return UserMsg(name="user", content=text)
 
     def _correction(self, failure: PhaseProtocolError) -> Msg:

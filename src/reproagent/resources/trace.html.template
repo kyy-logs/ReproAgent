@@ -116,6 +116,17 @@
   .detail-fields dd { margin:0; }
   .trace-detail pre { max-height:28rem; }
   .trace-detail .capture { margin:.5rem 0; }
+  .input-inventory { table-layout:fixed; }
+  .input-inventory th, .input-inventory td { overflow-wrap:anywhere; }
+  .trace-detail .input-inventory, .trace-detail .input-inventory tbody,
+  .trace-detail .input-inventory tr, .trace-detail .input-inventory td { display:block; width:100%; }
+  .trace-detail .input-inventory thead { display:none; }
+  .trace-detail .input-inventory tr { padding:.45rem .65rem; border-bottom:1px solid var(--line); }
+  .trace-detail .input-inventory td { padding:.08rem 0; border:0; font-size:12px; }
+  .trace-detail .input-inventory td:first-child { font-weight:600; color:var(--accent); }
+  .trace-detail .input-inventory td:nth-child(2)::before { content:'位置：'; color:var(--muted); }
+  .trace-detail .input-inventory td:nth-child(3)::before { content:'字节：'; color:var(--muted); }
+  .trace-detail .input-inventory td:nth-child(4)::before { content:'来源：'; color:var(--muted); }
   .trace-empty { padding:3rem; text-align:center; color:var(--muted); }
   .trace-footer { font-size:11px; color:var(--muted); margin-top:1rem; }
   @media(max-width:900px) { body {padding:.75rem;} .trace-workspace.has-detail {grid-template-columns:minmax(0,1fr);} .trace-detail {position:static;max-height:none;} .node-duration {width:50px;} .axis-ticks {margin-left:50px;} }
