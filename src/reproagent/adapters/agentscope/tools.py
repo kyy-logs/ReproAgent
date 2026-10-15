@@ -497,7 +497,13 @@ class WriteCandidate(_DomainTool):
             candidate = self.candidates.publish(draft)
         except GroundedContractRequired as exc:
             payload = {"code": exc.code, "message": str(exc), "missing": list(exc.missing),
-                "next_action": "Resolve missing information and obtain original source evidence before revise_contract; use request_information if required facts are unavailable."}
+                "contract_id": contract.contract_id, "contract_version": contract.version,
+                "missing_information": list(contract.missing_information),
+                "next_action": "Review these blockers against the issue and displayed original sources. "
+                    "A source-backed equivalence or invariant can establish expected behavior without a literal output; "
+                    "it is not merely the absence of an exception. If displayed evidence resolves a blocker, "
+                    "call revise_contract with its exact issued ranges. Do not clear blockers or retry unchanged. "
+                    "Use request_information only for essential facts that remain unavailable."}
             return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],
                 state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
         self.gate.finish(PhaseResult("candidate", candidate_id=candidate.candidate_id))
