@@ -146,6 +146,18 @@ class ModelConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class DeliveryRequirements:
+    platform: str
+    source: str
+
+    def __post_init__(self):
+        if self.platform not in ('linux', 'win32', 'darwin'):
+            raise ValueError('unsupported delivery platform')
+        if type(self.source) is not str or not self.source.strip() or len(self.source) > 512 or '\x00' in self.source:
+            raise ValueError('delivery platform requires a bounded source')
+
+
+@dataclass(frozen=True, slots=True)
 class TaskRequest:
     repo: Path
     output_dir: Path
@@ -157,6 +169,7 @@ class TaskRequest:
     language: PythonPytestConfig = field(default_factory=PythonPytestConfig)
     experience_file: Path | None = None
     learn_experience: bool = True
+    delivery: DeliveryRequirements | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,6 +366,7 @@ class EnvironmentSnapshot:
     preconditions: tuple[str, ...] = ()
     capabilities: tuple[str, ...] = ("file_copy", "process_tree_cleanup")
     limitations: tuple[str, ...] = ()
+    platform: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -462,6 +476,8 @@ class AgentContext:
     experience_summaries: tuple[ExperienceSummary, ...] = ()
     experience_events: tuple[dict[str, Any], ...] = ()
     experience_catalog: ExperienceCatalogNotice | None = None
+    delivery: DeliveryRequirements | None = None
+    execution_platform: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -57,8 +57,9 @@ class Claims(EvidenceModel):
         if self.citations == 'unknown': refs=[dict(refs[0], content_hash='bad')]
         reply=dict(classification='REPRODUCED', reason='需核查目标调用', evidence_refs=refs,
             expected_assertion=True,target_triggered=True,failure_matches_issue=True)
-        from tests.assertion_support import approved_assertions
+        from tests.assertion_support import approved_assertions, approved_oracles
         reply['assertion_reviews']=approved_assertions(data)
+        reply.update(approved_oracles(data))
         reply.update(self.values)
         if self.invalid: reply.pop('reason')
         return ModelResponse(json.dumps(reply))

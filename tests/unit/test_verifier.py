@@ -8,7 +8,7 @@ import pytest
 from reproagent.core.models import CandidateClass, EvidenceRef, IssueContract, ModelResponse, SourceRef
 from reproagent.core.serialization import bytes_hash
 from tests.integration.test_runner import setup_runner, execute
-from tests.assertion_support import approved_assertions
+from tests.assertion_support import approved_assertions, approved_oracles
 
 
 class EvidenceModel:
@@ -21,7 +21,7 @@ class EvidenceModel:
         refs = data['available_refs'] if self.references else [{'path':'unknown','content_hash':'bad'}]
         return ModelResponse(json.dumps({'classification':self.classification, 'reason':'Empty input raises the reported IndexError', 'evidence_refs':refs,
             'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':True,
-            'assertion_reviews': approved_assertions(data)}))
+            'assertion_reviews': approved_assertions(data), **approved_oracles(data)}))
 
 
 def prepare(tmp_path, projects, facts, text=None, model=None):
@@ -158,3 +158,46 @@ def test_correction_only_overflow_does_not_mark_evidence_permanently_blocked(tmp
     assert result.classification is None
     assert result.next_action == 'explore'
     assert 'MODEL_PROTOCOL_ERROR' in result.uncertainties
+
+
+@pytest.mark.parametrize('change,confirmed', [
+    ('duration', True), ('count', False), ('target_message', False),
+    ('expected_timing', False), ('expected_numeric', False), ('no_pytester', False),
+    ('business_timing', False), ('business_summary', False), ('no_session_header', False),
+])
+def test_replay_ignores_only_pytester_actual_summary_duration(tmp_path, projects, facts, change, confirmed):
+    contract, candidate, first, verifier, _, runner, snapshot, request = prepare(tmp_path, projects, facts)
+    second = execute(request, snapshot, candidate, runner, facts.context())
+    verdicts = tuple(asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context())) for run in (first, second))
+
+    def transcript(run, duration, second_run=False):
+        expected = '*required_option=True*'
+        if change == 'expected_timing':
+            expected = '*1 error in 0.67s*'
+        elif change == 'expected_numeric':
+            expected = '*0.10*'
+        count = '2 errors' if second_run and change == 'count' else '1 error'
+        target = 'different target failure' if second_run and change == 'target_message' else 'required option missing'
+        summary = f"================== {count} in {duration}s =================="
+        message = (f"Failed: nomatch: '{expected}'\n"
+                   f"    and: '================== test session starts =================='\n"
+                   f"    and: '{target}'\n"
+                   f"    and: '================== short test summary info =================='\n"
+                   f"    and: '{summary}'\n"
+                   f"remains unmatched: '{expected}'")
+        if change == 'business_summary':
+            message = message.replace("    and: 'required option missing'", f"    and: '================== 1 error in {duration}s =================='")
+        if change == 'no_session_header':
+            message = message.replace("    and: '================== test session starts =================='\n", '')
+        if change == 'business_timing':
+            message = f"Failed: business operation finished in {duration}s"
+        frames = [] if change == 'no_pytester' else [
+            {'module': '_pytest.pytester', 'path': 'src/_pytest/pytester.py', 'lineno': 1908},
+            {'module': '_pytest.outcomes', 'path': 'src/_pytest/outcomes.py', 'lineno': 158}]
+        tests = tuple(dict(test, exception_type='builtins.Failed', assertion_comparison=None,
+                           exception_frames=frames, crash={'path': 'tests/test_repro.py', 'lineno': 20, 'message': message})
+                      if test['outcome'] == 'failed' else test for test in run.observation.tests)
+        return replace(run, observation=replace(run.observation, tests=tests))
+
+    assert verifier.confirm(contract, candidate, transcript(first, '0.67'),
+                            transcript(second, '0.65', True), verdicts) is confirmed

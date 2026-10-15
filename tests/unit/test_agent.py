@@ -81,7 +81,9 @@ def test_exploration_prompt_states_the_phase_rules(tmp_path, projects, facts):
     # The search is a regular expression, which is the opposite of the JSON action
     # protocol's literal substring search; the phase is told which one it has.
     assert 'regular expression' in text and 'not a literal string' in text
-    assert 'evidence' in text and 'displayed whole' in text
+    assert 'evidence' in text
+    # Full-line and contained-subrange enforcement is exercised through the real
+    # toolkit and next SDK request, rather than a particular English phrase.
     assert 'not a result' in text and 'never evidence' in text
     assert 'correctness standard' in text and 'proposal' in text
     assert 'return-versus-raise' in text

@@ -14,7 +14,7 @@ from reproagent.core.verifier import Verifier
 from reproagent.store import safe_child
 from tests.integration.test_runner import execute, setup_runner
 from tests.unit.test_verifier import prepare
-from tests.assertion_support import approved_assertions
+from tests.assertion_support import approved_assertions, approved_oracles
 
 # A real target failure that also produces a complete assertion comparison.
 ASSERTION_CANDIDATE = 'from example.parser import parse\ndef test_empty():\n    assert parse([0]) == []\n'
@@ -42,7 +42,7 @@ class CitingModel:
             chosen = self.mutate(data, chosen)
         return ModelResponse(json.dumps({'classification':'REPRODUCED', 'reason':'empty input raises the reported IndexError',
             'evidence_refs':chosen, 'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':True,
-            'assertion_reviews': approved_assertions(data)}))
+            'assertion_reviews': approved_assertions(data), **approved_oracles(data)}))
 
 
 def candidate_reader(candidate):

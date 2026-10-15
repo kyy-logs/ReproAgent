@@ -35,7 +35,7 @@ class PythonPytestAdapter:
             if path != '.':
                 safe_child(project.snapshot.root, path)
         safe_child(project.snapshot.root, config.candidate_parent)
-        probe = ExecutionSpec('inspect-' + uuid.uuid4().hex, (python, '-c', 'import pytest; print(pytest.__version__)'),
+        probe = ExecutionSpec('inspect-' + uuid.uuid4().hex, (python, '-c', 'import json,sys,pytest; print(json.dumps({"pytest":pytest.__version__,"platform":sys.platform}))'),
                               workspace_path(project.snapshot.root))
         return LanguageInspection(config, (probe,))
 
@@ -44,10 +44,19 @@ class PythonPytestAdapter:
         if raw.exit_code != 0 or not raw.cleanup_ok or raw.stop_reason != 'EXITED':
             raise ValueError('environment probe failed: Python/pytest unavailable or command interrupted')
         config = inspection.config
+        description = Path(raw.stdout_ref.path).read_text(encoding='utf-8').strip()
+        platform = ''
+        # Older recorded probe fixtures only carry a version. Never infer their OS
+        # from this host: actual new probes report their own interpreter platform.
+        if description.startswith('{'):
+            info = json.loads(description)
+            if set(info) != {'pytest', 'platform'} or any(type(info[k]) is not str or not info[k] for k in info):
+                raise ValueError('invalid environment description')
+            description, platform = info['pytest'], info['platform']
         roots = config.source_roots or (('.',))
         return EnvironmentSnapshot('env-' + uuid.uuid4().hex, inspection.probes[0].argv[0],
-            Path(raw.stdout_ref.path).read_text(encoding='utf-8').strip(), roots, config.target_modules,
-            config.candidate_parent, config.pytest_args, limitations=('file-copy isolation is not a security sandbox', 'xdist unsupported'))
+            description, roots, config.target_modules,
+            config.candidate_parent, config.pytest_args, limitations=('file-copy isolation is not a security sandbox', 'xdist unsupported'), platform=platform)
 
     def build_execution(self, candidate, run, environment):
         if candidate.run_options:

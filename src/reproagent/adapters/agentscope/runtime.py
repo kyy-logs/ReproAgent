@@ -311,6 +311,9 @@ class AgentScopeRuntime:
         data = {"contract": context.contract, "feedback": context.feedback, "history": list(context.history),
                 "budget": {"steps_remaining_including_this_attempt": self._steps_remaining(),
                            "seconds_remaining": max(0, self.context.budget.deadline - self.context.budget.clock())}}
+        if context.delivery is not None:
+            data['delivery'] = context.delivery
+            data['execution_platform'] = context.execution_platform or 'unknown'
         if context.issue is not None:
             if bytes_hash(context.issue.text.encode('utf-8')) != context.issue.content_hash:
                 raise BudgetStopped('NEEDS_INFORMATION', 'original issue content hash mismatch')

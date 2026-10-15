@@ -121,7 +121,7 @@ def validate_keys(result, required):
         raise ValueError(f'response fields mismatch: missing {sorted(missing)}, unexpected {sorted(extra)}')
 
 
-def verdict_schema(assertion_ids=()):
+def verdict_schema(assertion_ids=(), oracle_ids=()):
     from .models import CandidateClass
     properties = {'classification':{'type':['string','null'],'enum':[c.value for c in CandidateClass] + [None]},
                   'reason':{'type':'string'}, 'evidence_refs':{'type':'array','minItems':1,'items':object_schema({
@@ -132,11 +132,19 @@ def verdict_schema(assertion_ids=()):
         'items': object_schema({'assertion_id': {'type': 'string', **({'enum': list(assertion_ids)} if assertion_ids else {})},
             'supported': {'type': 'boolean'}, 'reason': {'type': 'string'},
             'evidence_refs': {'type': 'array', 'items': properties['evidence_refs']['items']}})}
+    if oracle_ids:
+        properties['oracle_reviews'] = {'type':'array','minItems':len(oracle_ids),'maxItems':len(oracle_ids),
+            'items':object_schema({'check_id':{'type':'string','enum':list(oracle_ids)},
+                'role':{'type':'string','enum':['regression','execution_control','setup_precondition']},
+                'supported':{'type':'boolean'},
+                'basis':{'type':'string','enum':['desired_behavior','existing_semantics','reported_actual','unknown']},
+                'reason':{'type':'string'}, 'evidence_refs':{'type':'array','items':properties['evidence_refs']['items']},
+                'source_quote':{'type':'string','maxLength':1024}})}
     return object_schema(properties)
 
 
-def validate_verdict(result, assertion_ids=()):
-    validate_keys(result, verdict_schema(assertion_ids)['required'])
+def validate_verdict(result, assertion_ids=(), oracle_ids=()):
+    validate_keys(result, verdict_schema(assertion_ids, oracle_ids)['required'])
     if result['classification'] not in verdict_schema()['properties']['classification']['enum']:
         raise ValueError('classification must be an allowed verdict or null')
     if type(result['reason']) is not str:
@@ -177,6 +185,35 @@ def validate_verdict(result, assertion_ids=()):
                 raise ValueError('invalid assertion_reviews evidence reference types')
     if seen != set(assertion_ids):
         raise ValueError('assertion_reviews must cover every assertion_id exactly once')
+    if oracle_ids:
+        rows = result['oracle_reviews']
+        if not isinstance(rows,list):
+            raise ValueError('oracle_reviews must cover generated checks')
+        covered = set()
+        for row in rows:
+            if not isinstance(row,dict): raise ValueError('invalid oracle review')
+            validate_keys(row, ('check_id','role','supported','basis','reason','evidence_refs','source_quote'))
+            key = row['check_id']
+            if type(key) is not str or key not in oracle_ids or key in covered:
+                raise ValueError('unknown or duplicate oracle check')
+            covered.add(key)
+            if (row['role'] not in ('regression','execution_control','setup_precondition')
+                    or row['basis'] not in ('desired_behavior','existing_semantics','reported_actual','unknown')
+                    or type(row['supported']) is not bool or type(row['reason']) is not str or not row['reason'].strip()
+                    or type(row['source_quote']) is not str or len(row['source_quote']) > 1024):
+                raise ValueError('invalid oracle support fields')
+            refs = row['evidence_refs']
+            if not isinstance(refs,list): raise ValueError('invalid oracle references')
+            for ref in refs:
+                if not isinstance(ref,dict): raise ValueError('invalid oracle reference')
+                validate_keys(ref, ('path','content_hash','start_line','end_line'))
+                if (any(type(ref[name]) is not str for name in ('path','content_hash'))
+                        or any(type(ref[name]) is not int for name in ('start_line','end_line'))):
+                    raise ValueError('invalid oracle reference types')
+            if row['supported'] and (row['basis'] not in ('desired_behavior','existing_semantics')
+                    or not refs or not row['source_quote'].strip()):
+                raise ValueError('approved oracle needs normative or existing-semantic source and exact quote')
+        if covered != set(oracle_ids): raise ValueError('oracle_reviews must cover every generated check exactly once')
     return result
 
 def learning_schema():

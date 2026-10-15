@@ -847,14 +847,14 @@ def test_batch_citation_feedback_reaches_next_wire_request(tmp_path, projects, f
         requests.append(actual)
         n = len(requests)
         if n == 1:
-            return read_reply(env.module, 'read-source')
+            return tool_reply('Read', {'file_path': str(env.module), 'offset': 2, 'limit': 1}, call_id='read-source')
         if n == 2:
             result = next(m for m in actual['messages'] if m.get('tool_call_id') == 'read-source')
             import re
             shown = json.loads(re.search(r'<evidence>(.*?)</evidence>', result['content']).group(1))['refs'][0]
             issued.append(shown)
             return tool_reply('revise_contract', {'source_refs': [
-                {**shown, 'content_hash': 'f' * 64}, {**shown, 'end_line': shown['start_line']}],
+                {**shown, 'content_hash': 'f' * 64}, {**shown, 'start_line': 1}],
                 'reason': 'two invalid citations'}, call_id='bad-revision')
         feedback = next(m for m in actual['messages'] if m.get('tool_call_id') == 'bad-revision')
         payload = json.loads(feedback['content'])
@@ -901,11 +901,11 @@ def test_batch_feedback_preserves_experience_browse_gate(tmp_path, projects, fac
     from reproagent.core.serialization import bytes_hash
     env = configured(tmp_path, projects, facts)
     ref = {'path': 'example/parser.py', 'content_hash': bytes_hash(env.module.read_bytes()),
-           'start_line': 1, 'end_line': 2}
+           'start_line': 2, 'end_line': 2}
     env.answers.extend([
-        read_reply(env.module, 'read-source'),
+        tool_reply('Read', {'file_path': str(env.module), 'offset': 2, 'limit': 1}, call_id='read-source'),
         tool_reply('revise_contract', {'source_refs': [{**ref, 'content_hash': 'f' * 64},
-            {**ref, 'end_line': 1}], 'reason': 'batch refusal'}, call_id='bad-revision'),
+            {**ref, 'start_line': 1}], 'reason': 'batch refusal'}, call_id='bad-revision'),
         tool_reply('revise_contract', {'source_refs': [ref], 'reason': 'copy displayed'}, call_id='fixed-revision')])
     assert run(env).kind == 'revise_contract'
     assert env.runtime.browse_gate.state == 'satisfied'
@@ -922,3 +922,29 @@ def test_exploration_prompt_explains_batch_citation_repair(tmp_path, projects, f
     text = exploration_prompt(agent_context(env))
     assert 'When revise_contract returns error_count and errors' in text
     assert 'available_refs' in text and 'omitted_errors' in text
+
+
+def test_relative_read_and_subrange_revision_reach_actual_sdk_wire(tmp_path, projects, facts):
+    env = None
+    seen = []
+    def handler(request):
+        actual = json.loads(request.content)
+        seen.append(actual)
+        if len(seen) == 1:
+            return tool_reply('Read', {'file_path': 'example/parser.py'}, call_id='relative-read')
+        result = next(m for m in actual['messages'] if m.get('tool_call_id') == 'relative-read')
+        assert 'def parse(values):' in result['content']
+        import re
+        shown = json.loads(re.search(r'<evidence>(.*?)</evidence>', result['content']).group(1))['refs'][0]
+        return tool_reply('revise_contract', {'source_refs': [{**shown, 'start_line': 2, 'end_line': 2}],
+                                             'reason': 'fully visible implementation'}, call_id='subrange')
+    env = environment(tmp_path, projects, facts, handler=handler)
+    async def go():
+        try:
+            return await env.runtime.explore(agent_context(env))
+        finally:
+            await env.runtime.aclose()
+            await env.factory.aclose()
+    result = asyncio.run(go())
+    assert result.kind == 'revise_contract' and len(seen) == 2
+    assert result.source_refs[0].start_line == result.source_refs[0].end_line == 2

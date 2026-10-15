@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from agentscope.message import TextBlock, ToolResultState
+from agentscope.state import AgentState
 from agentscope.permission import PermissionBehavior, PermissionDecision
 from agentscope.tool import Glob, Grep, ParamsBase, Read, ToolBase, ToolChunk, ToolMiddlewareBase, Toolkit
 from pydantic import ConfigDict, Field
@@ -107,10 +108,9 @@ this phase; you cannot choose it here. A refused publication leaves the phase op
 
 REVISE_CONTRACT_DESCRIPTION = """Requests a contract revision, citing lines this phase displayed.
 
-Cite one of the line ranges an `<evidence>` block of a previous Read or Grep response listed,
-copying its path, content hash and both line numbers exactly as they appear there. To cite
-fewer lines than a range covers, Read exactly those lines first — a citation is exactly a
-range a tool displayed whole. A citation the phase never displayed, or one whose hash is not
+Cite one line range fully contained in a single `<evidence>` interval from a previous Read
+or Grep response. Copy its path and content hash; a narrower start/end range is allowed
+without another Read. Never bridge separate intervals, unseen lines or truncated lines. A citation the phase never displayed, or one whose hash is not
 the frozen file's, is refused and leaves the phase open. The controller decides the revision
 itself."""
 
@@ -172,7 +172,7 @@ class EvidenceViews:
         return tuple(dict.fromkeys((*self.search.issued_refs, *self.read.issued_refs)))
 
     def contains(self, ref: EvidenceRef) -> bool:
-        """Whether a Read view or a search view displayed exactly this reference."""
+        """Whether a single complete Read or search interval contains this reference."""
         return self.search.contains(ref) or self.read.contains(ref)
 
 
@@ -362,6 +362,17 @@ class SnapshotRead(Read):
     def description(self) -> str:  # type: ignore[override]
         return READ_DESCRIPTION
 
+    async def call(self, file_path: str, offset: int = 1, limit: int = 2000,
+                   pages: str | None = None, _agent_state: AgentState | None = None) -> ToolChunk:
+        # Native Read rejects relative paths before asking the backend. Resolve only
+        # a manifest-registered path; native reads still recheck bytes and containment.
+        if not self._backend.isabs(file_path):
+            item = self._backend.snapshot.registered(file_path)
+            if item is not None:
+                file_path = str(self._backend.snapshot.path_of(item))
+        return await super().call(file_path, offset=offset, limit=limit,
+                                  pages=pages, _agent_state=_agent_state)
+
 
 class SnapshotGrep(Grep):
     """The SDK's Grep, described as a view of the registered snapshot."""
@@ -504,6 +515,16 @@ class WriteCandidate(_DomainTool):
                     "it is not merely the absence of an exception. If displayed evidence resolves a blocker, "
                     "call revise_contract with its exact issued ranges. Do not clear blockers or retry unchanged. "
                     "Use request_information only for essential facts that remain unavailable."}
+            if (contract.missing_information
+                    and self.context.budget.steps_used >= self.context.budget.limits.agent_steps):
+                # The last refused publication cannot buy another model call to report
+                # its existing blockers. Keep the refusal intact and end the phase with
+                # those facts; no candidate is published and no blocker is relaxed.
+                self._open()  # Cancellation, deadline and cost stops keep their priority.
+                question = (f"合同 {contract.contract_id} v{contract.version} 的候选发布被 "
+                    f"{exc.code} 拒绝；探索步数已用尽，以下复现前提仍未解决：\n"
+                    + "\n".join(contract.missing_information))
+                self.gate.finish(PhaseResult("request_information", question=question))
             return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],
                 state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
         self.gate.finish(PhaseResult("candidate", candidate_id=candidate.candidate_id))
@@ -576,8 +597,8 @@ class ReviseContract(_DomainTool):
                                   available_refs=available, available_refs_truncated=truncated)
         if not self.views.contains(canonical):
             available, truncated = self._displayed_alternatives(item, canonical, verified_refs=verified_refs)
-            raise _CitationRefusal("SOURCE_RANGE_NOT_DISPLAYED", f"range {item.start_line}-{item.end_line} of {item.path!r} is not an exact issued reference; "
-                                    "copy a displayed evidence block exactly, or Read the exact narrower range first",
+            raise _CitationRefusal("SOURCE_RANGE_NOT_DISPLAYED", f"range {item.start_line}-{item.end_line} of {item.path!r} is not contained in a single complete displayed interval; "
+                                    "use a displayed range or its subrange, or Read the missing lines first",
                                   available_refs=available, available_refs_truncated=truncated)
         return canonical
 

@@ -63,3 +63,5 @@ class EvalResult:
     experience_library_hash: str = ''
     experience_read_ids: tuple[str, ...] = ()
     learning: dict[str, Any] = field(default_factory=dict)
+    delivery: dict[str, Any] = field(default_factory=dict)
+    delivery_status: str = "not_requested"

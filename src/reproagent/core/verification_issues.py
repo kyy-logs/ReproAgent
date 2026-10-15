@@ -20,6 +20,7 @@ ISSUE_SPECS = {
     'CANDIDATE_IMPORT_BLOCKED': (('framework_not_blocked',), 'program_check','inspect_evidence'),
     'ENVIRONMENT_BLOCKED': (('framework_not_blocked','provider_semantic_claims'), None,'request_information'),
     'TEST_EXECUTION_INVALID': (('tests_executed_and_valid',), 'program_check','inspect_evidence'),
+    'DELIVERY_ALL_TESTS_SKIPPED': (('delivery_tests_executable',), 'program_check','revise_candidate'),
     'CANDIDATE_NOT_REPRODUCED': (('candidate_reproduced',), 'program_check','revise_candidate'),
     'EXPECTATION_UNGROUNDED': (('expectation_is_grounded',), 'program_check','revise_contract'),
     'REVIEW_CONTEXT_TOO_LARGE': (('review_context_fits',), 'program_check','narrow_candidate'),
@@ -28,6 +29,7 @@ ISSUE_SPECS = {
     'TARGET_TRIGGER_UNCONFIRMED': (('target_triggered',), 'provider_claim','inspect_evidence'),
     'ISSUE_FAILURE_MATCH_UNCONFIRMED': (('failure_matches_issue',), 'provider_claim','inspect_evidence'),
     'SEMANTIC_REPRODUCTION_UNCONFIRMED': (('provider_semantic_claims',), 'provider_claim','inspect_evidence'),
+    'CANDIDATE_ORACLES_UNCONFIRMED': (('candidate_oracles_supported',), 'provider_claim','revise_candidate'),
     'CANDIDATE_ASSERTIONS_UNCONFIRMED': (('candidate_assertions_supported',), 'provider_claim','revise_candidate'),
     'SEMANTIC_CITATIONS_INCOMPLETE': (('citations_cover_expectation_and_failure',), 'program_check','inspect_evidence'),
     'MODEL_PROTOCOL_ERROR': (('semantic_response_valid',), 'program_check','inspect_evidence'),
@@ -39,7 +41,10 @@ for code in _RUNTIME:
     _ALLOWED[code] = frozenset({'stop_reason','duration_seconds','probe_complete','protection_checked','last_test_stage'})
 for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVALID','CANDIDATE_IMPORT_BLOCKED'):
     _ALLOWED[code] = frozenset({'framework_errors','collected','executed'})
+_ALLOWED['DELIVERY_ALL_TESTS_SKIPPED'] = frozenset({'target_platform','skipped_tests'})
 _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage'})
+_ALLOWED['CANDIDATE_NOT_REPRODUCED'] = frozenset({'audit_notes','omitted_oracles'})
+_ALLOWED['CANDIDATE_ORACLES_UNCONFIRMED'] = frozenset({'oracle_ids','omitted_oracles'})
 _ALLOWED['CANDIDATE_ASSERTIONS_UNCONFIRMED'] = frozenset({'assertion_ids','omitted_assertions'})
 _ALLOWED['MODEL_PROTOCOL_ERROR'] = frozenset({'attempts','needed_bytes','budget_bytes','stage','protocol_error'})
 
@@ -61,11 +66,11 @@ def validate_issue(code, check, origin, recovery, message, measurements):
     for key, value in measurements.items():
         if key in ('probe_complete','protection_checked','collected','executed'):
             ok = type(value) is bool
-        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions'):
+        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions','omitted_oracles'):
             ok = type(value) is int and value >= 0
         elif key == 'duration_seconds':
             ok = type(value) in (int,float) and math.isfinite(value) and value >= 0
-        elif key in ('framework_errors','assertion_ids'):
+        elif key in ('framework_errors','assertion_ids','skipped_tests','oracle_ids','audit_notes'):
             ok = isinstance(value, (list,tuple)) and len(value) <= 16 and all(type(v) is str for v in value)
         else:
             ok = type(value) is str and len(value) <= 512

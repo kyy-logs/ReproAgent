@@ -32,13 +32,13 @@ from .serialization import bytes_hash, canonical_hash
 from .protocol import ModelOutputError, ModelProtocolError
 from .execution_diagnostics import diagnose_runtime, diagnostic_reason
 from reproagent.paths import relative_name
-from reproagent.store import atomic_write
+from reproagent.store import atomic_write, safe_child
 
 # Every Controller business step ends in one of these codes; none of them carries model or
 # provider text.  Each names a distinct failure class, so an interruption is never confused
 # with a rejected argument, a model failure or an internal error.
 ACTION_RESULT_CODES = frozenset({'OK', 'INVALID_ARGUMENT', 'MISSING_FILE', 'INVALID_ENCODING', 'UNKNOWN_CANDIDATE',
-    'STALE_CANDIDATE', 'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF',
+    'STALE_CANDIDATE', 'DELIVERY_ALL_TESTS_SKIPPED', 'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF',
     'REVISION_BUDGET_EXCEEDED', 'REPLAY_UNCONFIRMED', 'DUPLICATE_CANDIDATE', 'REVIEW_CONTEXT_TOO_LARGE', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR',
     'MODEL_PROTOCOL_ERROR', 'INTERNAL_ERROR', 'COMMAND_TIMEOUT', 'REPEATED_COMMAND_TIMEOUT',
     'LOG_LIMIT', 'PROBE_INCOMPLETE', 'EXECUTION_NOT_EXITED'})
@@ -158,6 +158,7 @@ class Controller:
         self.explorer_factory = explorer_factory
         self.experience_service = experience_service
         self.learning_result = None
+        self.delivery_assessment = {}
         # The product's own component identity, under whatever this run recorded: a run
         # that injected its own boundary, or a record written before these fields existed,
         # keeps saying what it used instead of being relabelled here. A Controller built
@@ -216,6 +217,8 @@ class Controller:
             'contract_version':verdict.contract_version, 'run_ids':list(verdict.run_ids),
             'output_bytes':len(text.encode('utf-8')), 'projection':projection,
             'feedback_state':'ready' if text else 'capacity_unavailable'}
+        if extras and 'replay_unmet_checks' in extras:
+            payload['replay_unmet_checks'] = list(extras['replay_unmet_checks'])
         refs = tuple('verdicts/verdict-' + run_id + '.json' for run_id in verdict.run_ids
             if self.store.record_path('verdicts', 'verdict-' + run_id).is_file())
         try:
@@ -326,6 +329,38 @@ class Controller:
             'fixture_refs':candidate.fixture_refs, 'preconditions':candidate.preconditions})
         with Step(self, 'run_candidate', parameters, context, contract) as step:
             try:
+                if lifecycle.request.delivery is not None:
+                    from .delivery import assess_delivery
+                    from .models import Verdict
+                    self.workspace.validate_candidate(candidate)
+                    files = {}
+                    for entry in candidate.files:
+                        data = safe_child(candidate.storage_root, entry.path).read_bytes()
+                        if bytes_hash(data) != entry.content_hash:
+                            raise ValueError('candidate file hash changed')
+                        files[entry.path] = data
+                    requirement = lifecycle.request.delivery
+                    assessment = assess_delivery(files, candidate.selectors, requirement.platform)
+                    self.delivery_assessment = assessment
+                    self.store.append_event('candidate.delivery_assessed', ('request.json',), {
+                        **assessment, 'candidate_id':candidate.candidate_id,
+                        'execution_platform':lifecycle.environment.platform or 'unknown', 'source':requirement.source})
+                    mark('candidate.delivery_assessed', attributes={
+                        'candidate_id':candidate.candidate_id, 'status':assessment['status'],
+                        'target_platform':requirement.platform})
+                    if assessment['status'] == 'incompatible':
+                        code = 'DELIVERY_ALL_TESTS_SKIPPED'
+                        reason = 'All selected candidate tests are provably skipped on delivery platform ' + requirement.platform
+                        issue = self.verifier._issue(code, reason, measurements={
+                            'target_platform':requirement.platform,
+                            'skipped_tests':list(assessment['skipped_tests'][:16])})
+                        blocked = Verdict(CandidateClass.INVALID_CANDIDATE, reason,
+                            candidate_id=candidate.candidate_id, manifest_hash=candidate.manifest_hash,
+                            contract_id=contract.contract_id, contract_version=contract.version,
+                            unmet_checks=('delivery_tests_executable',), issues=(issue,))
+                        self.store.save_record('verdicts', 'delivery-' + candidate.candidate_id, blocked)
+                        step.rejected(code)
+                        return result, self.candidate_feedback(blocked, context, result_code=code), code, False
                 previous = lifecycle.context_blocked.get(execution_key)
                 if previous is not None and not candidate.preconditions:
                     original, previous_run, previous_verdict = previous
@@ -393,7 +428,10 @@ class Controller:
                 step.rejected('REPLAY_UNCONFIRMED')
                 return (result, self.candidate_feedback(second_verdict, context, result_code='REPLAY_UNCONFIRMED',
                         instruction='Independent replay did not confirm the same failure; revise or request information.',
-                        extras={'previous_run_ids':[run.run_id]}), 'REPLAY_UNCONFIRMED', False)
+                        extras={'previous_run_ids':[run.run_id],
+                                'replay_unmet_checks':list(self.verifier.confirmation_failures(
+                                    contract, candidate, run, second, (verdict, second_verdict))
+                                    or ('confirmation_unavailable',))}), 'REPLAY_UNCONFIRMED', False)
             result = self.state(result, TaskState.REPLAYING, evidence_level=EvidenceLevel.REPEATED_OBSERVATION,
                                 accepted_candidate_id=candidate.candidate_id)
             result = await self.validate_fixed_version(lifecycle, candidate, run, contract, context, result)
@@ -585,7 +623,8 @@ class Controller:
                                                      "contract_version": contract.version}):
                         phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
                             issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries,
-                            experience_events=phase_events, experience_catalog=catalog_notice))
+                            experience_events=phase_events, experience_catalog=catalog_notice,
+                            delivery=request.delivery, execution_platform=environment.platform))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:

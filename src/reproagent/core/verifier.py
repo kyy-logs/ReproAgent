@@ -12,7 +12,7 @@ from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict, Verifica
 VERIFIER_CHECKS = ("execution_evidence_present", "binding_and_integrity_ok",
                    "no_non_origin_framework_errors", "framework_not_blocked",
                    "tests_executed_and_valid", "candidate_reproduced",
-                   "expectation_is_grounded", "review_context_fits", "candidate_assertions_supported",
+                   "expectation_is_grounded", "review_context_fits", "candidate_assertions_supported", "candidate_oracles_supported",
                    "provider_semantic_claims", "citations_cover_expectation_and_failure")
 from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
 from .serialization import bytes_hash, canonical_bytes, parse_json
@@ -132,18 +132,30 @@ class Verifier:
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(checks.invalid) or 'no executed tests',
                 run.observation.failure_refs, code='TEST_EXECUTION_INVALID',
                 measurements={'framework_errors':list(checks.invalid[:16]), 'collected':bool(run.observation.collected), 'executed':bool(run.observation.executed)})
-        if not record_check('candidate_reproduced', run.raw.exit_code != 0):
-            return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', code='CANDIDATE_NOT_REPRODUCED')
-        if not record_check('expectation_is_grounded', bool(contract.expected) and bool(contract.sources)):
-            return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',), code='EXPECTATION_UNGROUNDED')
-        # Every hard check above ran against the complete ExecutionResult. Only a
-        # bounded, citable projection reaches the model, and nothing here may turn a
-        # failed hard check or an unusable projection into a success.
         def read_file(entry):
             data = safe_child(candidate.storage_root, entry.path).read_bytes()
             if bytes_hash(data) != entry.content_hash:
                 raise CandidateFileChanged('candidate file hash changed')
             return data
+        if not record_check('candidate_reproduced', run.raw.exit_code != 0):
+            from .oracle_audit import oracle_checks
+            try:
+                checks = oracle_checks([{'path':entry.path,'role':entry.role,
+                    'content':read_file(entry).decode('utf-8')} for entry in candidate.files])
+            except CandidateFileChanged:
+                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed', code='CANDIDATE_HASH_MISMATCH', check='candidate_file_hash')
+            except (ValueError, OSError, UnicodeError):
+                return verdict(None, 'candidate oracle audit unavailable', code='EVIDENCE_UNAVAILABLE')
+            notes = [(item['kind'] + ' ' + item['path'] + ':' + str(item['start_line'])
+                + ' ' + item['expression'] + ' ' + json.dumps(item['details'],ensure_ascii=False)) for item in checks[:8]]
+            notes = [note if len(note) <= 512 else note[:480] + ' ...[audit excerpt]' for note in notes]
+            return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', code='CANDIDATE_NOT_REPRODUCED',
+                measurements={'audit_notes':notes,'omitted_oracles':max(0,len(checks)-8)})
+        if not record_check('expectation_is_grounded', bool(contract.expected) and bool(contract.sources)):
+            return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',), code='EXPECTATION_UNGROUNDED')
+        # Every hard check above ran against the complete ExecutionResult. Only a
+        # bounded, citable projection reaches the model, and nothing here may turn a
+        # failed hard check or an unusable projection into a success.
         cap = context.budget.limits.tool_response_bytes
         def project(protocol_error=''):
             return build_review_context(contract, candidate, run, read_ref=self.resolve, read_file=read_file,
@@ -203,7 +215,7 @@ class Verifier:
                         measurements={'attempts':attempt + 1, 'protocol_error':type(exc).__name__})
                 try:
                     sites = {site['id']: site for site in review.payload['assertion_sites']}
-                    validate_verdict(result, tuple(sites))
+                    validate_verdict(result, tuple(sites), tuple(item['id'] for item in review.payload.get('oracle_checks', ())))
                     classification = CandidateClass(result['classification']) if result['classification'] else None
                     refs = tuple(EvidenceRef(**ref) for ref in result['evidence_refs'])
                     if any(ref not in review.available_refs for ref in refs):
@@ -213,8 +225,18 @@ class Verifier:
                     for row in result['assertion_reviews']:
                         if any(EvidenceRef(**ref) not in sources for ref in row['evidence_refs']):
                             raise ValueError('assertion_reviews may cite only supplied expectation sources, not observed failures')
+                    for row in result.get('oracle_reviews', ()):
+                        cited = tuple(EvidenceRef(**ref) for ref in row['evidence_refs'])
+                        if any(ref not in sources for ref in cited):
+                            raise ValueError('oracle review may cite only supplied expectation sources')
+                        if row['supported']:
+                            quoted = row['source_quote']
+                            supplied = [segment['text'] for segment in review.payload['expectation_sources']
+                                if EvidenceRef(**{key:segment[key] for key in ('path','content_hash','start_line','end_line')}) in cited]
+                            if not any(quoted in segment for segment in supplied):
+                                raise ValueError('oracle source_quote is absent from the supplied cited source range')
                 except (ValueError, TypeError, KeyError, OSError) as exc:
-                    rows = result.get('assertion_reviews', [])
+                    rows = [*result.get('assertion_reviews', []), *result.get('oracle_reviews', [])] if isinstance(result.get('assertion_reviews', []),list) and isinstance(result.get('oracle_reviews', []),list) else []
                     negative_audit = isinstance(rows, list) and any(isinstance(row, dict) and row.get('supported') is False for row in rows)
                     if negative_audit or any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
                         return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success',
@@ -222,6 +244,19 @@ class Verifier:
                     error = str(exc)
                     protocol_code = 'MODEL_PROTOCOL_ERROR'
                 else:
+                    unsupported_oracles = [row for row in result.get('oracle_reviews', ()) if not row['supported']]
+                    if unsupported_oracles:
+                        items = {item['id']:item for item in review.payload['oracle_checks']}
+                        notes = [row['check_id'] + ' ' + items[row['check_id']]['path'] + ':'
+                            + str(items[row['check_id']]['start_line']) + ': ' + row['reason']
+                            for row in unsupported_oracles[:16]]
+                        record_check('candidate_oracles_supported', False, source='provider_claim')
+                        return verdict(CandidateClass.INVALID_CANDIDATE, 'unsupported oracle constraint(s): ' + '; '.join(notes),
+                            refs, origin='provider', code='CANDIDATE_ORACLES_UNCONFIRMED',
+                            measurements={'oracle_ids':[row['check_id'] for row in unsupported_oracles[:16]],
+                                'omitted_oracles':max(0,len(unsupported_oracles)-16)})
+                    if result.get('oracle_reviews'):
+                        record_check('candidate_oracles_supported', True, source='provider_claim')
                     unsupported = [row for row in result['assertion_reviews'] if not row['supported']]
                     if not record_check('candidate_assertions_supported', not unsupported, source='provider_claim'):
                         notes = []
@@ -287,15 +322,19 @@ class Verifier:
             code='MODEL_PROTOCOL_ERROR', measurements={'attempts':3, 'protocol_error':protocol_code}, issues=extra)
 
     def confirm(self, contract, candidate, first, second, verdicts):
+        return not self.confirmation_failures(contract, candidate, first, second, verdicts)
+
+    def confirmation_failures(self, contract, candidate, first, second, verdicts):
+        """First unmet program check; semantic verdicts remain independent facts."""
         if len(verdicts) != 2 or any(v.classification != CandidateClass.REPRODUCED or v.candidate_id != candidate.candidate_id or v.manifest_hash != candidate.manifest_hash or v.contract_id != contract.contract_id or v.contract_version != contract.version for v in verdicts):
-            return False
+            return ('verdicts_reproduce_bound_candidate',)
         if first.run_id == second.run_id or any(not self._bound(contract, candidate, run) or not run.protection.ok or not run.raw.cleanup_ok or not run.observation.probe_complete for run in (first, second)):
-            return False
+            return ('independent_bound_integral_runs',)
         if first.observation.framework_details.get('preconditions') != second.observation.framework_details.get('preconditions') or candidate.preconditions:
             # External-state reset cannot yet be demonstrated by this local runner.
-            return False
+            return ('preconditions_repeatable',)
         if first.observation.framework_details.get('collected_nodeids') != second.observation.framework_details.get('collected_nodeids') or first.observation.framework_details.get('completed_nodeids') != second.observation.framework_details.get('completed_nodeids'):
-            return False
+            return ('test_inventory_matches',)
         def _run_roots(run_root):
             """Every spelling of the directories one run's own paths may name, longest first.
 
@@ -315,7 +354,7 @@ class Verifier:
             return tuple(sorted(_root_spellings(run_root) + _root_spellings(workspace), key=len, reverse=True))
 
         def signatures(run):
-            from .failure_signature import stable_failure_message
+            from .failure_signature import stable_failure_message, stable_pytester_transcript
             roots = [(spelling, RUN_ROOT) for spelling in
                      _run_roots(run.observation.framework_details.get('run_root', ''))]
             temp_root = run.observation.framework_details.get('temp_root', '')
@@ -331,7 +370,7 @@ class Verifier:
                 if phase.get('outcome') == 'failed':
                     crash = dict(phase.get('crash', {}))
                     crash['path'] = normalized(str(crash.get('path', '')))
-                    crash['message'] = stable_failure_message(normalized(str(crash.get('message', ''))))
+                    crash['message'] = stable_pytester_transcript(stable_failure_message(normalized(str(crash.get('message', '')))), phase)
                     comparison = phase.get('assertion_comparison')
                     if phase.get('exception_type') == 'builtins.AssertionError' and comparison:
                         # Compare the observed complete values, not pytest's
@@ -343,4 +382,9 @@ class Verifier:
                     nodeid = nodeid.split(run.run_id + '/code/', 1)[-1]
                     result.append((nodeid, phase.get('when'), phase.get('exception_type', ''), json.dumps(crash, sort_keys=True)))
             return result
-        return bool(signatures(first)) and signatures(first) == signatures(second)
+        first_signature, second_signature = signatures(first), signatures(second)
+        if not first_signature:
+            return ('target_failure_present',)
+        if first_signature != second_signature:
+            return ('failure_signature_matches',)
+        return ()

@@ -278,3 +278,20 @@ def test_partial_manual_import_preserves_previously_verified_results(tmp_path):
     assert result['outcomes']['a']['official_status']=='verified' and result['outcomes']['a']['official_resolved'] is True
     empty=tmp_path/'empty'; empty.mkdir()
     assert import_reports(root,empty)['outcomes']==result['outcomes']
+
+
+def test_repaired_environment_confirmation_is_counted_apart_from_the_official_rate():
+    from evals.swt_bench.results import summarize_round
+    # The case the pinned harness could not run: unresolved, and now carrying the
+    # confirmation that a mounted repair profile made the same frozen patch discriminate.
+    round_data={'outcomes':{
+        'sphinx-doc__sphinx-8627':{'status':'DONE','preparation':{'status':'ready'},'official_status':'verified',
+            'official_resolved':False,'environment_repair':{'result':'candidate_differential_confirmed'}},
+        'pytest-dev__pytest-5227':{'status':'DONE','preparation':{'status':'ready'},'official_status':'verified',
+            'official_resolved':True}}}
+    summary=summarize_round(round_data)
+    assert summary['environment_repair_confirmed']==1
+    # A local confirmation under a recorded deviation is not an official success.
+    assert summary['official_successes']==1 and summary['official_rate']==.5
+    # A round recorded before any repair existed still summarises, and counts none.
+    assert summarize_round({'outcomes':{'a':{'status':'DONE'}}})['environment_repair_confirmed']==0

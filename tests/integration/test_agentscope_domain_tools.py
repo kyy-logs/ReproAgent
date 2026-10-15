@@ -285,9 +285,8 @@ def test_revision_requires_displayed_original_lines(tmp_path, projects, facts):
     shown = [(ref["start_line"], ref["end_line"]) for ref in sidecar_refs(read)]
     assert shown == [(1, 2)]                    # the truncated line 3 is displayed, not citable
     long_ref = {"path": "example/long_lines.py", "content_hash": long_hash}
-    # Only the whole displayed range is evidence: the truncated line, and a slice of the
-    # displayed range, are both refused.
-    for refused in ({**long_ref, "start_line": 3, "end_line": 3}, {**long_ref, "start_line": 1, "end_line": 1}):
+    # A truncated line and a range extending into it are both refused.
+    for refused in ({**long_ref, "start_line": 3, "end_line": 3}, {**long_ref, "start_line": 1, "end_line": 3}):
         assert call(env, "revise_contract", {"source_refs": [refused], "reason": "not displayed"}).state is ToolResultState.ERROR
         assert env.gate.result is None
     intact = {**long_ref, "start_line": 1, "end_line": 2}
@@ -449,11 +448,11 @@ def test_a_small_response_budget_still_yields_a_bounded_response(tmp_path, proje
 
 def test_revision_feedback_contains_all_controlled_errors(tmp_path, projects, facts):
     env = environment(tmp_path, projects, facts)
-    first = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
+    first = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module, 'offset': 2, 'limit': 5})))[0]
     other = sidecar_refs(text_of(call(env, 'Read', {'file_path': str(env.root/'example/long_lines.py')})))[0]
     submitted = [{**first, 'content_hash': 'f' * 64},
-                 {**first, 'end_line': first['start_line']},
-                 {**other, 'end_line': other['start_line']}]
+                 {**first, 'start_line': 1},
+                 {**other, 'end_line': 3}]
     result = call(env, 'revise_contract', {'source_refs': submitted, 'reason': 'three citation errors'})
     assert result.state is ToolResultState.ERROR and env.gate.result is None
     payload = json.loads(text_of(result))
@@ -472,8 +471,8 @@ def test_revision_feedback_contains_all_controlled_errors(tmp_path, projects, fa
 
 def test_revision_batch_does_not_partially_finish(tmp_path, projects, facts):
     env = environment(tmp_path, projects, facts)
-    issued = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
-    result = call(env, 'revise_contract', {'source_refs': [issued, {**issued, 'end_line': 1}],
+    issued = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module, 'offset': 2, 'limit': 5})))[0]
+    result = call(env, 'revise_contract', {'source_refs': [issued, {**issued, 'start_line': 1}],
                                           'reason': 'one valid and one invalid'})
     payload = json.loads(text_of(result))
     assert result.state is ToolResultState.ERROR and not env.gate.finished
@@ -500,9 +499,9 @@ def test_revision_feedback_never_suggests_unissued_or_stale_refs(tmp_path, proje
 def test_citation_suggestions_rank_and_limit_only_verified_displayed_refs(tmp_path, projects, facts):
     env = environment(tmp_path, projects, facts)
     for start, limit in [(1, 7), (2, 6), (3, 5), (4, 4), (5, 3)]:
-        call(env, 'Read', {'file_path': env.module, 'offset': start, 'limit': limit})
-    submitted = {'path': 'example/中文模块.py', 'content_hash': bytes_hash(MODULE_TEXT.encode()),
-                 'start_line': 6, 'end_line': 6}
+        call(env, 'Read', {'file_path': str(env.root/'example/big.py'), 'offset': start, 'limit': limit})
+    submitted = {'path': 'example/big.py', 'content_hash': bytes_hash(BIG_LINES.encode()),
+                 'start_line': 8, 'end_line': 8}
     payload = json.loads(text_of(call(env, 'revise_contract', {'source_refs': [submitted], 'reason': 'narrow'})))
     assert payload['available_refs_truncated']
     assert [(r['start_line'], r['end_line']) for r in payload['errors'][0]['available_refs']] == [
@@ -579,3 +578,43 @@ def test_batch_suggestion_cache_rechecks_source_between_submissions(tmp_path, pr
     assert len(reads) == 3
     assert result.state is ToolResultState.ERROR and not env.gate.finished
     assert 'available_refs' not in text_of(result)
+
+
+def test_snapshot_relative_read_delivers_content_and_citable_subrange(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    result = call(env, 'Read', {'file_path': 'example/中文模块.py'})
+    assert result.state is ToolResultState.SUCCESS
+    shown = sidecar_refs(text_of(result))[0]
+    assert MARKER in text_of(result)
+    subrange = {**shown, 'start_line': 3, 'end_line': 4}
+    revised = call(env, 'revise_contract', {'source_refs': [subrange], 'reason': 'only the implementation'})
+    assert revised.state is ToolResultState.SUCCESS
+    assert env.gate.result.source_refs[0].start_line == 3
+    assert env.gate.result.source_refs[0].end_line == 4
+
+
+def test_citation_subrange_cannot_bridge_two_visible_ranges(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    first = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module, 'offset': 1, 'limit': 2})))[0]
+    call(env, 'Read', {'file_path': env.module, 'offset': 4, 'limit': 2})
+    result = call(env, 'revise_contract', {'source_refs': [{**first, 'end_line': 5}], 'reason': 'hidden line'})
+    assert result.state is ToolResultState.ERROR
+    assert json.loads(text_of(result))['code'] == 'SOURCE_RANGE_NOT_DISPLAYED'
+    assert not env.gate.finished
+
+
+@pytest.mark.parametrize('path', ['../outside.py', 'example/not_registered.py'])
+def test_snapshot_relative_read_still_refuses_unregistered_paths(tmp_path, projects, facts, path):
+    env = environment(tmp_path, projects, facts)
+    result = call(env, 'Read', {'file_path': path})
+    assert result.state is ToolResultState.ERROR
+    assert sidecar_refs(text_of(result)) == []
+
+
+def test_visible_source_subrange_is_usable_without_an_extra_read(tmp_path, projects, facts):
+    env = environment(tmp_path, projects, facts)
+    shown = sidecar_refs(text_of(call(env, 'Read', {'file_path': env.module})))[0]
+    result = call(env, 'revise_contract', {'source_refs': [{**shown, 'start_line': 3, 'end_line': 4}],
+                                          'reason': 'fully displayed implementation'})
+    assert result.state is ToolResultState.SUCCESS
+    assert env.gate.result.source_refs[0].start_line == 3

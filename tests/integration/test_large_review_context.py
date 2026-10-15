@@ -9,7 +9,7 @@ from reproagent.app import create_controller
 from reproagent.core.models import (CandidateClass, EvidenceLevel, FixValidationRequest, ModelConfig, ModelResponse,
     PythonPytestConfig, TaskRequest, TaskState)
 from reproagent.core.verifier import Verifier
-from tests.assertion_support import approved_assertions
+from tests.assertion_support import approved_assertions, approved_oracles
 
 MODULE_COUNT = 132
 BUGGY = 'def parse(values):\n    return [values[0]]\n'
@@ -57,7 +57,7 @@ class EvidenceCitingModel:
             failure = next(ref for ref in refs if ref['path'].endswith('probe.jsonl'))
             result = {'classification':'REPRODUCED', 'reason':'empty input raises the reported IndexError in the target parser',
                 'evidence_refs':[expect, failure], 'expected_assertion':True, 'target_triggered':True, 'failure_matches_issue':True,
-                'assertion_reviews': approved_assertions(data)}
+                'assertion_reviews': approved_assertions(data), **approved_oracles(data)}
         else:
             raise AssertionError(f'the Controller makes no {request.response_kind} request to the domain model')
         return ModelResponse(json.dumps(result))

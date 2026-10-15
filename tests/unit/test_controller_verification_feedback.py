@@ -90,3 +90,34 @@ def test_terminal_stop_is_not_rewritten_by_unusable_optional_feedback(tmp_path, 
     assert text == ''
     event = feedback_events(controller)[0]
     assert event.payload['decision'] == 'stop' and event.payload['feedback_state'] == 'capacity_unavailable'
+
+
+def test_replay_signature_mismatch_is_explained_in_next_phase(tmp_path, projects, facts):
+    from dataclasses import replace
+    request, _, controller, ctx = setup(tmp_path, projects, facts, plan=[publish(), ask()])
+    execute = controller.runner.execute
+    count = 0
+    async def changed(*args, **kwargs):
+        nonlocal count
+        run = await execute(*args, **kwargs)
+        count += 1
+        if count == 2:
+            tests = tuple(dict(test, assertion_comparison=None, crash={**test['crash'], 'message': 'different target failure'})
+                          if test['outcome'] == 'failed' else test for test in run.observation.tests)
+            run = replace(run, observation=replace(run.observation, tests=tests))
+        return run
+    controller.runner.execute = changed
+    result = asyncio.run(controller.run(request, ctx))
+    data = json.loads(controller.explorer.contexts[1].feedback)
+    assert result.evidence_level.value == 'SINGLE_OBSERVATION'
+    assert data['result_code'] == 'REPLAY_UNCONFIRMED'
+    assert data['replay_unmet_checks'] == ['failure_signature_matches']
+    assert data['previous_run_ids'] and data['verdict']['run_ids']
+
+
+def test_replay_diagnostic_is_preserved_in_observation_event(tmp_path, projects, facts):
+    request, _, controller, ctx = setup(tmp_path, projects, facts, plan=[publish(), ask()])
+    fault_sequence(controller, ['EXITED', 'COMMAND_TIMEOUT'])
+    asyncio.run(controller.run(request, ctx))
+    event = feedback_events(controller)[0]
+    assert event.payload['replay_unmet_checks'] == ['verdicts_reproduce_bound_candidate']

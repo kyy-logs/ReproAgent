@@ -15,7 +15,7 @@ INSTRUCTIONS = {
 ORIGINAL_PASS_GUIDANCE = ('候选在原版通过，尚未复现。检查断言是否被测试名称、说明或回显输入满足；'
                           '验证目标行为后再提交，不能只改假设。')
 _EXTRA_KEYS = frozenset({'consecutive_command_timeouts','configured_command_timeout_seconds',
-    'previous_candidate_id','previous_run_ids','prior_result_code'})
+    'previous_candidate_id','previous_run_ids','prior_result_code','replay_unmet_checks'})
 
 
 def render_verification_feedback(verdict, *, result_code, byte_limit, decision='continue',
@@ -28,6 +28,11 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
     for key,value in extras.items():
         if key == 'consecutive_command_timeouts': ok = type(value) is int and value >= 0
         elif key == 'configured_command_timeout_seconds': ok = type(value) in (int,float) and value >= 0
+        elif key == 'replay_unmet_checks':
+            ok = isinstance(value,(tuple,list)) and 1 <= len(value) <= 6 and all(
+                type(v) is str and v in {'verdicts_reproduce_bound_candidate', 'independent_bound_integral_runs',
+                    'preconditions_repeatable', 'test_inventory_matches', 'target_failure_present',
+                    'failure_signature_matches', 'confirmation_unavailable'} for v in value)
         elif key == 'previous_run_ids': ok = isinstance(value,(tuple,list)) and all(type(v) is str for v in value)
         else: ok = type(value) is str
         if not ok: raise ValueError('invalid verification feedback extra')

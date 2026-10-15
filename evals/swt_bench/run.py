@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from reproagent.app import LEGACY_BACKENDS
-from reproagent.core.models import INFRASTRUCTURE, BudgetLimits, installed_agentscope_version
+from reproagent.core.models import INFRASTRUCTURE, BudgetLimits, DeliveryRequirements, installed_agentscope_version
 from reproagent.core.serialization import canonical_hash
 from ..run import run_case
 from .io import fresh_dir,seal,verify_seal,write_json
@@ -65,7 +65,8 @@ async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_b
     # The round records what it ran on, not which deprecated flag selected it.  The SDK
     # version is recorded here too, so a summary written later states the version *this*
     # round ran on instead of whatever happens to be installed when it is summarised.
-    configuration={'model':asdict(model),'limits':asdict(limits),'model_backend':INFRASTRUCTURE,'agent_backend':INFRASTRUCTURE}
+    delivery=DeliveryRequirements('linux','swt-bench:'+catalog['source']['harness_commit']+':unit_test')
+    configuration={'delivery':asdict(delivery),'model':asdict(model),'limits':asdict(limits),'model_backend':INFRASTRUCTURE,'agent_backend':INFRASTRUCTURE}
     if experience_path is not None:
         configuration.update(experience_file=str(experience_path), experience_library_hash=experience_hash, learn_experience=False)
     version=installed_agentscope_version()
@@ -117,7 +118,7 @@ async def run_batch(catalog,manifest,bindings,model,output,*,limits=None,model_b
         if identity not in prepared: outcome['status']='NOT_PREPARED'; save(); continue
         case=prepared[identity]
         try:
-            run_options = dict(limits=limits, model_backend=model_backend, agent_backend=agent_backend, cancel_event=cancel_event)
+            run_options = dict(delivery=delivery, limits=limits, model_backend=model_backend, agent_backend=agent_backend, cancel_event=cancel_event)
             if experience_path is not None:
                 run_options.update(experience_file=experience_path, learn_experience=False)
             result=await run_one(case,model,output/'cases'/identity,**run_options)

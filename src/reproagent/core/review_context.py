@@ -18,6 +18,7 @@ from .models import Candidate, EvidenceRef, ExecutionResult, FileEntry, IssueCon
 from .protocol import verdict_schema
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from .assertion_audit import assertion_sites
+from .oracle_audit import oracle_checks
 
 # Stable marker for the run root: necessary paths stay readable without exporting the
 # machine-specific absolute prefix that made the recorded observation overflow.
@@ -258,6 +259,7 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'response_schema': verdict_schema()}))
     phases = [_phase(phase, run_root) for phase in run.observation.tests]
     sites = assertion_sites(candidate_files)
+    oracles = oracle_checks(candidate_files)
     payload = {'contract': _contract_view(contract),
         'expectation_sources': [_segment(texts[ref.path], ref, run_root) for ref in sources],
         'candidate': candidate_files,
@@ -266,7 +268,9 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'available_refs': [asdict(ref) for ref in available],
         'projection': {'paths': f'absolute run paths are shown as {RUN_ROOT}', 'summarized_fields': list(SUMMARIZED_FIELDS)},
         'assertion_sites': sites,
-        'response_schema': verdict_schema(tuple(site['id'] for site in sites))}
+        'response_schema': verdict_schema(tuple(site['id'] for site in sites), tuple(item['id'] for item in oracles))}
+    if oracles:
+        payload['oracle_checks'] = oracles
     if protocol_error:
         payload['protocol_error'] = protocol_error
     output_bytes = len(canonical_bytes(payload))

@@ -94,13 +94,20 @@ class EvidenceLedger:
         return cited
 
     def contains(self, ref: EvidenceRef) -> bool:
-        """Whether *ref* is a citation this ledger issued, and its file still matches it.
+        """Whether one fully displayed interval contains *ref*, and its file still matches.
 
         The check is repeated here because a citation outlives the read that produced it:
         a snapshot file altered afterwards stops matching and the citation is no longer
         evidence, even though the ledger issued it earlier.
         """
-        if not isinstance(ref, EvidenceRef) or ref not in self._issued:
+        if (not isinstance(ref, EvidenceRef) or type(ref.start_line) is not int
+                or type(ref.end_line) is not int or not 1 <= ref.start_line <= ref.end_line):
+            return False
+        # A complete displayed interval authorizes its subranges, never a union
+        # across gaps or separate views. Issued refs remain the original views.
+        if not any(shown.path == ref.path and shown.content_hash == ref.content_hash
+                   and shown.start_line <= ref.start_line <= ref.end_line <= shown.end_line
+                   for shown in self._issued):
             return False
         item = self.snapshot.registered(str(workspace_path(self.store.root.joinpath(*ref.path.split("/")))))
         if item is None or item.content_hash != ref.content_hash:

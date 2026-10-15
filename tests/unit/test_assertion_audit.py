@@ -163,7 +163,7 @@ def test_ambiguous_json_cannot_erase_negative_before_a_correction(tmp_path, proj
 
 def test_duplicate_negative_is_terminal_through_real_sdk_http_boundary(tmp_path, projects, facts):
     import httpx
-    from tests.assertion_support import approved_assertions
+    from tests.assertion_support import approved_assertions, approved_oracles
     from tests.unit.test_model_gateway import gateway
     calls = []
     def handler(request):
@@ -172,7 +172,7 @@ def test_duplicate_negative_is_terminal_through_real_sdk_http_boundary(tmp_path,
         answer = {'classification': 'REPRODUCED', 'reason': 'scripted',
             'evidence_refs': payload['available_refs'], 'expected_assertion': True,
             'target_triggered': True, 'failure_matches_issue': True,
-            'assertion_reviews': approved_assertions(payload)}
+            'assertion_reviews': approved_assertions(payload), **approved_oracles(payload)}
         if len(calls) == 1:
             answer['assertion_reviews'][0].update(supported=False, evidence_refs=[])
             text = json.dumps(answer)[:-1] + ', "reason": "duplicate"}'
