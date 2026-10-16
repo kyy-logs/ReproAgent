@@ -19,6 +19,7 @@ ISSUE_SPECS = {
     'FRAMEWORK_CHECK_FAILED': (('no_non_origin_framework_errors',), 'program_check','revise_candidate'),
     'CANDIDATE_IMPORT_BLOCKED': (('framework_not_blocked',), 'program_check','inspect_evidence'),
     'ENVIRONMENT_BLOCKED': (('framework_not_blocked','provider_semantic_claims'), None,'request_information'),
+    'TEST_SETUP_FAILED': (('tests_executed_and_valid',), 'program_check','inspect_evidence'),
     'TEST_EXECUTION_INVALID': (('tests_executed_and_valid',), 'program_check','inspect_evidence'),
     'DELIVERY_ALL_TESTS_SKIPPED': (('delivery_tests_executable',), 'program_check','revise_candidate'),
     'CANDIDATE_NOT_REPRODUCED': (('candidate_reproduced',), 'program_check','revise_candidate'),
@@ -41,6 +42,7 @@ for code in _RUNTIME:
     _ALLOWED[code] = frozenset({'stop_reason','duration_seconds','probe_complete','protection_checked','last_test_stage'})
 for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVALID','CANDIDATE_IMPORT_BLOCKED'):
     _ALLOWED[code] = frozenset({'framework_errors','collected','executed'})
+_ALLOWED['TEST_SETUP_FAILED'] = frozenset({'setup_failures','omitted_setup_failures','collected','executed'})
 _ALLOWED['DELIVERY_ALL_TESTS_SKIPPED'] = frozenset({'target_platform','skipped_tests'})
 _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage'})
 _ALLOWED['CANDIDATE_NOT_REPRODUCED'] = frozenset({'audit_notes','omitted_oracles','passing_outputs','omitted_outputs'})
@@ -67,8 +69,12 @@ def validate_issue(code, check, origin, recovery, message, measurements):
     for key, value in measurements.items():
         if key in ('probe_complete','protection_checked','collected','executed'):
             ok = type(value) is bool
-        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions','omitted_oracles','omitted_outputs','omitted_negative_checks'):
+        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions','omitted_oracles','omitted_outputs','omitted_negative_checks','omitted_setup_failures'):
             ok = type(value) is int and value >= 0
+        elif key == 'setup_failures':
+            ok = (isinstance(value, (list,tuple)) and 1 <= len(value) <= 4
+                  and all(isinstance(row, dict) and set(row) == {'nodeid','exception_type','message'}
+                          and all(type(v) is str and len(v) <= 512 for v in row.values()) for row in value))
         elif key == 'duration_seconds':
             ok = type(value) in (int,float) and math.isfinite(value) and value >= 0
         elif key in ('framework_errors','assertion_ids','skipped_tests','oracle_ids','audit_notes','passing_outputs','negative_checks'):

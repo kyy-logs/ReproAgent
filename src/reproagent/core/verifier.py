@@ -19,6 +19,7 @@ from .serialization import bytes_hash, canonical_bytes, parse_json
 from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
 from .verification_issues import ISSUE_SPECS
+from .setup_diagnostics import setup_failure_details
 from .budget import BudgetStopped
 from .protocol import ModelOutputError, validate_verdict
 from .execution_diagnostics import diagnose_execution, execution_bound, diagnostic_reason, INVALID_INTEGRITY_CODES
@@ -156,6 +157,11 @@ class Verifier:
                 return verdict(CandidateClass.ENVIRONMENT_BLOCKED, '; '.join(checks.blocked), run.observation.failure_refs,
                     code='ENVIRONMENT_BLOCKED', measurements={'framework_errors':list(checks.blocked[:16])})
         if not record_check('tests_executed_and_valid', not checks.invalid and bool(run.observation.executed)):
+            setup = setup_failure_details(run, task_root=self.store.root, secrets=self.secrets) if not run.observation.executed else {}
+            if setup:
+                return verdict(CandidateClass.INVALID_CANDIDATE, 'test setup failed before test execution; inspect observed setup failures',
+                    run.observation.failure_refs, code='TEST_SETUP_FAILED',
+                    measurements={**setup, 'collected':bool(run.observation.collected), 'executed':False})
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(checks.invalid) or 'no executed tests',
                 run.observation.failure_refs, code='TEST_EXECUTION_INVALID',
                 measurements={'framework_errors':list(checks.invalid[:16]), 'collected':bool(run.observation.collected), 'executed':bool(run.observation.executed)})
