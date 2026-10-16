@@ -165,10 +165,13 @@ def _collection_failure(item, run_root):
 
 
 def _contract_view(contract):
-    return {'contract_id': contract.contract_id, 'version': contract.version, 'trigger': contract.trigger,
+    view = {'contract_id': contract.contract_id, 'version': contract.version, 'trigger': contract.trigger,
             'expected': contract.expected, 'reported_actual': contract.reported_actual,
             'observable_checks': list(contract.observable_checks), 'assumptions': list(contract.assumptions),
             'missing_information': list(contract.missing_information), 'revision_reason': contract.revision_reason}
+    if contract.nonblocking_information:
+        view['nonblocking_information'] = list(contract.nonblocking_information)
+    return view
 
 
 def _observation_view(run, run_root, phases):

@@ -225,7 +225,8 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
                          ('环境限制', report.get('limitations', [])),
                          ('外部前置条件', report.get('preconditions', [])),
                          ('契约假设', contract.get('assumptions', [])),
-                         ('缺失信息', contract.get('missing_information', []))):
+                         ('缺失信息', contract.get('missing_information', [])),
+                         ('非阻塞未知项', contract.get('nonblocking_information', []))):
         for item in limited(items):
             lines.append(f'- {label}：{_text(item)}')
     lines += ['- 语义核验可能误判；文件副本不构成安全沙箱。']

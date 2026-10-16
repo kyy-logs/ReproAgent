@@ -102,11 +102,20 @@ def contract_schema(source_count):
     else:
         indices['maxItems'] = 0
     properties['source_indices'] = indices
-    return object_schema(properties)
+    properties['missing_information']['description'] = (
+        'Only facts required to trigger or judge the selected current reproduction scenario. '
+        'Name the blocked action or oracle; do not require the reporter exact full project when '
+        'a source-backed minimal fixture suffices.')
+    schema = object_schema(properties)
+    properties['nonblocking_information'] = {'type':'array', 'items':{'type':'string'},
+        'description':'Unresolved facts outside the current supported trigger, with why they are not '
+            'required. Not expectation evidence. Never move a genuine current prerequisite here.'}
+    return schema
 
 
 def validate_contract(result, source_count):
-    validate_keys(result, contract_schema(source_count)['required'])
+    validate_keys({key:value for key,value in result.items() if key != 'nonblocking_information'},
+                  contract_schema(source_count)['required'])
     for name in ('trigger','expected','reported_actual'):
         if type(result.get(name, '')) is not str:
             raise ValueError(f'{name} must be a string, not an object or array')
@@ -114,6 +123,12 @@ def validate_contract(result, source_count):
         value = result.get(name, [])
         if not isinstance(value,list) or any(type(item) is not str for item in value):
             raise ValueError(f'{name} must be an array of strings')
+    nonblocking = result.get('nonblocking_information', [])
+    if not isinstance(nonblocking, list) or any(type(item) is not str or not item.strip() for item in nonblocking):
+        raise ValueError('nonblocking_information must be an array of nonempty strings')
+    if {item.strip().casefold() for item in nonblocking} & {
+            item.strip().casefold() for item in result.get('missing_information', [])}:
+        raise ValueError('a question cannot be both blocking and nonblocking')
     indices = result.get('source_indices', [])
     if not isinstance(indices,list) or any(type(i) is not int or not 0 <= i < source_count for i in indices):
         raise ValueError(f'source_indices must contain integer indices into the {source_count} supplied sources')

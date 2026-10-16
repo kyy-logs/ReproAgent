@@ -147,9 +147,11 @@ class ReproAgent:
             expected = ''
             missing = (*missing, 'Provide a source defining expected correct behavior.')
         previous = evidence.previous_contract
-        material_change = previous and (expected != previous.expected or result.get('trigger', '') != previous.trigger or result.get('reported_actual', '') != previous.reported_actual or tuple(result.get('observable_checks', [])) != previous.observable_checks)
+        cleared_blockers = previous and set(previous.missing_information) - set(missing)
+        material_change = previous and (bool(cleared_blockers) or expected != previous.expected or result.get('trigger', '') != previous.trigger or result.get('reported_actual', '') != previous.reported_actual or tuple(result.get('observable_checks', [])) != previous.observable_checks)
         if material_change and not any(s not in previous.sources for s in sources):
             raise ValueError('contract revision requires new evidence')
         return IssueContract(previous.contract_id if previous else 'contract-' + uuid.uuid4().hex, previous.version + 1 if previous else 1,
             description.content_hash, result.get('trigger', ''), expected, result.get('reported_actual', ''), tuple(result.get('observable_checks', [])),
-            sources, tuple(result.get('assumptions', [])), missing, 'new evidence' if previous else '')
+            sources, tuple(result.get('assumptions', [])), missing, 'new evidence' if previous else '',
+            nonblocking_information=tuple(result.get('nonblocking_information', [])))

@@ -511,10 +511,17 @@ class WriteCandidate(_DomainTool):
                 "contract_id": contract.contract_id, "contract_version": contract.version,
                 "missing_information": list(contract.missing_information),
                 "next_action": "Review these blockers against the issue and displayed original sources. "
+                    "Classify each against the current failure-triggering scenario: only essential missing facts block. "
+                    "For an outside-scope unknown, revise_contract with evidence and preserve it in "
+                    "nonblocking_information with why the selected trigger does not depend on it. "
+                    "An exact reporter project or full configuration is not required when original evidence "
+                    "supports a minimal fixture. Do not replace the reported failure with a working control. "
                     "A source-backed equivalence or invariant can establish expected behavior without a literal output; "
                     "it is not merely the absence of an exception. If displayed evidence resolves a blocker, "
                     "call revise_contract with its exact issued ranges. Do not clear blockers or retry unchanged. "
                     "Use request_information only for essential facts that remain unavailable."}
+            if contract.nonblocking_information:
+                payload["nonblocking_information"] = list(contract.nonblocking_information)
             if (contract.missing_information
                     and self.context.budget.steps_used >= self.context.budget.limits.agent_steps):
                 # The last refused publication cannot buy another model call to report

@@ -215,6 +215,7 @@ class IssueContract:
     assumptions: tuple[str, ...] = ()
     missing_information: tuple[str, ...] = ()
     revision_reason: str = ""
+    nonblocking_information: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
