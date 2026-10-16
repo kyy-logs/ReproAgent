@@ -14,8 +14,9 @@ INSTRUCTIONS = {
     'inspect_evidence': '检查列出的证据与缺口，再决定修订候选、契约或请求信息；未确认不等于已证明错误。',
 }
 # An observed passing run is a fact; metadata contamination is only a possibility to inspect.
-ORIGINAL_PASS_GUIDANCE = ('候选在原版通过，尚未复现。检查断言是否被测试名称、说明或回显输入满足；'
-                          '验证目标行为后再提交，不能只改假设。')
+ORIGINAL_PASS_GUIDANCE = ('原版通过，可能是正常对照。复核失败分支与触发条件；'
+                          '契约有误凭原版证据 revise_contract。排除名称、说明、回显输入污染；'
+                          '勿靠无关断言造失败或只改假设。')
 _EXTRA_KEYS = frozenset({'consecutive_command_timeouts','configured_command_timeout_seconds',
     'previous_candidate_id','previous_run_ids','prior_result_code','replay_unmet_checks','execution_observation'})
 

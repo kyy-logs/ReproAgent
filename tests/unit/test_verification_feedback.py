@@ -104,3 +104,28 @@ def test_capacity_fallback_instruction_cannot_reintroduce_redacted_secret():
     assert len(text.encode())<=1024
     assert secret not in data['instruction']
     assert '[REDACTED]' in data['instruction']
+
+
+@pytest.mark.parametrize('cap',[8192,1536,1024])
+def test_original_pass_guidance_rechecks_trigger_and_keeps_evidence_gate_at_capacity(cap):
+    from reproagent.core.verification_feedback import render_verification_feedback
+    from tests.unit.test_original_pass_feedback import passing_verdict
+    v=passing_verdict()
+    before=deepcopy(v)
+    text=render_verification_feedback(v,result_code='NOT_REPRODUCED',byte_limit=cap,
+        instruction='overlong custom instruction '*1000)
+    data=json.loads(text)
+    assert len(text.encode('utf-8'))<=cap
+    assert '正常对照' in data['instruction'] and '失败分支' in data['instruction']
+    assert '原版证据' in data['instruction'] and 'revise_contract' in data['instruction']
+    assert '无关断言' in data['instruction']
+    assert data['verdict']['candidate_id']==v.candidate_id and data['verdict']['run_ids']==list(v.run_ids)
+    assert data['verdict']['issues'][0]['code']=='CANDIDATE_NOT_REPRODUCED'
+    assert data['verdict']['issues'][0]['origin']=='program_check'
+    assert data['verdict']['issues'][0]['recovery']=='revise_candidate'
+    assert v==before
+
+
+def test_semantic_objection_does_not_receive_program_original_pass_guidance():
+    data=json.loads(render(sample(),byte_limit=8192))
+    assert '正常对照' not in data['instruction']

@@ -29,3 +29,6 @@ def test_runner_passing_observation_reaches_real_sdk_http_body(tmp_path,projects
             await env.factory.aclose()
     assert asyncio.run(go()).kind=='request_information'
     assert len(seen)==1
+    body=json.dumps(seen[0]['messages'],ensure_ascii=False)
+    assert '正常对照' in body and '失败分支' in body
+    assert '原版证据' in body and 'revise_contract' in body
