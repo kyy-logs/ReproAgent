@@ -36,6 +36,18 @@
 
 ## 限制
 
-本次让反馈可操作，不自动替模型修测试。没有新一轮付费模型运行，因此尚未验证真实模型是否采纳并最终复现8474。没有放宽未获来源支持的预期/内部节点假设，亦未改变原实跑的EXHAUSTED/NONE结论。首次执行和纠错的6/2步预留策略保持上一版。
+本次让反馈可操作，不自动替模型修测试。首次离线验收时没有新一轮付费模型运行；后续单次实跑见下节，其结果仍未验证两项新反馈被模型采用。没有放宽未获来源支持的预期/内部节点假设，亦未改变原实跑的EXHAUSTED/NONE结论。首次执行和纠错的6/2步预留策略保持上一版。
 
 最终来源 hash `e190a204408e5f2e0554c38968e7ed42d0aa6c9270fad1f33f0668c2b76ce1e3`；验证后生产目录无未提交改动。完整退出码、分组命令、XML核对与来源回执：`E:/ReproAgent/repro-results/actionable-feedback-validation-20261016/verification.json`。后续提交仅补此验收文档。
+
+## 后续真实单次复测
+
+用户要求跑一次后，在同一冻结8474输入和本修复源码上运行；源码/轮次seal复核通过。结果目录 `E:/ReproAgent/repro-results/actionable-feedback-8474-20261016/`。
+
+- **NEEDS_INFORMATION / NO_CANDIDATE / NONE**，主任务55.125秒（另预检15.25秒），使用10/20步；0候选/0执行/0verdict。
+- 11次HTTP（contract1、exploration10），184,679 tokens；未配价格，货币成本未知；thinking关闭。
+- 最后一轮普通content有3,785字节，混有类似revise_contract参数的JSON和说明文字；`tool_calls=null`、finish_reason=stop。这只是文本，没有实际修订契约工具调用。
+- 源码核对：middleware无tool calls时直接return，SDK把文本当作完成，runtime在PhaseGate没有结果时返回no_candidate，Controller结束为NEEDS_INFORMATION，仍剩10步。
+- 本轮未进入执行/Verifier，因此没有触发材料超限或实际调用异常反馈，不能据此断言两项修复有效或无效。
+- 建议后续补无合法阶段结果时的有限协议纠错，纠错仍计入原20步；不从普通文本自动提取并执行工具。本次只运行与诊断，尚未实现这一建议。
+- 未对空补丁运行官方判分。CLI批次exit0不代表任务复现成功。原模型返回、run-analysis.json/md与trace均保留在新结果目录，旧记录未改。
