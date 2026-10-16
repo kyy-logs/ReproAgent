@@ -27,7 +27,7 @@
 
 - 在 `9c990e6` 冻结源码上实跑，**EXHAUSTED / NONE**，207.016 秒，24 HTTP，763,459 tokens；未配价格，货币成本未知。仍是原20步与关闭thinking。
 - 发布步骤 **17 / 18 / 20**；3 候选 / 3 执行 / 3 verdict。首次发布确实比上一轮20步提前，但本例没有成功，不能说通过率提高。
-- 首候选审阅材料 **67,552 B > 32,768 B**；第二候选在call调用 `SphinxTestApp` 时传入不支持的 `builddir`；最后候选的否定警告断言未被独立模型认可（`CANDIDATE_ASSERTIONS_UNCONFIRMED`）。程序记录的异常与模型审阅意见分开保存。
+- 首候选审阅材料 **67,552 B > 32,768 B**；第二候选在call调用 `SphinxTestApp` 时传入不支持的 `builddir`；最后候选实际失败在 doctree 内部节点筛选的 `assert numbered`（空列表）；独立模型另外不认可其警告断言的依据（`CANDIDATE_ASSERTIONS_UNCONFIRMED`）。此前“最后候选只检查警告”的表述不准确，已更正。实际失败位置、内部节点选择的可靠性与模型审阅意见须分开核验。
 - 前两次完整 SDK 输入分别含原版执行计数1/2及反馈，各自 SDK reply 下有一个实际HTTP；第三次反馈虽进入SDK输入，该reply下没有HTTP，未声称送达。20份wire正文被head/tail摘录，无法完整复核前两条反馈正文；离线完整wire测试独立证明发送链路。
 - 本轮全部进入call，不再是上次缺资料目录的setup路径，因此没有在真实8474中触发新的 `TEST_SETUP_FAILED`；这一分支由真实本地pytest + SDK集成覆盖。
 - 运行源码hash `058f0ab8ccc6feaa467f189e77c82b8580f3595a4681865c2c6d10824c18b3e2`，轮次seal和当时源码已核验并保存 `source-revalidated.json`。之后最终 `17c9c5b` 仅补引号脱敏与空行，未再付费重跑，不能声称本轮使用最终提交。
