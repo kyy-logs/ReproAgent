@@ -14,7 +14,6 @@ CONVERGENCE_GUIDANCE = (
     'Do not relax verification requirements.')
 
 
-
 def _identifier(value) -> str:
     return value if isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,128}', value) else 'unknown'
 

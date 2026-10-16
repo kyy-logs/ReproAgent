@@ -11,10 +11,13 @@ def setup_failure_details(run, *, task_root, secrets=()):
     if isinstance(recorded, str) and recorded:
         roots.add(recorded)
 
-    # Exception messages can contain repr(filename), not the literal filename.
+    # repr(filename) chooses its quotes using the whole filename, not the secret.
+    def python_body(secret, quote):
+        return ''.join(('\\' + char) if char == quote else repr(char)[1:-1] for char in secret)
+
     forms = {form for secret in secrets if isinstance(secret,str) and secret for form in
-             (secret, repr(secret)[1:-1], json.dumps(secret,ensure_ascii=False)[1:-1],
-              json.dumps(secret,ensure_ascii=True)[1:-1])}
+             (secret, python_body(secret, "'"), python_body(secret, '"'),
+              json.dumps(secret,ensure_ascii=False)[1:-1], json.dumps(secret,ensure_ascii=True)[1:-1])}
 
     def clean(value, *, tail=False):
         text = value if isinstance(value, str) else ''

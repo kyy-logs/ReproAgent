@@ -95,3 +95,14 @@ def test_setup_redacts_escaped_secret_representations(secret,form):
         task_root='/task',secrets=(secret,))
     assert '[REDACTED]' in details['setup_failures'][0]['message']
     assert spelling not in details['setup_failures'][0]['message']
+
+
+@pytest.mark.parametrize('secret,filename', [("private's", "private's/\"missing\""),
+    ('quote"secret', '\'quote"secret/missing'),("中文's", "中文's/\"missing\"")])
+def test_setup_redacts_secret_using_surrounding_filename_quote_context(secret,filename):
+    from reproagent.core.setup_diagnostics import setup_failure_details
+    error = FileNotFoundError(2,'No such file or directory',filename)
+    data = setup_failure_details(synthetic([{'when':'setup','outcome':'failed',
+        'nodeid':'test_path','exception_type':'FileNotFoundError','crash':{'message':str(error)}}]),
+        task_root='/task',secrets=(secret,))
+    assert '[REDACTED]' in data['setup_failures'][0]['message']
