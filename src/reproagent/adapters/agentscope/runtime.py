@@ -309,6 +309,7 @@ class AgentScopeRuntime:
         """
         cap = self.context.budget.limits.tool_response_bytes
         data = {"contract": context.contract, "feedback": context.feedback, "history": list(context.history),
+                "original_execution_count": context.original_execution_count,
                 "budget": {"steps_remaining_including_this_attempt": self._steps_remaining(),
                            "seconds_remaining": max(0, self.context.budget.deadline - self.context.budget.clock())}}
         if context.delivery is not None:

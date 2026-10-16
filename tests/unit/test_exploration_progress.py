@@ -61,7 +61,8 @@ def test_progress_uses_only_supported_phase_facts():
         data = json.loads(render_progress(view, phase(candidates=(current,), history=history)))
         assert data['facts']['latest_candidate_id'] == current.candidate_id
         assert data['facts']['latest_candidate_result'] == expected
-    assert json.loads(render_progress(step_budget_view(20, 14), phase()))['guidance'] == ''
+    assert json.loads(render_progress(step_budget_view(20, 11), phase()))['guidance'] == ''
+    assert json.loads(render_progress(step_budget_view(20, 12), phase()))['guidance']
     assert 'while readers are allowed' in empty['guidance']
     assert 'Do not relax verification requirements' in empty['guidance']
 
@@ -92,3 +93,31 @@ def test_progress_is_bounded_valid_utf8_json():
     # Very large valid integer counters must not silently break the message ceiling.
     with pytest.raises(ValueError):
         render_progress(step_budget_view(10 ** 1000, 0), None)
+
+
+@pytest.mark.parametrize('total,used,count,reserve,available', [
+    (20,12,0,6,True),(20,13,0,6,False),(20,16,1,2,True),(20,17,1,2,False),
+    (1,0,0,1,False),(2,0,0,1,False),(6,0,0,2,True),(6,0,1,1,True)])
+def test_execution_budget_policy_boundaries(total, used, count, reserve, available):
+    from reproagent.core.exploration_progress import execution_budget_policy
+    policy = execution_budget_policy(total, used, count)
+    assert policy.reader_reserve == reserve
+    assert policy.mode == ('repair' if count else 'first_execution')
+    assert policy.readers_available_next_call is available
+
+
+@pytest.mark.parametrize('count', [-1,True,1.5])
+def test_execution_budget_policy_rejects_invalid_count(count):
+    from reproagent.core.exploration_progress import execution_budget_policy
+    with pytest.raises(ValueError):
+        execution_budget_policy(20,0,count)
+
+
+def test_progress_reports_current_execution_policy_without_inference():
+    initial = json.loads(render_progress(step_budget_view(20,12),phase(history=({'original_execution_count':99},))))
+    assert initial['facts']['original_execution_count'] == 0
+    assert initial['facts']['reader_reserve'] == 6 and initial['guidance']
+    repaired = json.loads(render_progress(step_budget_view(20,16),replace(phase(),original_execution_count=1)))
+    assert repaired['facts']['original_execution_count'] == 1
+    assert repaired['facts']['readers_available_next_call'] is True
+    assert 'repair' in repaired['guidance'].lower()

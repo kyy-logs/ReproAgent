@@ -21,3 +21,22 @@ def step_budget_view(total_steps: int, used_steps: int) -> ExplorationStepView:
             'converging' if used_steps >= threshold else 'normal')
     return ExplorationStepView(mode, total_steps, used_steps, max(0, total_steps - used_steps),
                                threshold, None if used_steps >= total_steps else used_steps + 1)
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionBudgetPolicy:
+    mode: str
+    reader_reserve: int
+    original_execution_count: int
+    readers_available_next_call: bool
+
+
+def execution_budget_policy(total_steps: int, used_steps: int, original_execution_count: int) -> ExecutionBudgetPolicy:
+    view = step_budget_view(total_steps, used_steps)
+    if type(original_execution_count) is not int or original_execution_count < 0:
+        raise ValueError('original execution count must be a nonnegative integer')
+    repair = original_execution_count > 0
+    reserve = min(2, (total_steps+9)//10) if repair else min(6, (3*total_steps+9)//10)
+    # Permissions run after this model call has consumed its step.
+    return ExecutionBudgetPolicy('repair' if repair else 'first_execution', reserve,
+        original_execution_count, view.remaining_steps - 1 > reserve)

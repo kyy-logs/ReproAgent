@@ -2,18 +2,17 @@
 import re
 from dataclasses import asdict
 
-from ...core.exploration_progress import ExplorationStepView
+from ...core.exploration_progress import ExplorationStepView, execution_budget_policy
 from ...core.models import AgentContext
 from ...core.serialization import canonical_bytes
 
 MAX_PROGRESS_BYTES = 1024
 CONVERGENCE_GUIDANCE = (
-    'Budget convergence: focus on the current reproduction path. '
-    'Use only targeted reads needed to resolve a concrete blocker while readers are allowed. '
-    'Publish only when the existing contract and evidence justify it; otherwise revise from '
-    'displayed evidence or request_information. Avoid restarting broad searches or retrying '
-    'an unchanged refusal. The Controller owns execution and independent confirmation. '
+    'Focus on the current reproduction path. Use targeted reads while readers are allowed. '
+    'Publish only from grounded evidence; otherwise revise_contract or request_information. '
+    'Avoid unchanged refusals. Controller owns execution and confirmation. '
     'Do not relax verification requirements.')
+
 
 
 def _identifier(value) -> str:
@@ -35,8 +34,18 @@ def render_progress(view: ExplorationStepView, phase: AgentContext | None) -> st
                 entry = next((item for item in reversed(phase.history)
                               if item.get('phase') == 'candidate' and item.get('candidate_id') == identifier), {})
                 facts['latest_candidate_result'] = _identifier(entry.get('result_code'))
-    payload = {'budget': asdict(view), 'facts': facts,
-               'guidance': CONVERGENCE_GUIDANCE if view.mode == 'converging' else ''}
+    policy = execution_budget_policy(view.total_steps, view.used_steps,
+        phase.original_execution_count if phase is not None else 0)
+    facts.update(original_execution_count=policy.original_execution_count,
+                 execution_mode=policy.mode, reader_reserve=policy.reader_reserve,
+                 readers_available_next_call=policy.readers_available_next_call)
+    early = policy.mode == 'first_execution' and view.remaining_steps <= policy.reader_reserve + 2
+    guidance = ''
+    if view.mode == 'converging' or early:
+        prefix = ('Leave time for first execution and correction. ' if policy.mode == 'first_execution'
+                  else 'Repair from observed failures; supply required candidate resources. ')
+        guidance = prefix + CONVERGENCE_GUIDANCE
+    payload = {'budget': asdict(view), 'facts': facts, 'guidance':guidance}
     # Drop optional groups atomically; neither JSON nor instruction text is sliced.
     for optional in ((), ('latest_candidate_id', 'latest_candidate_result'),
                      ('contract_version', 'missing_information_count', 'contract_grounded')):

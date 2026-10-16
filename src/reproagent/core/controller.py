@@ -90,6 +90,7 @@ class Lifecycle:
     verdicts: dict = field(default_factory=dict)
     context_blocked: dict = field(default_factory=dict)
     command_timeout_streaks: dict = field(default_factory=dict)
+    original_execution_count: int = 0
 
 
 class Step:
@@ -231,6 +232,8 @@ class Controller:
 
     def observe_execution(self, lifecycle, run):
         # Execution facts are independent of whether later semantic review succeeds.
+        if run.execution_role == "original":
+            lifecycle.original_execution_count += 1
         key = (run.snapshot_id, run.environment_id, run.execution_role)
         if run.raw.stop_reason == 'COMMAND_TIMEOUT':
             lifecycle.command_timeout_streaks[key] = lifecycle.command_timeout_streaks.get(key, 0) + 1
@@ -634,7 +637,8 @@ class Controller:
                         phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
                             issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries,
                             experience_events=phase_events, experience_catalog=catalog_notice,
-                            delivery=request.delivery, execution_platform=environment.platform))
+                            delivery=request.delivery, execution_platform=environment.platform,
+                            original_execution_count=lifecycle.original_execution_count))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:

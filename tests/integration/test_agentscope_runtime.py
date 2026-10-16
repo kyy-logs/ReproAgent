@@ -183,7 +183,7 @@ def test_budget_progress_refreshes_on_each_wire_request(tmp_path, projects, fact
         assert views[index]['budget']['mode'] == mode
         assert views[index]['budget']['used_steps'] == used
         assert views[index]['budget']['remaining_steps'] == left
-    assert all(bool(v['guidance']) == (i >= 15) for i, v in enumerate(views))
+    assert all(bool(v['guidance']) == (i >= 12) for i, v in enumerate(views))
     assert not any(getattr(m, 'name', '') == 'exploration-progress' for m in env.runtime.messages)
     with pytest.raises(BudgetStopped):
         explore(env)
@@ -226,9 +226,9 @@ def test_budget_progress_contract_revision_does_not_reset(tmp_path, projects, fa
 
     async def execute():
         try:
-            assert (await env.runtime.explore(agent_context(env))).kind == 'revise_contract'
+            assert (await env.runtime.explore(replace(agent_context(env),original_execution_count=1))).kind == 'revise_contract'
             env.service.bind_contract(replace(env.service.contract, version=2))
-            return await env.runtime.explore(agent_context(env))
+            return await env.runtime.explore(replace(agent_context(env),original_execution_count=1))
         finally:
             await env.runtime.aclose()
             await env.factory.aclose()
@@ -808,12 +808,12 @@ def test_the_last_steps_are_reserved_for_publishing(tmp_path, projects, facts):
     # Facts still missing: reads stay open while there is room to gather them, because
     # reading is how a contract is grounded.
     middleware.contract = contract(missing_information=("which behaviour is expected",))
-    leave(4)
+    leave(3)
     assert check("Read", {"file_path": "a.py"}).behavior is PermissionBehavior.ALLOW
 
     # The reserved steps end that phase too, and they end it with the revision its reading
     # justifies or with what is missing -- never with reading until nothing is left.
-    leave(3)
+    leave(2)
     refused = check("Read", {"file_path": "a.py"})
     assert refused.behavior is PermissionBehavior.DENY
     assert "revise_contract" in refused.message and "request_information" in refused.message
@@ -877,7 +877,7 @@ def test_batch_citation_feedback_reaches_next_wire_request(tmp_path, projects, f
 
     async def go():
         try:
-            return await env.runtime.explore(agent_context(env))
+            return await env.runtime.explore(replace(agent_context(env),original_execution_count=1))
         finally:
             await env.runtime.aclose()
             await env.factory.aclose()
@@ -948,3 +948,22 @@ def test_relative_read_and_subrange_revision_reach_actual_sdk_wire(tmp_path, pro
     result = asyncio.run(go())
     assert result.kind == 'revise_contract' and len(seen) == 2
     assert result.source_refs[0].start_line == result.source_refs[0].end_line == 2
+
+
+@pytest.mark.parametrize('count,used,allowed', [(0,12,True),(0,13,False),(1,16,True),(1,17,False)])
+def test_execution_policy_matches_actual_sdk_permission_and_wire(tmp_path,projects,facts,count,used,allowed):
+    env = environment(tmp_path,projects,facts)
+    env.answers.extend([read_reply(env.module,'policy-read'),
+        tool_reply('request_information', {'question':'Need evidence'},call_id='finish')])
+    for _ in range(used):
+        env.context.budget.take_step()
+    result = asyncio.run(env.runtime.explore(replace(agent_context(env),original_execution_count=count)))
+    assert result.kind == 'request_information'
+    action = events(env,'exploration.action')[0]
+    assert action['result_code'] == ('ALLOWED' if allowed else 'RESERVED_FOR_PUBLISHING')
+    progress = wire_progress(env.requests[0])
+    assert progress['facts']['readers_available_next_call'] is allowed
+    assert progress['facts']['original_execution_count'] == count
+    user = next(json.loads(m['content']) for m in env.requests[0]['messages']
+                if m['role']=='user' and m['content'].startswith('{'))
+    assert user['original_execution_count'] == count

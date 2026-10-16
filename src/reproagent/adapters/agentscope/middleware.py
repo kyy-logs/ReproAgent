@@ -35,7 +35,7 @@ from agentscope.permission import PermissionBehavior, PermissionDecision
 from .dependency import require_agentscope
 from .tools import TOOL_NAMES
 from ...core.budget import BudgetStopped
-from ...core.exploration_progress import step_budget_view
+from ...core.exploration_progress import step_budget_view, execution_budget_policy
 from ...core.models import AgentContext
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
@@ -59,10 +59,6 @@ PROTOCOL_ATTEMPTS = 3
 #: run spent 20 of 20 decisions on Read/Grep/Glob without ever publishing a candidate.
 READER_TOOLS = ("Read", "Grep", "Glob", "list_experiences", "read_experience")
 
-#: Steps kept for publishing and its bounded protocol corrections.  The controller runs,
-#: repeats and submits the candidate itself, so those steps cost no budget of their own.
-#: A contract that still misses facts keeps its readers: reading is how facts are found.
-RESERVED_FOR_PUBLISHING = 3
 
 
 class PhaseEnded(Exception):
@@ -387,16 +383,11 @@ class ExplorationMiddleware(MiddlewareBase):
             await gen.aclose()
 
     def _reserved_for_publishing(self, name) -> bool:
-        """Whether this reader must wait: only the reserved steps remain to end the phase.
-
-        The reserve is not what the contract decides; it is what stops the SDK's ReAct loop
-        from consuming the whole budget on reading.  An earlier version refused readers only
-        for a grounded contract, on the reasoning that a contract missing facts is grounded
-        by reading them -- but nothing then made that phase end at all.  Five of the seven
-        holdout cases read at zero or one step remaining and produced no phase result, while
-        every case whose contract carried no missing facts turned to publishing instead.
-        """
-        return (name in READER_TOOLS and self.steps_remaining <= RESERVED_FOR_PUBLISHING
+        """Use the same policy as the next-call notice, after the call charged a step."""
+        count = self.phase_context.original_execution_count if self.phase_context is not None else 0
+        policy = execution_budget_policy(self.context.budget.limits.agent_steps,
+                                        self.context.budget.steps_used, count)
+        return (name in READER_TOOLS and self.steps_remaining <= policy.reader_reserve
                 and self.contract is not None)
 
     def _reserved_message(self, name) -> str:
@@ -408,10 +399,13 @@ class ExplorationMiddleware(MiddlewareBase):
         readers until the reserve -- so its reserved steps are for the two endings that
         remain: the revision its reading justifies, or the report of what is missing.
         """
+        count = self.phase_context.original_execution_count if self.phase_context is not None else 0
+        purpose = ('Keep room to republish a repaired candidate.' if count else
+                   'Publish a justified first candidate soon enough to execute and repair it.')
         contract = self.contract
         grounded = contract is not None and bool(contract.expected) and not contract.missing_information
         if grounded:
-            return (f"{name} is refused: {self.steps_remaining} step(s) remain and publishing needs them."
+            return (f"{name} is refused: {self.steps_remaining} step(s) remain and publishing needs them. {purpose}"
                     " Write the candidate from what you already read, or use revise_contract or"
                     " request_information.")
         return (f"{name} is refused: {self.steps_remaining} step(s) remain and this phase has to end."

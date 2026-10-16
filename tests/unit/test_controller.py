@@ -775,3 +775,26 @@ def test_phase_result_and_step_events_use_codes_not_raw_response(tmp_path, proje
     assert 'candidate-never-published' not in recorded
     assert all(payload['result_code'] in PHASE_RESULT_CODES
                for payload in rejected + [event.payload for event in events if event.kind == 'phase.result'])
+
+
+def test_original_execution_count_survives_contract_revision(tmp_path, projects, facts):
+    request, model, controller, ctx = setup(tmp_path, projects, facts, plan=[
+        publish(content=PASSING), revise(lambda:[source_ref(controller.explorer)]), ask()])
+    asyncio.run(controller.run(request,ctx))
+    phases = controller.explorer.contexts
+    assert [phase.original_execution_count for phase in phases] == [0,1,1]
+    assert phases[-1].contract.version == 2
+
+
+def test_observed_execution_counter_excludes_fixed_and_counts_original_replays():
+    from types import SimpleNamespace
+    from reproagent.core.controller import Controller
+    lifecycle = SimpleNamespace(original_execution_count=0, command_timeout_streaks={})
+    def run(role, stop='EXITED'):
+        return SimpleNamespace(snapshot_id='s',environment_id='e',execution_role=role,
+                               raw=SimpleNamespace(stop_reason=stop))
+    Controller.observe_execution(None,lifecycle,run('fixed'))
+    assert lifecycle.original_execution_count == 0
+    Controller.observe_execution(None,lifecycle,run('original','COMMAND_TIMEOUT'))
+    Controller.observe_execution(None,lifecycle,run('original'))
+    assert lifecycle.original_execution_count == 2

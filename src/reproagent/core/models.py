@@ -479,6 +479,7 @@ class AgentContext:
     experience_catalog: ExperienceCatalogNotice | None = None
     delivery: DeliveryRequirements | None = None
     execution_platform: str = ""
+    original_execution_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)

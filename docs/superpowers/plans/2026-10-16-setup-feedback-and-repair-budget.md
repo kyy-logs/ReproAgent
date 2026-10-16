@@ -38,10 +38,10 @@
 **Files:** Modify core/exploration_progress.py, core/models.py, core/controller.py, adapters/agentscope/{middleware,progress,runtime}.py. Test unit/test_exploration_progress.py and integration/test_agentscope_runtime.py, controller feedback tests.
 **Interfaces:** AgentContext.original_execution_count:int=0; Lifecycle counter; execution_budget_policy(total_steps, used_steps, original_execution_count) -> immutable policy with mode/reserve/next-reader availability.
 
-- [ ] Write failing tests:20-step initial reserve6/repair reserve2; tiny budgets; real SDKinitial boundary vs repair boundary; wire gets controlled count; contract changesretaincount, fixed executions excluded, forgedhistoryignored.
-- [ ] Run RED. Read actual before_model_call/permission ordering before modifying thresholds.
-- [ ] Implement counter in Controller.observe_execution and phase envelope; shared policy used by permissions and bounded fresh system reminder. Permission code stays RESERVED_FOR_PUBLISHING.
-- [ ] Update existing boundary fixtures to explicitly exercise first/repair mode; verify original deny, requiredexperiencebrowse, cancellation/deadline, livecontext capacity, step charging; commit task.
+- [x] Write failing tests:20-step initial reserve6/repair reserve2; tiny budgets; real SDKinitial boundary vs repair boundary; wire gets controlled count; contract changesretaincount, fixed executions excluded, forgedhistoryignored.
+- [x] Run RED. Read actual before_model_call/permission ordering before modifying thresholds.
+- [x] Implement counter in Controller.observe_execution and phase envelope; shared policy used by permissions and bounded fresh system reminder. Permission code stays RESERVED_FOR_PUBLISHING.
+- [x] Update existing boundary fixtures to explicitly exercise first/repair mode; verify original deny, requiredexperiencebrowse, cancellation/deadline, livecontext capacity, step charging; commit task.
 
 ### Task 3: End-to-end repair and validation
 
