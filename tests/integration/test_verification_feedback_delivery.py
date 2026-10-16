@@ -58,6 +58,18 @@ def test_real_controller_verdict_reaches_next_sdk_wire_and_local_trace(tmp_path,
     assert feedback['verdict']['issues'][0]['code'] == saved.issues[0].code == 'TARGET_TRIGGER_UNCONFIRMED'
     assert feedback['verdict']['issues'][0]['origin'] == 'provider_claim'
     assert feedback['verdict']['issues'][0]['evidence_refs']
+    # A reference the phase cannot follow is not evidence.  The phase reads the frozen
+    # snapshot, so runs/<id>/... is unreadable to it; the cited range therefore travels
+    # with its text, and this reads the same range back from the store to prove the text
+    # is the cited content rather than a placeholder that looks like one.
+    cited = feedback['verdict']['issues'][0]['evidence_refs']
+    shown = feedback['verdict']['evidence_text']
+    assert shown, 'cited evidence must arrive with its text'
+    for excerpt in shown:
+        assert any(ref['path'] == excerpt['path'] and ref['start_line'] == excerpt['start_line']
+                   and ref['end_line'] == excerpt['end_line'] for ref in cited)
+        source = (controller.store.root / excerpt['path']).read_text(encoding='utf-8').splitlines()
+        assert excerpt['text'] == '\n'.join(source[excerpt['start_line'] - 1:excerpt['end_line']])
     assert feedback['verdict']['unmet_checks'] == ['target_triggered']
     assert feedback['decision'] == 'continue' and feedback['instruction']
     assert feedback['projection']['omitted_issues'] == 0

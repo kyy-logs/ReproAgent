@@ -16,12 +16,63 @@ ORIGINAL_PASS_GUIDANCE = ('候选在原版通过，尚未复现。检查断言�
                           '验证目标行为后再提交，不能只改假设。')
 _EXTRA_KEYS = frozenset({'consecutive_command_timeouts','configured_command_timeout_seconds',
     'previous_candidate_id','previous_run_ids','prior_result_code'})
+#: The largest one cited segment may be, in bytes.  A cited range is a few lines of a
+#: failure report; a range that needs more than this is not the excerpt its reference
+#: promised, and half of it would read as the whole.
+EVIDENCE_SEGMENT_BYTES = 4096
+_EVIDENCE_KEYS = frozenset({'path','content_hash','start_line','end_line','text'})
+
+
+def evidence_excerpts(refs, *, read_ref, max_segment_bytes=EVIDENCE_SEGMENT_BYTES):
+    """The cited lines of *refs*, read through the hash-checked *read_ref*, in order.
+
+    A verdict names its evidence by path and line range, and the exploration phase reads
+    the frozen snapshot only -- an execution path such as ``runs/<id>/probe.jsonl`` is a
+    reference the model can never follow.  These excerpts are what makes the reference
+    more than a promise: the same lines, carried in the feedback itself.
+
+    A reference the reader refuses -- because the file changed, or is gone -- yields no
+    excerpt rather than a wrong one, and neither does a segment over the ceiling.  The
+    caller chooses the order, so the evidence a reader most needs to act on comes first
+    and survives the shedding in :func:`render_verification_feedback`.
+    """
+    seen, excerpts = set(), []
+    for ref in refs:
+        key = (ref.path, ref.content_hash, ref.start_line, ref.end_line)
+        if key in seen: continue
+        seen.add(key)
+        try:
+            text = read_ref(ref)
+        except (OSError, ValueError, UnicodeError):
+            continue
+        if not isinstance(text, str) or ref.start_line < 1 or ref.end_line < ref.start_line:
+            continue
+        segment = '\n'.join(text.splitlines()[ref.start_line - 1:ref.end_line])
+        if len(segment.encode('utf-8')) > max_segment_bytes: continue
+        excerpts.append({'path': ref.path, 'content_hash': ref.content_hash,
+            'start_line': ref.start_line, 'end_line': ref.end_line, 'text': segment})
+    return tuple(excerpts)
+
+
+def _validated_evidence(evidence):
+    """*evidence* as the closed shape the renderer accepts, or a refusal."""
+    checked = []
+    for item in evidence:
+        if not isinstance(item, dict) or set(item) != _EVIDENCE_KEYS:
+            raise ValueError('invalid verification evidence excerpt')
+        if (not all(isinstance(item[key], str) for key in ('path','content_hash','text'))
+                or type(item['start_line']) is not int or type(item['end_line']) is not int
+                or item['start_line'] < 1 or item['end_line'] < item['start_line']):
+            raise ValueError('invalid verification evidence excerpt')
+        checked.append({key: item[key] for key in ('path','content_hash','start_line','end_line','text')})
+    return tuple(checked)
 
 
 def render_verification_feedback(verdict, *, result_code, byte_limit, decision='continue',
-                                 instruction='', secrets=(), extras=None):
+                                 instruction='', secrets=(), extras=None, evidence=()):
     if type(byte_limit) is not int or byte_limit < 0 or decision not in ('continue','stop'):
         raise ValueError('invalid verification feedback capacity or decision')
+    evidence = _validated_evidence(evidence)
     extras = deepcopy(extras or {})
     if not set(extras) <= _EXTRA_KEYS:
         raise ValueError('unknown verification feedback extras')
@@ -32,13 +83,18 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         else: ok = type(value) is str
         if not ok: raise ValueError('invalid verification feedback extra')
     data = asdict(verdict)
+    # Beside the references, not instead of them: the reference stays the provenance the
+    # reader can check, and the text is what it says.  Absent when there is none, so a
+    # feedback without cited evidence keeps exactly the shape it had before.
+    if evidence:
+        data['evidence_text'] = list(evidence)
     recovery = verdict.issues[0].recovery if verdict.issues else 'inspect_evidence'
     default_instruction = (ORIGINAL_PASS_GUIDANCE
         if verdict.issues and verdict.issues[0].code == 'CANDIDATE_NOT_REPRODUCED'
         else INSTRUCTIONS[recovery])
     payload = {'result_code':result_code, 'decision':decision, 'verdict':data,
         'instruction':instruction or default_instruction,
-        'projection':{'omitted_issues':0,'omitted_refs':0,'omitted_details':0}, **extras}
+        'projection':{'omitted_issues':0,'omitted_refs':0,'omitted_details':0,'omitted_evidence':0}, **extras}
     def redact(value):
         if isinstance(value,str):
             for secret in secrets:
@@ -54,6 +110,14 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         return encoded.decode('utf-8') if len(encoded)<=byte_limit else None
     text=output()
     if text is not None: return text
+    # Cited evidence is the largest optional payload, and the only one a reference can
+    # stand in for, so it is shed first.  Whole segments only: half a failure report
+    # reads as the whole one and nothing in the response would say otherwise.
+    while data.get('evidence_text'):
+        data['evidence_text'].pop(); counts['omitted_evidence']+=1
+        text=output()
+        if text is not None: return text
+    data.pop('evidence_text', None)
     # Excerpts are program-made and explicitly marked; saved Verdict is untouched.
     for container,key in [(data,'reason'), *[(item,'message') for item in reversed(data['issues'])]]:
         if len(container[key])>96:

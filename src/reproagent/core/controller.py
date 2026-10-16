@@ -23,7 +23,7 @@ import uuid
 from dataclasses import asdict, dataclass, field, replace
 
 from ..observability import span, mark
-from .verification_feedback import render_verification_feedback
+from .verification_feedback import evidence_excerpts, render_verification_feedback
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
@@ -196,12 +196,28 @@ class Controller:
             text = text.replace(secret, '[REDACTED]')
         return text.encode()[:8192].decode(errors='ignore')
 
+    def cited_evidence(self, verdict):
+        """The lines a verdict cites, with their text, ordered by what to act on first.
+
+        The phase reads the frozen snapshot only, so a cited execution path -- a probe
+        record, a run log -- is a reference the model can never follow.  Reading every
+        cited range here is what makes the reference more than a promise: its text
+        travels in the feedback.  A range this reader refuses (the file changed, the
+        range is gone) contributes nothing rather than something wrong.  Issues come
+        first because they are the actionable part, and the renderer sheds from the end,
+        so what matters most survives a small budget.
+        """
+        refs = [ref for item in verdict.issues for ref in item.evidence_refs]
+        refs.extend(verdict.evidence_refs)
+        return evidence_excerpts(refs, read_ref=self.verifier.resolve)
+
     def candidate_feedback(self, verdict, context, *, result_code, decision='continue', instruction='', extras=None):
         """Project already-saved verification facts; advisory sinks cannot change acceptance."""
         try:
             text = render_verification_feedback(verdict, result_code=result_code,
                 byte_limit=min(8192, context.budget.limits.tool_response_bytes), decision=decision,
-                instruction=instruction, secrets=self.secrets, extras=extras)
+                instruction=instruction, secrets=self.secrets, extras=extras,
+                evidence=self.cited_evidence(verdict))
         except BudgetStopped:
             if decision != 'stop':
                 raise

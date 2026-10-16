@@ -104,3 +104,79 @@ def test_capacity_fallback_instruction_cannot_reintroduce_redacted_secret():
     assert len(text.encode())<=1024
     assert secret not in data['instruction']
     assert '[REDACTED]' in data['instruction']
+
+
+# ── cited evidence travels with its text ─────────────────────────────────────
+# A verdict cites a failure by path and line range.  The exploration phase reads
+# the frozen snapshot only, so an execution path such as runs/<id>/probe.jsonl is
+# a reference the model can never follow.  The cited lines travel in the feedback
+# instead, so the reference is not the only way to know what it says.
+
+def test_cited_evidence_text_travels_with_the_reference_it_belongs_to():
+    from reproagent.core.verification_feedback import evidence_excerpts
+    body = 'first line\nsecond line\nthird line\n'
+    ref = EvidenceRef('runs/run-1/probe.jsonl', 'a'*64, 2, 3)
+    excerpts = evidence_excerpts((ref,), read_ref=lambda item: body, max_segment_bytes=4096)
+    assert excerpts == ({'path':'runs/run-1/probe.jsonl', 'content_hash':'a'*64,
+        'start_line':2, 'end_line':3, 'text':'second line\nthird line'},)
+
+
+def test_evidence_excerpts_drop_what_cannot_be_read_or_does_not_fit():
+    from reproagent.core.verification_feedback import evidence_excerpts
+    good = EvidenceRef('runs/run-1/probe.jsonl', 'a'*64, 1, 1)
+    missing = EvidenceRef('runs/run-2/probe.jsonl', 'b'*64, 1, 1)
+    def read(ref):
+        if ref.path == missing.path: raise FileNotFoundError(ref.path)
+        return 'x'*5000
+    # A segment over the per-segment ceiling is dropped whole, never cut in half.
+    assert evidence_excerpts((good,), read_ref=read, max_segment_bytes=4096) == ()
+    assert evidence_excerpts((missing,), read_ref=read, max_segment_bytes=4096) == ()
+    # The same reference twice is one excerpt.
+    short = EvidenceRef('runs/run-1/probe.jsonl', 'a'*64, 1, 1)
+    two = evidence_excerpts((short, short), read_ref=lambda ref: 'kept', max_segment_bytes=4096)
+    assert len(two) == 1 and two[0]['text'] == 'kept'
+
+
+def test_feedback_carries_the_evidence_text_beside_its_references():
+    from dataclasses import replace
+    from reproagent.core.verification_feedback import evidence_excerpts
+    v = sample()
+    excerpt = {'path':'runs/run-1/probe.jsonl','content_hash':'a'*64,'start_line':1,'end_line':1,
+        'text':'IndexError: list index out of range'}
+    text = render(v, byte_limit=8192, evidence=(excerpt,))
+    data = json.loads(text)
+    assert data['verdict']['evidence_text'] == [excerpt]
+    assert data['projection']['omitted_evidence'] == 0
+    # No evidence means no field at all, so an older shape stays byte-identical.
+    assert 'evidence_text' not in json.loads(render(v, byte_limit=8192))['verdict']
+
+
+@pytest.mark.parametrize('cap',[8192,4096,2048,1024])
+def test_evidence_is_shed_whole_and_counted_before_any_diagnostic_is_cut(cap):
+    # Evidence is the largest optional payload, so it goes first -- and a segment is
+    # either shown complete or not shown, because half a failure report reads as the
+    # whole one and nothing in the response would say otherwise.
+    excerpts = tuple({'path':'runs/run-%d/probe.jsonl'%i,'content_hash':'a'*64,
+        'start_line':1,'end_line':1,'text':'failure detail %d '%i + 'x'*400} for i in range(6))
+    text = render(sample(), byte_limit=cap, evidence=excerpts)
+    data = json.loads(text)
+    assert len(text.encode('utf-8')) <= cap
+    kept = data['verdict'].get('evidence_text', [])
+    assert all(item['text'].endswith('x'*400) or 'x' not in item['text'] for item in kept)
+    assert len(kept) + data['projection']['omitted_evidence'] == len(excerpts)
+    assert data['verdict']['issues'][0]['code'] == 'TARGET_TRIGGER_UNCONFIRMED'
+
+
+def test_secret_redaction_covers_evidence_text_too():
+    secret = 'sk-live-0123456789'
+    excerpt = {'path':'runs/run-1/probe.jsonl','content_hash':'a'*64,'start_line':1,'end_line':1,
+        'text':'failure with %s inside' % secret}
+    text = render(sample(), byte_limit=8192, evidence=(excerpt,), secrets=(secret,))
+    assert secret not in text and '[REDACTED]' in json.loads(text)['verdict']['evidence_text'][0]['text']
+
+
+def test_malformed_evidence_cannot_reach_the_model():
+    with pytest.raises(ValueError): render(sample(), byte_limit=8192, evidence=('not a mapping',))
+    with pytest.raises(ValueError): render(sample(), byte_limit=8192, evidence=({'path':'p'},))
+    with pytest.raises(ValueError): render(sample(), byte_limit=8192,
+        evidence=({'path':'p','content_hash':'h','start_line':1,'end_line':1,'text':12},))
