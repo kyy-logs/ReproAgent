@@ -28,7 +28,7 @@
 **Files:** Create src/reproagent/core/setup_diagnostics.py; modify core/verifier.py, core/verification_issues.py; test tests/unit/test_setup_diagnostics.py and test_verifier.py.
 **Interfaces:** setup_failure_details(run, *, task_root, secrets=()) -> dict with setup_failures and omitted_setup_failures. Existing VerificationIssue/feedback carries it without another model call.
 
-- [x] Write real-run failing test: missing fixture resource producessetup_failed exception details, references, no semantic request; legacy/no usable setup staysoldcode. Add bounds/redaction/root-format/malformed record cases.
+- [x] Write real-run failing test: missing fixture resource produces setup_failed exception details, references, no semantic request; legacy/no usable setup stays old code. Add bounds/redaction/root-format/malformed record cases.
 - [x] Run tests, recordRED caused by absent projection.
 - [x] Implement bounded projection and TEST_SETUP_FAILED vocabulary at existing no-executed branch; preserve all earlier checks.
 - [x] Verify schema validation, feedback JSON capacity and report compatibility; commit task.
@@ -38,7 +38,7 @@
 **Files:** Modify core/exploration_progress.py, core/models.py, core/controller.py, adapters/agentscope/{middleware,progress,runtime}.py. Test unit/test_exploration_progress.py and integration/test_agentscope_runtime.py, controller feedback tests.
 **Interfaces:** AgentContext.original_execution_count:int=0; Lifecycle counter; execution_budget_policy(total_steps, used_steps, original_execution_count) -> immutable policy with mode/reserve/next-reader availability.
 
-- [x] Write failing tests:20-step initial reserve6/repair reserve2; tiny budgets; real SDKinitial boundary vs repair boundary; wire gets controlled count; contract changesretaincount, fixed executions excluded, forgedhistoryignored.
+- [x] Write failing tests:20-step initial reserve6/repair reserve2; tiny budgets; real SDK initial boundary vs repair boundary; wire gets controlled count; contract changes retain count, fixed executions excluded, forged history ignored.
 - [x] Run RED. Read actual before_model_call/permission ordering before modifying thresholds.
 - [x] Implement counter in Controller.observe_execution and phase envelope; shared policy used by permissions and bounded fresh system reminder. Permission code stays RESERVED_FOR_PUBLISHING.
 - [x] Update existing boundary fixtures to explicitly exercise first/repair mode; verify original deny, requiredexperiencebrowse, cancellation/deadline, livecontext capacity, step charging; commit task.
@@ -46,11 +46,11 @@
 ### Task 3: End-to-end repair and validation
 
 **Files:** Create tests/integration/test_setup_repair_loop.py; add docs/reviews/2026-10-16-setup-repair-budget-acceptance.md; optional strengthen pure diagnostic validation tests.
-**Interfaces:** Real Controller/Runner/Verifier/AgentScope; only HTTPmodelresponse boundary scripted, no handcrafted holdout candidate.
+**Interfaces:** Real Controller/Runner/Verifier/AgentScope; only HTTP model response boundary scripted, no handcrafted holdout candidate.
 
-- [ ] RED: initial candidate hasmissingresource; feedback next wire contains controlled setup detail; targeted Readallowed in repair; second candidate supplies missing data; confirm original independentreplay and unchanged original source, steps<=20.
-- [ ] GREEN: use Tasks1/2 path without specialcase fixture names or faking verdicts/execution. Check capacity/stop paths.
-- [ ] Run related and full suite once production code isstable; investigate failures, record exact counts/exits.
-- [ ] Fresh-context non-Astra review of whole diff; fix actionable findings with RED→GREEN checks.
-- [ ] Run one new8474 after source freeze, same frozen inputs/model/budget. If local accepted candidate exists, use original official path; otherwise preserve diagnostic outcome without scoring empty patch.
-- [ ] Record observed outcome, costs, limitations, sourcehash; local commit only, keep branch isolated.
+- [x] Execution-chain test (first run green after Tasks 1/2; no separate RED claimed): initial candidate has missing resource; feedback next wire contains controlled setup detail; targeted Read allowed in repair; second candidate supplies missing data; confirm original independent replay and unchanged original source, steps<=20.
+- [x] GREEN: use Tasks1/2 path without special case fixture names or faking verdicts/execution. Check capacity/stop paths.
+- [x] Run related and full suite once production code is stable; investigate failures, record exact counts/exits.
+- [x] Fresh-context non-Astra review of whole diff; fix actionable findings with RED→GREEN checks.
+- [x] Run one new 8474 after source freeze, same frozen inputs/model/budget. If local accepted candidate exists, use original official path; otherwise preserve diagnostic outcome without scoring empty patch.
+- [x] Record observed outcome, costs, limitations, source hash; local commit only, keep branch isolated.
