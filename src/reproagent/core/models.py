@@ -95,13 +95,14 @@ class BudgetLimits:
     model_cost_limit: float | None = None
     log_bytes: int = 33554432
     tool_response_bytes: int = 32768
+    review_context_bytes: int = 65536
 
     def __post_init__(self):
         for name in self.__dataclass_fields__:
             value = getattr(self, name)
             if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0):
                 raise ValueError(f"limits.{name} must be a positive finite number")
-        for name in ("agent_steps", "log_bytes", "tool_response_bytes"):
+        for name in ("agent_steps", "log_bytes", "tool_response_bytes", "review_context_bytes"):
             if not isinstance(getattr(self, name), int):
                 raise ValueError(f"limits.{name} must be an integer")
 

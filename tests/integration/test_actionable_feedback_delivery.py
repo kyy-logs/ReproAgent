@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -16,6 +17,9 @@ BAD_API="from example.parser import parse\ndef test_empty():\n    assert parse([
 @pytest.mark.parametrize('overflow',[False,True])
 def test_actual_call_error_reaches_next_sdk_request_without_overriding_review(tmp_path,projects,facts,overflow):
     request,_,_,ctx=setup(tmp_path,projects,facts)
+    if overflow:
+        ctx.budget.limits = replace(ctx.budget.limits, review_context_bytes=32768)
+        request = replace(request, limits=ctx.budget.limits)
     model=ScriptedModel(classification='NOT_REPRODUCED');wires=[]
     async def handle(req):
         p=json.loads(req.content)

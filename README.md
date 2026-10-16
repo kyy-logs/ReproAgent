@@ -72,7 +72,7 @@ python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python p
 ## 预算
 
 `limits` 可配置，默认最多 20 个 Agent 动作，单命令 60 秒，主任务 900 秒，清理 10 秒，本地收尾 5 秒；
-单次工具响应 32 KiB，单次运行 stdout/stderr/Probe 合计 32 MiB，Probe 读取另有 32 MiB 安全上限。错误动作仍计步，分析和验证共用期限与模型用量记录；收尾分块操作检查期限，发布前再次检查。文件系统调用采用协作式期限检查。
+单次工具响应 `tool_response_bytes` 默认 32 KiB；独立验收输入 `review_context_bytes` 默认 64 KiB，可在 `limits` 单独配置，不增加工具返回或探索步数。验收保留完整候选、来源与失败证据，精确重复的异常详情改为引用同包中的完整证据；仍装不下时明确返回所需字节数和上限，不截断后判成功。较大的验收输入会增加实际模型 token 用量。单次运行 stdout/stderr/Probe 合计 32 MiB，Probe 读取另有 32 MiB 安全上限。错误动作仍计步，分析和验证共用期限与模型用量记录；收尾分块操作检查期限，发布前再次检查。文件系统调用采用协作式期限检查。
 缺 usage 或计价时费用为 unknown；配置费率可报告估算。每次 HTTP 尝试单独记账；超时重试无法确认此前计费时，总费用仍是 unknown，同时保留已知小计。此适配器没有可靠费用上界，拒绝 `model_cost_limit` 硬限制。
 
 ## Automatic experience library

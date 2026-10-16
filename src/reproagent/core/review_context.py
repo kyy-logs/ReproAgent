@@ -297,10 +297,10 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         payload['oracle_checks'] = oracles
     if protocol_error:
         payload['protocol_error'] = protocol_error
+    # Deduplicate exact, checked copies regardless of capacity; complete failure
+    # bodies remain citable in failure_evidence, without a second model-visible copy.
+    _reference_duplicate_details(payload, run, run_root)
     output_bytes = len(canonical_bytes(payload))
-    if output_bytes > max_bytes:
-        _reference_duplicate_details(payload, run, run_root)
-        output_bytes = len(canonical_bytes(payload))
     if output_bytes > max_bytes:
         material_sizes, failure_sizes = _overflow_sizes(payload, run)
         raise ReviewContextTooLarge(output_bytes, max_bytes, material_sizes=material_sizes, failure_sizes=failure_sizes)

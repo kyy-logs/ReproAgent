@@ -27,7 +27,8 @@ def test_overflow_reports_dominant_fields_and_failed_test_index(tmp_path,project
     assert len(error.material_sizes)<=4
     row=error.failure_sizes[0]
     assert row['test_index']>=0 and row['message_bytes']>18000
-    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context()))
+    from reproagent.core.models import BudgetLimits
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context(limits=BudgetLimits(review_context_bytes=32768))))
     issue=verdict.issues[0]
     assert issue.code=='REVIEW_CONTEXT_TOO_LARGE' and verdict.classification is None
     assert issue.measurements['material_sizes']==error.material_sizes

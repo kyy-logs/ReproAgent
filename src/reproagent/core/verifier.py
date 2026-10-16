@@ -147,8 +147,10 @@ class Verifier:
         checks = self.adapter.check_framework(candidate, run.observation)
         non_origin_errors = tuple(error for error in checks.invalid if 'origin' not in error and error != 'no collected tests')
         if not record_check('no_non_origin_framework_errors', not non_origin_errors):
+            setup = setup_failure_details(run, task_root=self.store.root, secrets=self.secrets)
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(non_origin_errors), run.observation.failure_refs,
-                code='FRAMEWORK_CHECK_FAILED', measurements={'framework_errors':list(non_origin_errors[:16])})
+                code='FRAMEWORK_CHECK_FAILED', measurements={'framework_errors':list(non_origin_errors[:16]),
+                    'collected':bool(run.observation.collected), 'executed':bool(run.observation.executed), **setup})
         if not record_check('framework_not_blocked', not checks.blocked):
             if not run.observation.target_origins:
                 return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate import references an unavailable module before target execution',
@@ -194,7 +196,7 @@ class Verifier:
         # Every hard check above ran against the complete ExecutionResult. Only a
         # bounded, citable projection reaches the model, and nothing here may turn a
         # failed hard check or an unusable projection into a success.
-        cap = context.budget.limits.tool_response_bytes
+        cap = context.budget.limits.review_context_bytes
         def project(protocol_error=''):
             environment_view = {'environment_id':run.environment_id, 'platform':'unknown',
                                 'availability':'missing'}

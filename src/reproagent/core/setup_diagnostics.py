@@ -19,13 +19,13 @@ def _failure_details(run, *, task_root, secrets=(), when="setup", prioritized_in
              (secret, python_body(secret, "'"), python_body(secret, '"'),
               json.dumps(secret,ensure_ascii=False)[1:-1], json.dumps(secret,ensure_ascii=True)[1:-1])}
 
-    def clean(value, *, tail=False):
+    def clean(value, *, tail=False, excerpt=True):
         text = value if isinstance(value, str) else ''
         for form in sorted(forms,key=len,reverse=True):
             text = text.replace(form, '[REDACTED]')
         for spelling in sorted({s for root in roots for s in _root_spellings(root)}, key=len, reverse=True):
             text = text.replace(spelling, RUN_ROOT)
-        return text[-512:] if tail else text[:512]
+        return (text[-512:] if tail else text[:512]) if excerpt else text
 
     rows = []
     for index, item in enumerate(run.observation.tests):
@@ -34,7 +34,13 @@ def _failure_details(run, *, task_root, secrets=(), when="setup", prioritized_in
         crash = item.get('crash')
         message = crash.get('message') if isinstance(crash, dict) else None
         if not isinstance(message, str) or not message:
-            message = clean(item.get('longrepr'), tail=True)
+            # Pytest fixture reports put the actual error before a potentially long
+            # fixture inventory. Redact before selecting lines, so extraction cannot
+            # split an escaped/multiline secret before redaction has seen it.
+            report = clean(item.get('longrepr'), excerpt=False)
+            error_lines = [line for line in report.splitlines()
+                           if line.startswith('E') and line[1:2].isspace()] if when == 'setup' else []
+            message = '\n'.join(error_lines)[:512] if error_lines else report[-512:]
         else:
             message = clean(message)
         if not message:

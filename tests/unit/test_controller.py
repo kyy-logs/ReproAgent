@@ -309,7 +309,7 @@ def test_a_phase_loop_stops_at_the_exploration_step_budget(tmp_path, projects, f
 def test_identical_candidate_after_context_overflow_is_not_executed_again(tmp_path, projects, facts):
     model = ScriptedModel()
     request, controller, ctx = controller_for(tmp_path, projects, facts, model,
-        BudgetLimits(tool_response_bytes=1024),
+        BudgetLimits(tool_response_bytes=1024, review_context_bytes=1024),
         plan=[publish(), publish(hypothesis='same test, new description'), ask('stop')])
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.NEEDS_INFORMATION
@@ -323,7 +323,7 @@ def test_identical_candidate_after_context_overflow_is_not_executed_again(tmp_pa
 
 def test_changed_test_after_context_overflow_is_executed(tmp_path, projects, facts):
     request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(),
-        BudgetLimits(tool_response_bytes=1024),
+        BudgetLimits(tool_response_bytes=1024, review_context_bytes=1024),
         plan=[publish(), publish(content=PASSING), ask('stop')])
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.NEEDS_INFORMATION

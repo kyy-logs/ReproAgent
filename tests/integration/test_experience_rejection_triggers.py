@@ -85,7 +85,7 @@ def test_controller_overflow_fact_is_citable_and_reaches_next_sdk_phase(tmp_path
     from reproagent.core.models import BudgetLimits
     from tests.unit.test_controller import controller_for, ScriptedModel, publish, ask
     request, controller, context = controller_for(tmp_path/'control',projects,facts,ScriptedModel(),
-        BudgetLimits(tool_response_bytes=1024),plan=[publish(),publish(hypothesis='same'),ask('stop')])
+        BudgetLimits(tool_response_bytes=1024, review_context_bytes=1024),plan=[publish(),publish(hypothesis='same'),ask('stop')])
     result = asyncio.run(controller.run(request,context))
     phases = controller.explorer.contexts
     assert phases[0].experience_events == ()

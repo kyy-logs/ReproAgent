@@ -46,6 +46,9 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         if verdict.issues and verdict.issues[0].code == 'CANDIDATE_NOT_REPRODUCED'
         else INSTRUCTIONS[recovery])
     minimum_instruction = default_instruction
+    if any(item.measurements.get('setup_failures') for item in verdict.issues):
+        default_instruction += (' setup_failures 是实际准备失败；先 Read 原版 fixture/API 定义与已有用法，'
+            '修正缺失名称或调用，不要只改布局、假设或添加断言；准备失败不能证明目标 Bug。')
     if verdict.issues and verdict.issues[0].code == 'REVIEW_CONTEXT_TOO_LARGE':
         default_instruction += (' 查看 material_sizes 与 failure_sizes，通过 test_index 对照执行异常位置。'
             '避免把整页 HTML 或完整大对象作为断言消息；采用有依据的小范围行为检查，完整产物保留在文件中。')

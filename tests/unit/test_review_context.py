@@ -225,7 +225,9 @@ def test_core_evidence_too_large_stays_uncertain(tmp_path, projects, facts):
         build_review_context(contract, candidate, execution, read_ref=verifier.resolve,
             read_file=candidate_reader(candidate), max_bytes=32768)
 
-    verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context()))
+    from reproagent.core.models import BudgetLimits
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,),
+        facts.context(limits=BudgetLimits(review_context_bytes=32768))))
 
     assert verdict.classification is None
     assert not model.calls

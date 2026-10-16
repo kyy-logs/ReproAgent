@@ -119,7 +119,7 @@ def test_a_review_that_cannot_fit_reports_how_far_over_budget_it_is(tmp_path, pr
     """
     from reproagent.core.models import BudgetLimits
     contract, candidate, execution, verifier, model, *_ = prepare(tmp_path, projects, facts)
-    limits = BudgetLimits(tool_response_bytes=1024)
+    limits = BudgetLimits(review_context_bytes=1024)
 
     verdict = asyncio.run(verifier.evaluate(contract, candidate, (execution,), facts.context(limits=limits)))
 
@@ -157,7 +157,7 @@ def test_correction_only_overflow_does_not_mark_evidence_permanently_blocked(tmp
             'availability':'recorded'})
     cap = len(canonical_bytes(initial.payload)) + 1
     result = asyncio.run(verifier.evaluate(contract, candidate, (execution,),
-        facts.context(limits=BudgetLimits(tool_response_bytes=cap))))
+        facts.context(limits=BudgetLimits(review_context_bytes=cap))))
     assert len(model.calls) == 1  # Initial evidence fit; only its correction overflowed.
     assert result.classification is None
     assert result.next_action == 'explore'

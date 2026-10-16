@@ -42,6 +42,7 @@ for code in _RUNTIME:
     _ALLOWED[code] = frozenset({'stop_reason','duration_seconds','probe_complete','protection_checked','last_test_stage'})
 for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVALID','CANDIDATE_IMPORT_BLOCKED'):
     _ALLOWED[code] = frozenset({'framework_errors','collected','executed'})
+_ALLOWED['FRAMEWORK_CHECK_FAILED'] |= frozenset({'setup_failures','omitted_setup_failures'})
 _ALLOWED['TEST_SETUP_FAILED'] = frozenset({'setup_failures','omitted_setup_failures','collected','executed'})
 _ALLOWED['DELIVERY_ALL_TESTS_SKIPPED'] = frozenset({'target_platform','skipped_tests'})
 _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage','material_sizes','failure_sizes'})

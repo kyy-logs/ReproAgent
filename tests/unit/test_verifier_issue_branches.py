@@ -29,7 +29,7 @@ def test_program_rejections_have_structured_factual_gaps(tmp_path, projects, fac
     elif change == 'unexecuted': runs = (replace(run, observation=replace(run.observation, executed=False)),)
     elif change == 'passes': runs = (replace(run, raw=replace(run.raw, exit_code=0)),)
     elif change == 'expectation': contract = replace(contract, expected='')
-    elif change == 'capacity': ctx = facts.context(limits=BudgetLimits(tool_response_bytes=1024))
+    elif change == 'capacity': ctx = facts.context(limits=BudgetLimits(review_context_bytes=1024))
     elif change == 'source': verifier.resolve = lambda _: (_ for _ in ()).throw(ValueError('unavailable'))
     elif change == 'changed':
         path = candidate.storage_root / candidate.files[0].path
@@ -128,12 +128,15 @@ def test_redaction_expansion_reports_measured_review_overflow(tmp_path,projects,
     from reproagent.core.review_context import build_review_context
     from reproagent.store import safe_child
     contract,candidate,run,verifier,model,*_=prepare(tmp_path,projects,facts)
+    environment = verifier.store.load_record('environments', run.environment_id)
     projection=build_review_context(contract,candidate,run,read_ref=verifier.resolve,
-        read_file=lambda e: safe_child(candidate.storage_root,e.path).read_bytes(),max_bytes=1000000)
+        read_file=lambda e: safe_child(candidate.storage_root,e.path).read_bytes(),max_bytes=1000000,
+        execution_environment={'environment_id':run.environment_id, 'platform':environment.platform or 'unknown',
+            'tool_version':environment.tool_version, 'availability':'recorded'})
     from reproagent.core.serialization import canonical_bytes
     cap=len(canonical_bytes(projection.payload))+1
     verifier.secrets=('a',)
-    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context(limits=BudgetLimits(tool_response_bytes=cap))))
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context(limits=BudgetLimits(review_context_bytes=cap))))
     item=verdict.issues[0]
     assert item.code=='REVIEW_CONTEXT_TOO_LARGE' and item.measurements['stage']=='redaction'
     assert item.measurements['needed_bytes']>cap and not model.calls

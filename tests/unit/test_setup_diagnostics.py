@@ -106,3 +106,32 @@ def test_setup_redacts_secret_using_surrounding_filename_quote_context(secret,fi
         'nodeid':'test_path','exception_type':'FileNotFoundError','crash':{'message':str(error)}}]),
         task_root='/task',secrets=(secret,))
     assert '[REDACTED]' in data['setup_failures'][0]['message']
+
+
+@pytest.mark.parametrize("mixed", [False, True])
+def test_missing_fixture_preserves_specific_setup_failure_even_if_another_test_ran(tmp_path, projects, facts, mixed):
+    text = "def test_missing(warning_stream):\n    assert False\n"
+    if mixed:
+        text += "def test_valid():\n    from example.parser import parse\n    assert parse([1]) == [1]\n"
+    contract, candidate, run, verifier, model, *_ = prepare(tmp_path, projects, facts, text)
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert verdict.classification == CandidateClass.INVALID_CANDIDATE and not model.calls
+    issue = verdict.issues[0]
+    assert issue.code == "FRAMEWORK_CHECK_FAILED"  # Existing gate and check identity stay stable.
+    row = issue.measurements["setup_failures"][0]
+    assert "fixture 'warning_stream' not found" in row["message"]
+    assert row["exception_type"].endswith("FixtureLookupError")
+    assert row["nodeid"].endswith("test_missing")
+    assert issue.measurements["executed"] is mixed
+    feedback = json.loads(render_verification_feedback(verdict, result_code="INVALID_CANDIDATE", byte_limit=8192))
+    assert feedback["verdict"]["issues"][0]["measurements"]["setup_failures"] == [row]
+
+
+def test_setup_longrepr_keeps_error_line_ahead_of_large_fixture_inventory():
+    from reproagent.core.setup_diagnostics import setup_failure_details
+    report = "test source\nE       fixture 'warning_stream' not found\n> available fixtures: " + "fixture_name, " * 300
+    run = synthetic([{"when":"setup", "outcome":"failed", "nodeid":"tests/test_x.py::test_x",
+        "exception_type":"_pytest.fixtures.FixtureLookupError", "longrepr":report}])
+    data = setup_failure_details(run, task_root="/task")
+    assert "fixture 'warning_stream' not found" in data["setup_failures"][0]["message"]
+    assert len(data["setup_failures"][0]["message"]) <= 512
