@@ -85,6 +85,7 @@ def test_repeated_refusals_do_not_retrieve_or_replay_tools(tmp_path, projects, f
 
 def test_reserved_reader_permission_still_blocks_execution(tmp_path, projects, facts):
     env = configured(tmp_path, projects, facts, limits=BudgetLimits(agent_steps=4), browse=False)
+    env.context.budget.take_step()  # At permission time only the scaled two-step reserve remains.
     env.answers.extend([tool_reply("list_experiences",{"category":"workflow"},call_id="reserved"),
         tool_reply("write_candidate",write_payload(),call_id="publish")])
     assert run(env).kind == "candidate"

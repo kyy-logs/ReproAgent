@@ -1,4 +1,5 @@
 """Bounded setup observations; diagnosis does not assign root-cause responsibility."""
+import json
 from pathlib import Path
 
 from .review_context import RUN_ROOT, _root_spellings
@@ -10,11 +11,15 @@ def setup_failure_details(run, *, task_root, secrets=()):
     if isinstance(recorded, str) and recorded:
         roots.add(recorded)
 
+    # Exception messages can contain repr(filename), not the literal filename.
+    forms = {form for secret in secrets if isinstance(secret,str) and secret for form in
+             (secret, repr(secret)[1:-1], json.dumps(secret,ensure_ascii=False)[1:-1],
+              json.dumps(secret,ensure_ascii=True)[1:-1])}
+
     def clean(value, *, tail=False):
         text = value if isinstance(value, str) else ''
-        for secret in secrets:
-            if secret:
-                text = text.replace(secret, '[REDACTED]')
+        for form in sorted(forms,key=len,reverse=True):
+            text = text.replace(form, '[REDACTED]')
         for spelling in sorted({s for root in roots for s in _root_spellings(root)}, key=len, reverse=True):
             text = text.replace(spelling, RUN_ROOT)
         return text[-512:] if tail else text[:512]

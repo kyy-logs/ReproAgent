@@ -81,3 +81,17 @@ def test_setup_measurements_reject_malformed_or_oversized_rows(rows):
     with pytest.raises(ValueError):
         VerificationIssue('TEST_SETUP_FAILED','tests_executed_and_valid','program_check','setup failed',
             measurements={'setup_failures':rows,'omitted_setup_failures':0}, recovery='inspect_evidence')
+
+
+@pytest.mark.parametrize('secret', ['api\\key','line\nbreak','quote"value',"both'\"quotes"])
+@pytest.mark.parametrize('form',['repr','json','ascii_json'])
+def test_setup_redacts_escaped_secret_representations(secret,form):
+    from reproagent.core.setup_diagnostics import setup_failure_details
+    spelling = (repr(secret)[1:-1] if form == 'repr' else
+                json.dumps(secret,ensure_ascii=form=='ascii_json')[1:-1])
+    message = 'FileNotFoundError: ' + spelling + '/missing'
+    details = setup_failure_details(synthetic([{'when':'setup','outcome':'failed',
+        'nodeid':'test_one','exception_type':'FileNotFoundError','crash':{'message':message}}]),
+        task_root='/task',secrets=(secret,))
+    assert '[REDACTED]' in details['setup_failures'][0]['message']
+    assert spelling not in details['setup_failures'][0]['message']
