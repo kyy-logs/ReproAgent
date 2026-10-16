@@ -99,11 +99,23 @@ class BudgetedGateway:
 
     async def complete(self, request, context):
         from dataclasses import replace
+        from .protocol import ContractRevisionTooLarge
+        from .serialization import parse_json
         messages = []
         for message in request.messages:
             message = dict(message)
+            bounded_revision = False
+            if request.response_kind == 'contract' and message.get('role') == 'user':
+                try:
+                    bounded_revision = 'revision' in parse_json(message['content'])
+                except ValueError:
+                    pass
             for secret in self.secrets:
                 message['content'] = message['content'].replace(secret, '[REDACTED]')
+            if bounded_revision:
+                needed = len(message['content'].encode('utf-8'))
+                if needed > context.budget.limits.tool_response_bytes:
+                    raise ContractRevisionTooLarge(needed, context.budget.limits.tool_response_bytes)
             messages.append(message)
         request = replace(request, messages=tuple(messages))
         reservation = None if getattr(self.gateway, 'handles_attempt_accounting', False) else context.budget.reserve_cost(None)

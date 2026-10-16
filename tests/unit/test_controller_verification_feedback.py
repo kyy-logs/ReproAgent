@@ -121,3 +121,33 @@ def test_replay_diagnostic_is_preserved_in_observation_event(tmp_path, projects,
     asyncio.run(controller.run(request, ctx))
     event = feedback_events(controller)[0]
     assert event.payload['replay_unmet_checks'] == ['verdicts_reproduce_bound_candidate']
+
+
+def test_negative_malformed_replay_feedback_retains_objections_for_next_phase(tmp_path, projects, facts):
+    from dataclasses import replace
+    request, model, controller, ctx = setup(tmp_path, projects, facts, plan=[publish(), ask()])
+    original = model.complete
+    reviews = 0
+
+    async def reject_replay(call, context):
+        nonlocal reviews
+        response = await original(call, context)
+        if call.response_kind == 'verdict':
+            reviews += 1
+            if reviews == 2:
+                value = json.loads(response.text)
+                value['assertion_reviews'][0].update(supported=False,
+                    reason='Unsupported internal format assumption', unexpected_field=True)
+                return replace(response, text=json.dumps(value))
+        return response
+
+    model.complete = reject_replay
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.NEEDS_INFORMATION
+    assert result.evidence_level.value == 'SINGLE_OBSERVATION' and reviews == 2
+    feedback = json.loads(controller.explorer.contexts[1].feedback)
+    issue = feedback['verdict']['issues'][0]
+    assert feedback['result_code'] == 'REPLAY_UNCONFIRMED'
+    assert issue['measurements']['validation_error']
+    assert any('A1' in note and 'Unsupported internal format assumption' in note
+               for note in issue['measurements']['negative_checks'])

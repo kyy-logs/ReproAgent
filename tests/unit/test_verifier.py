@@ -149,8 +149,12 @@ def test_correction_only_overflow_does_not_mark_evidence_permanently_blocked(tmp
     evidence.write_text('IndexError: list index out of range\n', encoding='utf-8')
     execution = replace(execution, observation=replace(execution.observation,
         failure_refs=(EvidenceRef('failure.txt', bytes_hash(evidence.read_bytes()), 1, 1),)))
+    environment = verifier.store.load_record('environments', execution.environment_id)
     initial = build_review_context(contract, candidate, execution, read_ref=verifier.resolve,
-        read_file=lambda entry: safe_child(candidate.storage_root, entry.path).read_bytes(), max_bytes=1000000)
+        read_file=lambda entry: safe_child(candidate.storage_root, entry.path).read_bytes(), max_bytes=1000000,
+        execution_environment={'environment_id':execution.environment_id,
+            'platform':environment.platform or 'unknown', 'tool_version':environment.tool_version,
+            'availability':'recorded'})
     cap = len(canonical_bytes(initial.payload)) + 1
     result = asyncio.run(verifier.evaluate(contract, candidate, (execution,),
         facts.context(limits=BudgetLimits(tool_response_bytes=cap))))

@@ -82,6 +82,12 @@ def render_report(report, previews=None, *, check=lambda: None, template=None):
               f'- 修复版验证：{_code(fix_status)}（{_text(fix_labels.get(fix_status, "未记录"))}）',
               f'- 事件截止序号：{_text(report.get("event_cutoff", ""))}',
               '- 这是导出时的记录，最终任务状态以原任务目录的 task.json 为准。']
+    if report.get('execution_platforms'):
+        lines.append('- 本地复现平台：' + '、'.join(_code(p) for p in report['execution_platforms']))
+    if report.get('delivery'):
+        delivery = report['delivery']
+        lines.append('- 交付目标平台：' + _code(delivery.get('platform', 'unknown')))
+        lines.append('- 目标平台尚未验证；本地复现证据不等于目标平台交付验收。')
     if report.get('stop_reason'):
         lines.append(f'- 停止原因：{_text(report["stop_reason"])}')
     backends = report.get('backends', {})

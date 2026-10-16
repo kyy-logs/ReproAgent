@@ -86,6 +86,13 @@ class Exporter:
             'accepted_run_ids':[], 'environment_probes':[],
             'experience_read_ids':list(dict.fromkeys(event.payload['id'] for event in events
                 if event.kind == 'experience.read' and isinstance(event.payload.get('id'), str)))}
+        # Local confirmation is not a claim about execution on another platform.
+        request_path = safe_child(store.root, 'request.json')
+        request = store.load_record('request', 'request') if request_path.is_file() else None
+        delivery = request.delivery if request is not None else None
+        report.update(delivery=asdict(delivery) if delivery is not None else {},
+            delivery_status='target_unverified' if delivery is not None else 'not_requested',
+            execution_platforms=[])
         previews = {}
         report['backends'] = next((dict(event.payload) for event in reversed(events) if event.kind == 'backend.selected'), {})
         issue_path = safe_child(store.root, 'input/issue.md')
@@ -186,6 +193,10 @@ class Exporter:
                 report['log_mapping'].append({'source_path':ref.path, 'source_hash':ref.content_hash, 'export_path':export_path, 'export_hash':bytes_hash(exported)})
             if success and run.candidate_id == result.accepted_candidate_id and run.execution_role == 'original':
                 env = store.load_record('environments', run.environment_id)
+                if env.environment_id != run.environment_id:
+                    raise ValueError('execution environment binding mismatch')
+                platform = env.platform or 'unknown'
+                report['execution_platforms'] = sorted(set((*report['execution_platforms'], platform)))
                 report.update(python=env.python, pytest_version=env.tool_version, source_roots=list(env.source_roots), target_modules=list(env.target_modules),
                     pytest_args=list(env.pytest_args), limitations=list(env.limitations),
                     argv=['<python>', '-m', 'pytest', *env.pytest_args, '-p', 'reproagent_pytest_probe', *candidate.selectors], env_names=['PYTHONPATH', 'REPROAGENT_RUN_ID', 'REPROAGENT_PROBE_PATH', 'REPROAGENT_TARGET_MODULES'])

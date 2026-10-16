@@ -77,6 +77,11 @@ def test_grounded_refusal_details_reach_wire_and_revision_rebinds_before_publica
             value['missing_information'] = [GAP] if analyses == 1 else []
             if analyses == 2:
                 assert len(data['sources']) == 2 and 'def parse' in data['texts'][1]
+                assert data['revision']['reason'] == '原版证据支持等价行为，无须发明未说明的输出形式'
+                assert data['revision']['previous_contract']['missing_information'] == [GAP]
+                assert data['revision']['previous_contract']['version'] == 1
+                assert data['revision']['previous_contract']['expected'] == 'parse([]) returns []'
+                assert 'fixed' not in data['revision']
                 value['source_indices'] = [0, 1]
         return httpx.Response(200, json={'id': 'offline', 'object': 'chat.completion', 'created': 1,
             'model': 'offline', 'choices': [{'index': 0, 'finish_reason': 'stop',

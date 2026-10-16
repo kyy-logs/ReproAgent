@@ -25,10 +25,11 @@ from dataclasses import asdict, dataclass, field, replace
 from ..observability import span, mark
 from .verification_feedback import render_verification_feedback
 from .budget import BudgetStopped
+from .agent import contract_request_payload, ContractRevisionTooLarge
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
                      component_identity)
-from .serialization import bytes_hash, canonical_hash
+from .serialization import bytes_hash, canonical_hash, canonical_bytes
 from .protocol import ModelOutputError, ModelProtocolError
 from .execution_diagnostics import diagnose_runtime, diagnostic_reason
 from reproagent.paths import relative_name
@@ -501,11 +502,19 @@ class Controller:
                 sources = [source, *(item for item in contract.sources if item != source)]
                 sources.extend(SourceRef(ref.path, ref.content_hash, ref.start_line, ref.end_line, 'repository')
                                for ref in phase.source_refs)
+                sources = list(dict.fromkeys(sources))
                 texts = tuple('\n'.join(self.verifier.resolve(item).splitlines()[item.start_line - 1:item.end_line])
                               for item in sources)
-                if sum(len(text.encode()) for text in texts) > context.budget.limits.tool_response_bytes:
-                    raise ActionRejected('REVISION_BUDGET_EXCEEDED', 'revision sources exceed context budget; narrow line ranges')
-                revised = await self.explorer.analyze(IssueDescription(issue_text, issue_hash), EvidenceContext(tuple(sources), texts, contract))
+                description = IssueDescription(issue_text, issue_hash)
+                evidence = EvidenceContext(tuple(sources), texts, contract, phase.reason)
+                needed = len(canonical_bytes(contract_request_payload(description, evidence)))
+                if needed > context.budget.limits.tool_response_bytes:
+                    raise ContractRevisionTooLarge(needed, context.budget.limits.tool_response_bytes)
+                revised = await self.explorer.analyze(description, evidence)
+            except ContractRevisionTooLarge as exc:
+                step.rejected('REVISION_BUDGET_EXCEEDED')
+                return contract, result, self.feedback({'error':str(exc), 'needed_bytes':exc.needed_bytes,
+                    'budget_bytes':exc.budget_bytes}), 'REVISION_BUDGET_EXCEEDED'
             except ActionRejected as exc:
                 step.rejected(exc.code)
                 return contract, result, self.feedback({'error':str(exc)}), exc.code
@@ -577,6 +586,7 @@ class Controller:
         self.store.save_record('request', result.task_id, request)
         self.store.append_event('backend.selected', (), self.backend_info)
         result = self.state(result, TaskState.PREPARING)
+        contract = None
         try:
             if self.experience_service is not None:
                 self.experience_service.prepare(fixed, context)
@@ -684,7 +694,24 @@ class Controller:
         except BudgetStopped as exc:
             result = self.recorded(result)
             terminal = TaskState.CANCELLED if exc.reason == 'CANCELLED' else TaskState.NEEDS_INFORMATION if exc.reason == 'NEEDS_INFORMATION' else TaskState.EXHAUSTED
-            result = self.state(result, terminal, stop_reason=exc.reason, uncertainties=(*result.uncertainties, str(exc)))
+            notes = (*result.uncertainties, str(exc))
+            if terminal == TaskState.EXHAUSTED and contract is not None and contract.missing_information:
+                # Preserve the actual budget stop. These are outstanding model-derived
+                # blockers, not a program conclusion that the issue/dataset is defective.
+                notes = (*notes, self.feedback({'unresolved_contract':contract.contract_id,
+                    'version':'v' + str(contract.version),
+                    'missing_information':contract.missing_information,
+                    'origin':'contract_analysis', 'cause_confirmed':False}))
+                payload = {'contract_id':contract.contract_id, 'contract_version':contract.version,
+                    'blocking_count':len(contract.missing_information), 'stop_reason':exc.reason,
+                    'origin':'contract_analysis', 'cause_confirmed':False}
+                refs = (f'contracts/{contract.contract_id}-v{contract.version}.json',)
+                try:
+                    self.store.append_event('contract.unresolved_at_stop', refs, payload)
+                except (ValueError, OSError):
+                    pass
+                mark('contract.unresolved_at_stop', attributes=payload)
+            result = self.state(result, terminal, stop_reason=exc.reason, uncertainties=notes)
         except asyncio.CancelledError:
             result = self.recorded(result)
             context.cancel_event.set(); context.budget.cancel()

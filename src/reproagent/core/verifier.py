@@ -65,6 +65,33 @@ class Verifier:
                 verified.append(ref)
         return VerificationIssue(code, check, origin, message, tuple(verified), measurements or {}, recovery)
 
+    def _negative_diagnostics(self, result, review, error):
+        """Keep bounded objections as unvalidated claims, never an accepted verdict."""
+        def clean(value):
+            text = value if isinstance(value, str) else ''
+            for secret in self.secrets:
+                text = text.replace(secret, '[REDACTED]')
+            return text[:512]
+        notes = []
+        for key, id_key, inventory in (
+                ('assertion_reviews', 'assertion_id', review.payload['assertion_sites']),
+                ('oracle_reviews', 'check_id', review.payload.get('oracle_checks', ()))):
+            sites = {site['id']:site for site in inventory}
+            rows = result.get(key, ())
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict) or row.get('supported') is not False:
+                    continue
+                identifier = row.get(id_key)
+                site = sites.get(identifier) if isinstance(identifier, str) else None
+                location = (f"{identifier} {site['path']}:{site['start_line']}" if site else 'unknown check')
+                notes.append(clean('unvalidated model objection: ' + location + ': ' + clean(row.get('reason'))))
+        notes.extend('unvalidated model objection: ' + key + '=false' for key in
+            ('expected_assertion', 'target_triggered', 'failure_matches_issue') if result.get(key) is False)
+        return {'validation_error':clean(str(error)), 'provider_reason':clean(result.get('reason')),
+                'negative_checks':notes[:16], 'omitted_negative_checks':max(0, len(notes) - 16)}
+
     def _integrity_ok(self, contract, candidate, run) -> bool:
         """The positive form of the compound integrity check, so it can be recorded.
 
@@ -163,8 +190,19 @@ class Verifier:
         # failed hard check or an unusable projection into a success.
         cap = context.budget.limits.tool_response_bytes
         def project(protocol_error=''):
+            environment_view = {'environment_id':run.environment_id, 'platform':'unknown',
+                                'availability':'missing'}
+            try:
+                environment = self.store.load_record('environments', run.environment_id)
+            except FileNotFoundError:
+                pass  # Legacy evidence must not inherit the reviewer's host platform.
+            else:
+                if environment.environment_id != run.environment_id:
+                    raise ValueError('execution environment binding mismatch')
+                environment_view.update(platform=environment.platform or 'unknown',
+                    tool_version=environment.tool_version, availability='recorded')
             return build_review_context(contract, candidate, run, read_ref=self.resolve, read_file=read_file,
-                max_bytes=cap, protocol_error=protocol_error)
+                max_bytes=cap, protocol_error=protocol_error, execution_environment=environment_view)
         try:
             review = project()
         except CandidateFileChanged:
@@ -245,7 +283,8 @@ class Verifier:
                     negative_audit = isinstance(rows, list) and any(isinstance(row, dict) and row.get('supported') is False for row in rows)
                     if negative_audit or any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
                         return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success',
-                            code='MODEL_PROTOCOL_ERROR', measurements={'attempts':attempt + 1, 'protocol_error':'invalid_negative_response'})
+                            code='MODEL_PROTOCOL_ERROR', measurements={'attempts':attempt + 1, 'protocol_error':'invalid_negative_response',
+                                **self._negative_diagnostics(result, review, exc)})
                     error = str(exc)
                     protocol_code = 'MODEL_PROTOCOL_ERROR'
                 else:

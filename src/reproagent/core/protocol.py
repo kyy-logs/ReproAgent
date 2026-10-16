@@ -11,6 +11,12 @@ class ModelProtocolError(Exception):
     """The model failed bounded correction of a structured response."""
 
 
+class ContractRevisionTooLarge(ValueError):
+    def __init__(self, needed_bytes, budget_bytes):
+        self.needed_bytes, self.budget_bytes = needed_bytes, budget_bytes
+        super().__init__(f'contract revision input needs {needed_bytes} bytes; budget is {budget_bytes} bytes; narrow line ranges')
+
+
 class ProviderRequestError(RuntimeError):
     """A failed provider request, carrying no raw provider text or credentials."""
     def __init__(self, *, status_code=None):

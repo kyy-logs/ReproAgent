@@ -22,6 +22,9 @@ def at_length(base: Path, length: int) -> Path:
     path = base
     while len(str(path)) < length:
         step = min(length - len(str(path)) - 1, 100)
+        if length - len(str(path)) - step - 1 == 1:
+            # Leave room for another separator AND a nonempty component.
+            step -= 1
         if step <= 0:
             break
         path = path / ("x" * step)

@@ -88,3 +88,20 @@ def test_eval_delivery_reaches_product_request_and_wire(tmp_path,projects,monkey
         assert any('pinned-harness:offline' in m.get('content','') for m in request['messages']
                    if isinstance(m.get('content'),str))
     assert result.delivery_status=='target_unverified'
+
+
+def test_product_report_distinguishes_local_reproduction_from_target_delivery(tmp_path, projects, facts):
+    from reproagent.core.models import DeliveryRequirements
+    request, model, controller, ctx = setup(tmp_path, projects, facts)
+    target = 'linux' if sys.platform != 'linux' else 'win32'
+    request = replace(request, delivery=DeliveryRequirements(target, 'pinned-harness:offline'))
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.DONE
+    report_root = request.output_dir / 'artifacts/reproduction'
+    report = json.loads((report_root/'report.json').read_text(encoding='utf-8'))
+    assert report['delivery'] == {'platform': target, 'source': 'pinned-harness:offline'}
+    assert report['delivery_status'] == 'target_unverified'
+    assert report['execution_platforms'] == [sys.platform]
+    text = (report_root/'report.md').read_text(encoding='utf-8')
+    assert target in text and sys.platform in text
+    assert '目标平台尚未验证' in text

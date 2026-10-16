@@ -445,6 +445,7 @@ class EvidenceContext:
     sources: tuple[SourceRef, ...] = ()
     texts: tuple[str, ...] = ()
     previous_contract: IssueContract | None = None
+    revision_reason: str = ""
 
 
 @dataclass(frozen=True, slots=True)

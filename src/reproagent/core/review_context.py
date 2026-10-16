@@ -229,7 +229,7 @@ def _reference_duplicate_details(payload, run, run_root):
 
 def build_review_context(contract: IssueContract, candidate: Candidate, run: ExecutionResult, *,
         read_ref: Callable[[EvidenceRef], str], read_file: Callable[[FileEntry], bytes],
-        max_bytes: int, protocol_error: str = '') -> ReviewContext:
+        max_bytes: int, protocol_error: str = '', execution_environment: dict | None = None) -> ReviewContext:
     """Project one fully checked execution into the reviewer's bounded payload.
 
     read_ref validates the whole-file hash of a cited source; read_file validates a
@@ -269,6 +269,8 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'projection': {'paths': f'absolute run paths are shown as {RUN_ROOT}', 'summarized_fields': list(SUMMARIZED_FIELDS)},
         'assertion_sites': sites,
         'response_schema': verdict_schema(tuple(site['id'] for site in sites), tuple(item['id'] for item in oracles))}
+    if execution_environment is not None:
+        payload['execution_environment'] = execution_environment
     if oracles:
         payload['oracle_checks'] = oracles
     if protocol_error:

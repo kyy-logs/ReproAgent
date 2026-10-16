@@ -17,7 +17,7 @@ from importlib.resources import files
 
 from .models import AgentContext, IssueContract, ModelRequest
 from .serialization import canonical_bytes, parse_json
-from .protocol import ModelOutputError, ModelProtocolError, contract_schema, validate_contract
+from .protocol import ModelOutputError, ModelProtocolError, contract_schema, validate_contract, ContractRevisionTooLarge
 from .budget import BudgetStopped
 
 #: Where a controller-built exploration prompt puts the test area it was configured with.
@@ -93,6 +93,17 @@ def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=
     return text
 
 
+def contract_request_payload(description, evidence):
+    """The exact user payload, shared by preflight and the actual request path."""
+    data = {'description':description.text, 'sources':[asdict(s) for s in evidence.sources],
+            'texts':list(evidence.texts), 'response_schema':contract_schema(len(evidence.sources))}
+    if evidence.previous_contract is not None:
+        # Advisory state/request; the supplied originals remain the only evidence.
+        data['revision'] = {'previous_contract':asdict(evidence.previous_contract),
+                            'reason':evidence.revision_reason}
+    return data
+
+
 class ReproAgent:
     """The contract-analysis strategy, over a model gateway and one call context."""
 
@@ -100,15 +111,20 @@ class ReproAgent:
         self.gateway, self.context, self.candidate_parent = gateway, context, candidate_parent
 
     async def analyze(self, description, evidence):
-        data = {'description':description.text, 'sources':[asdict(s) for s in evidence.sources], 'texts':list(evidence.texts),
-                'response_schema':contract_schema(len(evidence.sources))}
+        data = contract_request_payload(description, evidence)
         for attempt in range(3):
             self.context.budget.check()
             if self.context.cancel_event.is_set():
                 raise BudgetStopped('CANCELLED')
+            text = canonical_bytes(data).decode()
+            if evidence.previous_contract is not None:
+                size = len(text.encode('utf-8'))
+                cap = self.context.budget.limits.tool_response_bytes
+                if size > cap:
+                    raise ContractRevisionTooLarge(size, cap)
             try:
                 response = await self.gateway.complete(ModelRequest(({'role':'system','content':prompt('analyze_issue')},
-                    {'role':'user','content':canonical_bytes(data).decode()}), 'contract'), self.context)
+                    {'role':'user','content':text}), 'contract'), self.context)
             except ModelOutputError as exc:
                 require_correctable_output(exc)
                 error = str(exc)

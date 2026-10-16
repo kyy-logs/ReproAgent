@@ -71,3 +71,41 @@ def test_passing_candidate_reports_supplied_text_overlap_without_model_call(tmp_
     assert result.classification==CandidateClass.NOT_REPRODUCED
     assert not model.calls
     assert any('candidate_text_overlap' in line for line in result.issues[0].measurements['audit_notes'])
+
+
+def test_malformed_negative_review_retains_actionable_unvalidated_objections(tmp_path, projects, facts):
+    model = AuditModel('negative_and_malformed')
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, text=RISKY, model=model)
+    result = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert result.classification is None and len(model.calls) == 1
+    issue = result.issues[0]
+    assert issue.code == 'MODEL_PROTOCOL_ERROR' and issue.origin == 'program_check'
+    assert issue.measurements['protocol_error'] == 'invalid_negative_response'
+    assert issue.measurements['validation_error']
+    assert any('scripted review' in note and 'O1' in note for note in issue.measurements['negative_checks'])
+    assert issue.measurements['provider_reason'] == 'scripted review'
+
+
+def test_unvalidated_negative_diagnostics_are_bounded_and_redacted(tmp_path, projects, facts):
+    from dataclasses import asdict
+    model = AuditModel('negative_and_malformed')
+    original = model.complete
+    secret = 'diagnostic-secret'
+
+    async def sensitive(request, context):
+        response = await original(request, context)
+        value = json.loads(response.text)
+        value['reason'] = secret + 'x' * 2000
+        value['oracle_reviews'][0]['reason'] = secret + 'y' * 2000
+        return ModelResponse(json.dumps(value))
+
+    model.complete = sensitive
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, text=RISKY, model=model)
+    verifier.secrets = (secret,)
+    result = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert result.classification is None and len(model.calls) == 1
+    assert secret not in json.dumps(asdict(result))
+    measurements = result.issues[0].measurements
+    assert len(measurements['provider_reason']) <= 512
+    assert '[REDACTED]' in measurements['provider_reason']
+    assert all(len(note) <= 512 for note in measurements['negative_checks'])

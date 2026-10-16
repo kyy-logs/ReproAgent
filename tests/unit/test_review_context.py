@@ -132,8 +132,11 @@ def test_132_verified_origins_fit_32768_without_mutating_execution(tmp_path, pro
     before = asdict(large.observation)
     assert len(json.dumps(origins, ensure_ascii=False)) > 20000
 
+    environment = verifier.store.load_record('environments', large.environment_id)
     context = build_review_context(contract, candidate, large, read_ref=verifier.resolve,
-        read_file=candidate_reader(candidate), max_bytes=32768)
+        read_file=candidate_reader(candidate), max_bytes=32768, execution_environment={
+            'environment_id':large.environment_id, 'platform':environment.platform or 'unknown',
+            'tool_version':environment.tool_version, 'availability':'recorded'})
 
     assert context.input_bytes > 32768 > context.output_bytes
     assert 'observations.target_origins' in context.omitted_fields
@@ -322,3 +325,39 @@ def test_sent_references_are_exactly_the_citable_ones(tmp_path, projects, facts)
     assert [EvidenceRef(**ref) for ref in sent['available_refs']] == \
         [EvidenceRef(segment['path'], segment['content_hash'], segment['start_line'], segment['end_line'])
          for segment in sent['expectation_sources'] + sent['failure_evidence']]
+
+
+def test_semantic_review_receives_recorded_execution_platform(tmp_path, projects, facts):
+    import sys
+    contract, candidate, run, verifier, model, *_ = prepare(tmp_path, projects, facts)
+    asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    payload = json.loads(model.calls[0].messages[-1]['content'])
+    assert payload['execution_environment']['environment_id'] == run.environment_id
+    assert payload['execution_environment']['platform'] == sys.platform
+    assert payload['execution_environment']['availability'] == 'recorded'
+    assert 'python' not in payload['execution_environment']
+
+
+def test_legacy_environment_platform_stays_unknown_in_review(tmp_path, projects, facts):
+    contract, candidate, run, verifier, model, *_ = prepare(tmp_path, projects, facts)
+    env = verifier.store.load_record('environments', run.environment_id)
+    path = verifier.store.record_path('environments', run.environment_id)
+    record = json.loads(path.read_text(encoding='utf-8'))
+    record.pop('platform')  # Simulate a record written before platform collection existed.
+    path.write_text(json.dumps(record), encoding='utf-8')
+    asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    payload = json.loads(model.calls[0].messages[-1]['content'])
+    assert payload['execution_environment']['platform'] == 'unknown'
+
+
+def test_mismatched_environment_record_cannot_be_sent_to_reviewer(tmp_path, projects, facts):
+    contract, candidate, run, verifier, model, *_ = prepare(tmp_path, projects, facts)
+    env = verifier.store.load_record('environments', run.environment_id)
+    path = verifier.store.record_path('environments', run.environment_id)
+    record = json.loads(path.read_text(encoding='utf-8'))
+    record['environment_id'] = 'foreign'  # Deliberately corrupt the saved binding.
+    path.write_text(json.dumps(record), encoding='utf-8')
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert verdict.classification is None
+    assert verdict.issues[0].code == 'EVIDENCE_UNAVAILABLE'
+    assert not model.calls

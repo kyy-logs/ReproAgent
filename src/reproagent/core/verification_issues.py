@@ -46,7 +46,8 @@ _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes',
 _ALLOWED['CANDIDATE_NOT_REPRODUCED'] = frozenset({'audit_notes','omitted_oracles','passing_outputs','omitted_outputs'})
 _ALLOWED['CANDIDATE_ORACLES_UNCONFIRMED'] = frozenset({'oracle_ids','omitted_oracles'})
 _ALLOWED['CANDIDATE_ASSERTIONS_UNCONFIRMED'] = frozenset({'assertion_ids','omitted_assertions'})
-_ALLOWED['MODEL_PROTOCOL_ERROR'] = frozenset({'attempts','needed_bytes','budget_bytes','stage','protocol_error'})
+_ALLOWED['MODEL_PROTOCOL_ERROR'] = frozenset({'attempts','needed_bytes','budget_bytes','stage','protocol_error',
+    'validation_error','provider_reason','negative_checks','omitted_negative_checks'})
 
 
 def validate_issue(code, check, origin, recovery, message, measurements):
@@ -66,11 +67,11 @@ def validate_issue(code, check, origin, recovery, message, measurements):
     for key, value in measurements.items():
         if key in ('probe_complete','protection_checked','collected','executed'):
             ok = type(value) is bool
-        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions','omitted_oracles','omitted_outputs'):
+        elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions','omitted_oracles','omitted_outputs','omitted_negative_checks'):
             ok = type(value) is int and value >= 0
         elif key == 'duration_seconds':
             ok = type(value) in (int,float) and math.isfinite(value) and value >= 0
-        elif key in ('framework_errors','assertion_ids','skipped_tests','oracle_ids','audit_notes','passing_outputs'):
+        elif key in ('framework_errors','assertion_ids','skipped_tests','oracle_ids','audit_notes','passing_outputs','negative_checks'):
             ok = isinstance(value, (list,tuple)) and len(value) <= 16 and all(type(v) is str for v in value)
         else:
             ok = type(value) is str and len(value) <= 512
