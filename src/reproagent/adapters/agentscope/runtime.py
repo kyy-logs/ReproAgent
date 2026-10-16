@@ -190,6 +190,9 @@ class AgentScopeRuntime:
                 end_reason = REPLY_STOPPED_BY_PHASE     # ... and so does a stop that follows it
                 break
             except PhaseProtocolError as failure:
+                if self.gate.finished:
+                    end_reason = REPLY_STOPPED_BY_PHASE
+                    break
                 protocol_failures.append(failure.code)
                 failure.set_failures(tuple(protocol_failures))
                 self.middleware.record_protocol_failure(failure)
@@ -368,8 +371,11 @@ class AgentScopeRuntime:
         """The one hint a rejected response is answered with; the response itself is gone."""
         return UserMsg(name="user", content=(
             "<system-reminder>Your previous response was rejected before any of it ran: "
-            f"{failure.code}. Answer again with at most one tool call, its arguments a single complete "
+            f"{failure.code}. Answer again with exactly one actual tool call, its arguments a single complete "
             f"JSON object, and its name one of: {', '.join(self.allowed_tools)}. "
+            "Ordinary text or JSON in message content is not a tool call and will not execute. "
+            "Continue with a reader tool or end the phase through write_candidate, revise_contract, "
+            "or request_information using its registered schema. "
             f"Diagnostic: {canonical_bytes(failure.details()).decode('utf-8')}</system-reminder>"))
 
     def _steps_remaining(self) -> int:

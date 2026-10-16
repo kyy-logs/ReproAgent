@@ -92,17 +92,18 @@ def test_a_plain_answer_never_becomes_an_action(tmp_path, projects, facts):
     """Two JSON objects in one text answer are text, not two actions.
 
     The phase acts through tool calls, so an answer that contains JSON but calls no tool
-    runs nothing, publishes nothing and does not start a correction round.
+    runs nothing, publishes nothing and starts a bounded correction round.
     """
     env = environment(tmp_path, projects, facts)
     env.answers.extend([
         text_reply(json.dumps(write_payload()) + "\n" + json.dumps(write_payload())),
-        text_reply()])
-    result = explore(env)
-    assert result.kind == "no_candidate" and result.reason
-    assert len(env.requests) == 1 == env.context.budget.steps_used
+        text_reply(), text_reply()])
+    with pytest.raises(PhaseProtocolError) as failure:
+        explore(env)
+    assert failure.value.code == "MISSING_TOOL_CALL"
+    assert len(env.requests) == 3 == env.context.budget.steps_used
     assert not (env.task / "candidates").exists()
-    assert not _events(env, "exploration.protocol_error")
+    assert [e["result_code"] for e in _events(env, "exploration.protocol_error")] == ["MISSING_TOOL_CALL"] * 3
 
 
 def test_cancel_between_corrections_sends_no_further_request(tmp_path, projects, facts):

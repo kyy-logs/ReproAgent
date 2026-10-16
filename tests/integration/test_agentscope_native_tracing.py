@@ -10,7 +10,7 @@ cases=importlib.util.module_from_spec(spec);spec.loader.exec_module(cases)
 
 
 def test_native_agent_model_tool_spans_are_real_sdk_spans(tmp_path, projects, facts):
-    with cases.traced(tmp_path,projects,facts,answers=[cases.read_reply(None,"call-1"),cases.text_reply()]) as env:
+    with cases.traced(tmp_path,projects,facts,answers=[cases.read_reply(None,"call-1"),cases.terminal_reply()]) as env:
         env.answers[0]=cases.read_reply(env.module,"call-1")
         cases.explore(env)
         doc=cases.document(env)
@@ -18,7 +18,7 @@ def test_native_agent_model_tool_spans_are_real_sdk_spans(tmp_path, projects, fa
     assert {s['name'] for s in native} >= {'sdk.agent_reply','sdk.model_call','tool.Read'}
     assert any(s['name']=='agent.reasoning' for s in doc['spans'])
     assert doc['schema_version']==2
-    assert doc['summary']['tool_executions']==1
+    assert doc['summary']['tool_executions']==2  # Read and the explicit ending tool
     assert doc['summary']['http_attempts']==2
     assert doc['summary']['usage']['input_tokens']==20
     tool=next(s for s in native if s['name']=='tool.Read')

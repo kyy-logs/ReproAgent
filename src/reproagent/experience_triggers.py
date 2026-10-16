@@ -4,7 +4,7 @@ from dataclasses import dataclass, asdict
 from .core.serialization import parse_json
 
 TOOLS = ("Read", "Grep", "Glob", "write_candidate", "revise_contract", "request_information")
-PROTOCOL_CODES = ("MULTIPLE_TOOL_CALLS", "UNKNOWN_TOOL", "INVALID_TOOL_INPUT")
+PROTOCOL_CODES = ("MULTIPLE_TOOL_CALLS", "UNKNOWN_TOOL", "INVALID_TOOL_INPUT", "MISSING_TOOL_CALL")
 CITATION_CODES = ("SOURCE_RANGE_NOT_DISPLAYED", "SOURCE_HASH_MISMATCH")
 ERROR_METADATA = "reproagent_error_code"
 

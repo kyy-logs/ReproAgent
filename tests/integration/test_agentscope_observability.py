@@ -85,6 +85,11 @@ def tool_reply(name=None, arguments=None, *, call_id="call-1", calls=None):
         for name, arguments, call_id in calls]}, "tool_calls")
 
 
+def terminal_reply():
+    """A real phase end for observation scenarios, without accepting prose as a result."""
+    return tool_reply("request_information", {"question": "Which trigger?"}, call_id="phase-end")
+
+
 def read_reply(path, call_id):
     return tool_reply("Read", {"file_path": str(path)}, call_id=call_id)
 
@@ -176,9 +181,9 @@ def by_kind(doc, kind):
 
 
 def test_native_hooks_observe_without_changing_response(tmp_path, projects, facts):
-    answers = [read_reply(None, "call-1"), text_reply()]
+    answers = [read_reply(None, "call-1"), terminal_reply()]
     untraced = environment(tmp_path / "plain", projects, facts, answers=[
-        read_reply(None, "call-1"), text_reply()])
+        read_reply(None, "call-1"), terminal_reply()])
     answers[0] = read_reply(untraced.module, "call-1")
 
     with traced(tmp_path, projects, facts, answers=answers) as env:
@@ -269,7 +274,7 @@ def test_permission_and_execution_are_joined_by_call(tmp_path, projects, facts):
     identical-looking tool spans; only the call key says which decision admitted which
     execution, which is the whole question when one of them was refused.
     """
-    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1"), text_reply()]) as env:
+    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1"), terminal_reply()]) as env:
         env.answers[0] = read_reply(env.module, "call-1")
         explore(env)
         doc = document(env)
@@ -278,9 +283,10 @@ def test_permission_and_execution_are_joined_by_call(tmp_path, projects, facts):
                if entry["name"] == "permission" and entry["attributes"].get("result_code") == "ALLOWED"]
     executions = named(doc, "tool.Read")
 
-    # One admitted call, one execution: the permission point never counts as a second.
-    assert len(allowed) == 1 and len(executions) == 1
-    assert doc["summary"]["tool_executions"] == 1
+    # One Read plus the explicit ending tool; permission never counts as an execution.
+    read_allowed = [point for point in allowed if point["attributes"]["tool"] == "Read"]
+    assert len(allowed) == 2 and len(read_allowed) == len(executions) == 1
+    assert doc["summary"]["tool_executions"] == 2
     assert allowed[0]["attributes"]["tool"] == "Read"
     # ...and the two are the same call, by identity.
     key = allowed[0]["attributes"]["tool_call_key"]
@@ -289,7 +295,7 @@ def test_permission_and_execution_are_joined_by_call(tmp_path, projects, facts):
 
 def test_the_trace_records_the_budget_and_the_registered_tool_set(tmp_path, projects, facts):
     """"Why did it end" needs the budget it ended on, and the surface it could have used."""
-    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1"), text_reply()]) as env:
+    with traced(tmp_path, projects, facts, answers=[read_reply(None, "call-1"), terminal_reply()]) as env:
         env.answers[0] = read_reply(env.module, "call-1")
         explore(env)
         doc = document(env)
@@ -305,7 +311,7 @@ def test_the_trace_records_the_budget_and_the_registered_tool_set(tmp_path, proj
 
 
 def test_repeated_reads_are_told_apart_by_their_call_key(tmp_path, projects, facts):
-    answers = [read_reply(None, f"call-{index}") for index in range(3)] + [text_reply()]
+    answers = [read_reply(None, f"call-{index}") for index in range(3)] + [terminal_reply()]
     with traced(tmp_path, projects, facts, answers=answers) as env:
         for index in range(3):
             env.answers[index] = read_reply(env.module, f"call-{index + 1}")
@@ -325,7 +331,7 @@ def test_reserved_denial_is_distinct_from_plain_denial(tmp_path, projects, facts
     # Six readers leave exactly the reserved three steps, so the seventh read is refused
     # for a different reason than an unregistered name -- and that difference has to
     # survive into the trace, or the reserve becomes invisible exactly when it matters.
-    answers = [read_reply(None, f"call-{index}") for index in range(7)] + [text_reply()]
+    answers = [read_reply(None, f"call-{index}") for index in range(7)] + [terminal_reply()]
     with traced(tmp_path, projects, facts, answers=answers, limits=BudgetLimits(agent_steps=9)) as env:
         for index in range(7):
             env.answers[index] = read_reply(env.module, f"call-{index + 1}")
@@ -396,7 +402,7 @@ def contents(doc, source):
 def test_the_real_wire_request_is_captured(tmp_path, projects, facts):
     """The input captured is the request that was sent, not the message before formatting."""
     with traced(tmp_path, projects, facts,
-                answers=[read_reply(None, "call-1"), text_reply()]) as env:
+                answers=[read_reply(None, "call-1"), terminal_reply()]) as env:
         env.answers[0] = read_reply(env.module, "call-1")
         explore(env)
         doc = document(env)
@@ -427,9 +433,10 @@ def test_a_rejected_response_is_captured_before_it_is_refused(tmp_path, projects
 
 
 def test_reasoning_is_kept_when_returned_and_marked_when_absent(tmp_path, projects, facts):
-    with_reasoning = chat({"role": "assistant", "content": "done", "reasoning_content": "I checked the parser"},
-                          "stop")
-    without_reasoning = text_reply()
+    message = terminal_reply().json()["choices"][0]["message"]
+    message.update(content="done", reasoning_content="I checked the parser")
+    with_reasoning = chat(message, "tool_calls")
+    without_reasoning = terminal_reply()
 
     with traced(tmp_path, projects, facts, answers=[with_reasoning]) as env:
         explore(env)
@@ -446,7 +453,7 @@ def test_reasoning_is_kept_when_returned_and_marked_when_absent(tmp_path, projec
 
 def test_the_tool_input_and_result_are_captured_and_correlated(tmp_path, projects, facts):
     with traced(tmp_path, projects, facts,
-                answers=[read_reply(None, "call-1"), text_reply()]) as env:
+                answers=[read_reply(None, "call-1"), terminal_reply()]) as env:
         env.answers[0] = read_reply(env.module, "call-1")
         explore(env)
         doc = document(env)
@@ -498,7 +505,7 @@ def stable_requests(requests, root=None):
 
 def test_capture_does_not_change_the_request_or_add_a_call(tmp_path, projects, facts):
     """The same fixed scenario, traced and not, must reach the provider identically."""
-    scripted = [read_reply(None, "call-1"), text_reply()]
+    scripted = [read_reply(None, "call-1"), terminal_reply()]
 
     plain = environment(tmp_path / "plain", projects, facts, answers=list(scripted))
     plain.answers[0] = read_reply(plain.module, "call-1")
@@ -579,7 +586,7 @@ def test_cancelled_tool_is_not_reported_success(tmp_path, projects, facts):
 
 
 def test_three_http_attempts_share_one_logical_call(tmp_path, projects, facts):
-    answers = [BUSY, BUSY, text_reply()]
+    answers = [BUSY, BUSY, terminal_reply()]
 
     with traced(tmp_path, projects, facts, answers=answers) as env:
         explore(env)
@@ -597,7 +604,25 @@ def test_three_http_attempts_share_one_logical_call(tmp_path, projects, facts):
 
 
 def test_disabled_tracing_leaves_the_middleware_chain_alone(tmp_path, projects, facts):
-    env = environment(tmp_path, projects, facts, answers=[text_reply()])
+    env = environment(tmp_path, projects, facts, answers=[terminal_reply()])
 
     assert [type(middleware).__name__ for middleware in env.runtime._agent._model_call_middlewares] \
         == ["ExplorationMiddleware"]
+
+
+def test_missing_tool_call_is_captured_and_correlated_with_correction(tmp_path, projects, facts):
+    with traced(tmp_path, projects, facts, answers=[text_reply("JSON is only text"), terminal_reply()]) as env:
+        assert explore(env).kind == "request_information"
+        doc = document(env)
+    rounds = named(doc, "sdk.model_call")
+    assert rounds[0]["attributes"]["result_code"] == "MISSING_TOOL_CALL"
+    assert rounds[0]["status"] == "error"
+    responses = contents(doc, "provider_response")
+    wires = contents(doc, "wire_request")
+    assert len(responses) == len(wires) == 2
+    assert json.loads(responses[0]["text"])["content"] == "JSON is only text"
+    assert [json.loads(record["text"]) for record in wires] == env.requests
+    second_input = json.dumps(json.loads(wires[1]["text"])["messages"])
+    assert "MISSING_TOOL_CALL" in second_input and "JSON is only text" not in second_input
+    assert doc["summary"]["tool_executions"] == 1
+    assert len(env.requests) == env.context.budget.steps_used == 2

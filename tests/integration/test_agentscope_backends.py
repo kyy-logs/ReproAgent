@@ -298,16 +298,17 @@ def test_a_phase_that_only_claims_success_publishes_and_runs_nothing(tmp_path, p
     transport = httpx.MockTransport(chain_transport(script, ctx, seen, request.output_dir, chain=CHAIN[:3]))
     controller = create_controller(request, model, transport=transport)
     result = asyncio.run(controller.run(request, ctx))
-    assert result.status.value == 'NEEDS_INFORMATION' and result.stop_reason == 'NO_CANDIDATE', result
+    assert result.status.value == 'FAILED' and result.stop_reason == 'MODEL_PROTOCOL_ERROR', result
     assert result.evidence_level.value == 'NONE'
-    assert ctx.budget.steps_used == 4                    # the three tools, and the prose turn
+    assert ctx.budget.steps_used == 6                    # three file tools, three refused prose turns
     # The claim was really served -- the fourth exploration turn is the one the transport
-    # answered with it -- and the SDK's own completed reply is what ended the phase.
-    assert len([payload for payload in seen if 'tools' in payload]) == 4
+    # answered with it -- but only a real tool call can end the phase successfully.
+    assert len([payload for payload in seen if 'tools' in payload]) == 6
     stored, errors = controller.store.read_events()
     assert not errors
     assert [(entry.payload['action'], entry.payload['result_code'], entry.payload['sdk_end_reason'])
-            for entry in stored if entry.kind == 'exploration.finished'] == [('no_candidate', 'no_candidate', 'completed')]
+            for entry in stored if entry.kind == 'exploration.finished'] == []
+    assert [e.payload['result_code'] for e in stored if e.kind == 'exploration.protocol_error'] == ['MISSING_TOOL_CALL'] * 3
     assert not (request.output_dir / 'runs').exists()
     assert not list((request.output_dir / 'candidates').glob('*'))
     assert not (request.output_dir / 'artifacts/reproduction').exists()
@@ -332,8 +333,7 @@ def test_external_original_issue_reaches_exploration_without_known_key(tmp_path,
         payload = json.loads(http_request.content)
         wire.append(payload)
         if payload.get('tools'):
-            return httpx.Response(200, json={'id':'mock', 'object':'chat.completion', 'model':'offline', 'created':1,
-                'choices':[{'index':0, 'finish_reason':'stop', 'message':{'role':'assistant','content':'Need information.'}}]})
+            return tool_response('request_information', {'question': 'Need information.'}, 'real-info')
         reply = await script.complete(ModelRequest(tuple(payload['messages']), 'contract'), ctx)
         return httpx.Response(200, json={'id':'mock', 'object':'chat.completion', 'model':'offline', 'created':1,
             'choices':[{'index':0,'finish_reason':'stop','message':{'role':'assistant','content':reply.text}}]})

@@ -40,7 +40,7 @@ from ...core.models import AgentContext
 from ...core.protocol import ModelProtocolError
 from ...core.serialization import canonical_hash, parse_json
 from ...observability import mark, tool_call_key
-from ...experience_triggers import ERROR_METADATA, trigger_from_fact
+from ...experience_triggers import ERROR_METADATA, PROTOCOL_CODES, trigger_from_fact
 from .progress import render_progress
 from .protocol_diagnostics import ToolInputDiagnostic, tool_input_diagnostic
 
@@ -49,7 +49,7 @@ PHASE = "EXPLORATION"
 
 #: The controlled codes a rejected response can carry.  A code names the shape of the
 #: refusal, never the text that caused it.
-PHASE_PROTOCOL_CODES = ("MULTIPLE_TOOL_CALLS", "UNKNOWN_TOOL", "INVALID_TOOL_INPUT")
+PHASE_PROTOCOL_CODES = PROTOCOL_CODES
 
 #: How many responses one phase may spend on protocol correction, budget permitting.
 PROTOCOL_ATTEMPTS = 3
@@ -516,9 +516,9 @@ class ExplorationMiddleware(MiddlewareBase):
         """Refuse a response whole, before the SDK acts on any part of it.
 
         Raises:
-            PhaseProtocolError: more than one tool call (so no call may run before the
-                others are judged), a name outside :data:`TOOL_NAMES`, or arguments that
-                are not one complete JSON object.
+            PhaseProtocolError: no actual tool call, more than one tool call (so no call
+                may run before the others are judged), a name outside :data:`TOOL_NAMES`,
+                or arguments that are not one complete JSON object.
         """
         if not isinstance(response, ChatResponse):   # pragma: no cover - the phase model never streams
             return
@@ -526,7 +526,7 @@ class ExplorationMiddleware(MiddlewareBase):
         if len(calls) > 1:
             raise PhaseProtocolError("MULTIPLE_TOOL_CALLS")
         if not calls:
-            return
+            raise PhaseProtocolError("MISSING_TOOL_CALL")
         if calls[0].name not in allowed_tools:
             raise PhaseProtocolError("UNKNOWN_TOOL")
         diagnostic = tool_input_diagnostic(calls[0].input)

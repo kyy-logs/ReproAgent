@@ -386,10 +386,12 @@ def test_multiple_or_unknown_tools_have_zero_side_effects(tmp_path, projects, fa
     # An unknown tool is refused before there is any execution path for it to take, and the
     # rejected arguments never enter the conversation.
     unknown = environment(tmp_path / "unknown", projects, facts)
-    unknown.answers.extend([tool_reply("Bash", {"command": "rm -rf /"}, call_id="call-1"), text_reply()])
-    assert explore(unknown).kind == "no_candidate"
-    assert len(unknown.requests) == 2
-    assert [payload["result_code"] for payload in events(unknown, "exploration.protocol_error")] == ["UNKNOWN_TOOL"]
+    unknown.answers.extend([tool_reply("Bash", {"command": "rm -rf /"}, call_id="call-1"), text_reply(), text_reply()])
+    with pytest.raises(PhaseProtocolError):
+        explore(unknown)
+    assert len(unknown.requests) == 3
+    assert [payload["result_code"] for payload in events(unknown, "exploration.protocol_error")] == [
+        "UNKNOWN_TOOL", "MISSING_TOOL_CALL", "MISSING_TOOL_CALL"]
     history = unknown.runtime.messages
     assert not [block for message in history for block in message.get_content_blocks("tool_call")]
     assert not [block for message in history for block in message.get_content_blocks("tool_result")]
@@ -414,15 +416,14 @@ def test_multiple_or_unknown_tools_have_zero_side_effects(tmp_path, projects, fa
     assert len(stubborn.requests) == PROTOCOL_ATTEMPTS == 3
     assert stubborn.gate.result is None and candidate_ids(stubborn) == []
 
-    # A plain answer ends the phase; it does not start a correction round.
+    # A plain answer has no phase result: it must correct through a real tool call.
     plain = environment(tmp_path / "plain", projects, facts)
-    plain.answers.extend([text_reply(), text_reply()])
-    result = explore(plain)
-    assert result.kind == "no_candidate" and result.reason and len(plain.requests) == 1
-    # The business kind and the SDK's own end reason are recorded separately, never merged.
-    finished = events(plain, "exploration.finished")
-    assert [(payload["action"], payload["result_code"], payload["sdk_end_reason"]) for payload in finished] == \
-        [("no_candidate", "no_candidate", "completed")]
+    plain.answers.extend([text_reply()] * 4)
+    with pytest.raises(PhaseProtocolError) as failure:
+        explore(plain)
+    assert failure.value.code == "MISSING_TOOL_CALL"
+    assert len(plain.requests) == 3
+    assert not events(plain, "exploration.finished")
 
 
 def test_sdk_grace_summary_and_compression_cannot_add_calls(tmp_path, projects, facts):
@@ -435,8 +436,8 @@ def test_sdk_grace_summary_and_compression_cannot_add_calls(tmp_path, projects, 
     assert failure.value.reason == "EXHAUSTED"
     assert len(stopped.requests) == 1
 
-    # Structured-output grace: the SDK may reason for max_iters + grace iterations, and every
-    # one of them is a model call the guard charges.
+    # Structured-output grace cannot accept a prose response without a phase tool either.
+    # The protocol boundary rejects it on the first charged call, before SDK grace loops.
     class Summary(BaseModel):
         answer: str = ""
 
@@ -446,22 +447,22 @@ def test_sdk_grace_summary_and_compression_cannot_add_calls(tmp_path, projects, 
     grace.model.bind(middleware.before_model_call)
     agent = Agent(name="grace", system_prompt=SYSTEM_PROMPT, model=grace.model, toolkit=grace.toolkit,
                   middlewares=[middleware], react_config=ReActConfig(max_iters=1, structured_output_grace_iters=5))
-    with pytest.raises(BudgetStopped) as failure:
+    with pytest.raises(PhaseProtocolError) as failure:
         asyncio.run(agent.reply(_user("answer in the required schema"), structured_schema=Summary))
-    assert failure.value.reason == "EXHAUSTED"
-    assert len(grace.requests) == 2
+    assert failure.value.code == "MISSING_TOOL_CALL"
+    assert len(grace.requests) == grace.context.budget.steps_used == 1
 
-    # The SDK's own end reasons are distinguishable in the record: an agent that runs its
-    # grace out and stops on its own reports exceed_max_iters, not completed.
+    # Even with ample budget, phase text cannot be mistaken for SDK completion.
     ended = environment(tmp_path / "ended", projects, facts, limits=BudgetLimits(agent_steps=10))
     ended.answers.extend(text_reply() for _ in range(9))
     middleware = ExplorationMiddleware(ended.context, ended.gate, ended.store)
     ended.model.bind(middleware.before_model_call)
     agent = Agent(name="ended", system_prompt=SYSTEM_PROMPT, model=ended.model, toolkit=ended.toolkit,
                   middlewares=[middleware], react_config=ReActConfig(max_iters=1, structured_output_grace_iters=5))
-    reply = asyncio.run(agent.reply(_user("answer in the required schema"), structured_schema=Summary))
-    assert sdk_end_reason(reply) == "exceed_max_iters" and sdk_end_reason(reply) != "completed"
-    assert ended.context.budget.steps_used == 6
+    with pytest.raises(PhaseProtocolError) as failure:
+        asyncio.run(agent.reply(_user("answer in the required schema"), structured_schema=Summary))
+    assert failure.value.code == "MISSING_TOOL_CALL"
+    assert len(ended.requests) == ended.context.budget.steps_used == 1
 
     # Automatic compression is stopped explicitly: the message the phase sent stays whole,
     # source references included, and no exploration request is made.
@@ -603,8 +604,8 @@ def test_phase_finish_resumes_history_without_user_cancel(tmp_path, projects, fa
 
     # A second task never sees the first task's history.
     other = environment(tmp_path / "other", projects, facts)
-    other.answers.append(text_reply())
-    assert explore(other).kind == "no_candidate"
+    other.answers.append(tool_reply("request_information", {"question": "which parser?"}))
+    assert explore(other).kind == "request_information"
     assert feedback not in json.dumps(other.requests[0]["messages"])
     assert not any(message.get("role") == "tool" for message in other.requests[0]["messages"])
 
@@ -756,7 +757,8 @@ def test_original_issue_cannot_be_dropped_or_read_with_wrong_hash(tmp_path, proj
 def test_original_issue_is_kept_when_contract_changes_between_phases(tmp_path, projects, facts):
     from reproagent.core.models import IssueDescription
     from reproagent.core.serialization import bytes_hash
-    env = environment(tmp_path, projects, facts, answers=[text_reply(), text_reply()])
+    env = environment(tmp_path, projects, facts, answers=[
+        tool_reply("request_information", {"question": "which parser?"}, call_id=f"call-{i}") for i in range(2)])
     issue = IssueDescription('return an error value, do not raise', bytes_hash(b'return an error value, do not raise'))
     first = replace(agent_context(env), issue=issue)
     second = replace(first, contract=replace(first.contract, version=2))

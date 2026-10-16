@@ -57,16 +57,18 @@ def test_plain_success_text_and_missing_information_do_not_publish_success(tmp_p
     what it is missing stops the task for that reason instead.
     """
     request, controller, context, _, _ = exploration(tmp_path / 'prose', projects, facts, [
-        text_reply('The bug is reproduced successfully: the test fails exactly as the issue reports.')])
+        text_reply('The bug is reproduced successfully: the test fails exactly as the issue reports.')] * 3)
     result = run_task(request, controller, context)
-    assert result.status == TaskState.NEEDS_INFORMATION and result.stop_reason == 'NO_CANDIDATE'
+    assert result.status == TaskState.FAILED and result.stop_reason == 'MODEL_PROTOCOL_ERROR'
     assert result.evidence_level == EvidenceLevel.NONE and not result.accepted_candidate_id
     assert not (request.output_dir / 'artifacts/reproduction').exists()
     assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
     # Nothing was executed and no candidate exists: a prose ending never becomes evidence.
     assert not (request.output_dir / 'runs').exists()
     assert not (request.output_dir / 'candidates').exists()
-    assert phase_results(controller.store.read_events()[0]) == [('no_candidate', 'NO_CANDIDATE')]
+    assert phase_results(controller.store.read_events()[0]) == []
+    errors = [e.payload for e in controller.store.read_events()[0] if e.kind == 'exploration.protocol_error']
+    assert [e['result_code'] for e in errors] == ['MISSING_TOOL_CALL'] * 3
 
     request, controller, context, _, _ = exploration(tmp_path / 'asking', projects, facts, [
         tool_reply('request_information', {'question': 'which parser should reproduce it?'})])
