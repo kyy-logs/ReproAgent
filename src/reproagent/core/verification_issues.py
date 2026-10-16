@@ -44,7 +44,7 @@ for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVA
     _ALLOWED[code] = frozenset({'framework_errors','collected','executed'})
 _ALLOWED['TEST_SETUP_FAILED'] = frozenset({'setup_failures','omitted_setup_failures','collected','executed'})
 _ALLOWED['DELIVERY_ALL_TESTS_SKIPPED'] = frozenset({'target_platform','skipped_tests'})
-_ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage'})
+_ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage','material_sizes','failure_sizes'})
 _ALLOWED['CANDIDATE_NOT_REPRODUCED'] = frozenset({'audit_notes','omitted_oracles','passing_outputs','omitted_outputs'})
 _ALLOWED['CANDIDATE_ORACLES_UNCONFIRMED'] = frozenset({'oracle_ids','omitted_oracles'})
 _ALLOWED['CANDIDATE_ASSERTIONS_UNCONFIRMED'] = frozenset({'assertion_ids','omitted_assertions'})
@@ -75,6 +75,16 @@ def validate_issue(code, check, origin, recovery, message, measurements):
             ok = (isinstance(value, (list,tuple)) and 1 <= len(value) <= 4
                   and all(isinstance(row, dict) and set(row) == {'nodeid','exception_type','message'}
                           and all(type(v) is str and len(v) <= 512 for v in row.values()) for row in value))
+        elif key == 'material_sizes':
+            ok = (isinstance(value,(list,tuple)) and len(value)<=4 and all(
+                isinstance(row,dict) and set(row)=={'field','bytes'} and type(row['field']) is str and row['field'] in
+                {'contract','expectation_sources','candidate','failure_evidence','observation','available_refs',
+                 'projection','assertion_sites','response_schema','execution_environment','oracle_checks','protocol_error'}
+                and type(row['bytes']) is int and row['bytes']>=0 for row in value))
+        elif key == 'failure_sizes':
+            ok = (isinstance(value,(list,tuple)) and len(value)<=4 and all(
+                isinstance(row,dict) and set(row)=={'test_index','longrepr_bytes','comparison_bytes','message_bytes'}
+                and all(type(v) is int and v>=0 for v in row.values()) for row in value))
         elif key == 'duration_seconds':
             ok = type(value) in (int,float) and math.isfinite(value) and value >= 0
         elif key in ('framework_errors','assertion_ids','skipped_tests','oracle_ids','audit_notes','passing_outputs','negative_checks'):

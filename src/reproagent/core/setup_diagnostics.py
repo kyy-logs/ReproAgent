@@ -5,7 +5,7 @@ from pathlib import Path
 from .review_context import RUN_ROOT, _root_spellings
 
 
-def setup_failure_details(run, *, task_root, secrets=()):
+def _failure_details(run, *, task_root, secrets=(), when="setup", prioritized_indices=()):
     roots = {str(Path(task_root) / 'runs' / run.run_id)}
     recorded = run.observation.framework_details.get('run_root')
     if isinstance(recorded, str) and recorded:
@@ -28,8 +28,8 @@ def setup_failure_details(run, *, task_root, secrets=()):
         return text[-512:] if tail else text[:512]
 
     rows = []
-    for item in run.observation.tests:
-        if not isinstance(item, dict) or item.get('when') != 'setup' or item.get('outcome') != 'failed':
+    for index, item in enumerate(run.observation.tests):
+        if not isinstance(item, dict) or item.get('when') != when or item.get('outcome') != 'failed':
             continue
         crash = item.get('crash')
         message = crash.get('message') if isinstance(crash, dict) else None
@@ -39,8 +39,27 @@ def setup_failure_details(run, *, task_root, secrets=()):
             message = clean(message)
         if not message:
             continue
-        rows.append({'nodeid':clean(item.get('nodeid')),
-                     'exception_type':clean(item.get('exception_type')), 'message':message})
+        row = {'nodeid':clean(item.get('nodeid')), 'exception_type':clean(item.get('exception_type')), 'message':message}
+        if when == 'call':
+            crash = crash if isinstance(crash,dict) else {}
+            line = crash.get('lineno')
+            row.update(test_index=index, path=clean(crash.get('path')),
+                       lineno=line if type(line) is int and line>0 else None)
+        rows.append(row)
     if not rows:
         return {}
+    if when == 'call':
+        priority = {index:rank for rank,index in enumerate(prioritized_indices)}
+        rows.sort(key=lambda row:priority.get(row['test_index'],len(priority)))
+        return {'failed_calls':rows[:4], 'omitted_failed_calls':max(0,len(rows)-4)}
     return {'setup_failures':rows[:4], 'omitted_setup_failures':max(0, len(rows)-4)}
+
+
+def setup_failure_details(run, *, task_root, secrets=()):
+    return _failure_details(run,task_root=task_root,secrets=secrets)
+
+
+def call_failure_details(run, *, task_root, secrets=(), prioritized_indices=()):
+    if len(prioritized_indices)>4 or any(type(i) is not int or i<0 for i in prioritized_indices):
+        raise ValueError('invalid prioritized test indices')
+    return _failure_details(run,task_root=task_root,secrets=secrets,when='call',prioritized_indices=prioritized_indices)

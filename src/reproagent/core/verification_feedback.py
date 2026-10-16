@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from .budget import BudgetStopped
 from .serialization import canonical_bytes
+from .execution_feedback import valid_execution_observation
 
 INSTRUCTIONS = {
     'revise_candidate': '根据失败检查修改候选，再提交执行；不要只更换假设措辞。',
@@ -16,7 +17,7 @@ INSTRUCTIONS = {
 ORIGINAL_PASS_GUIDANCE = ('候选在原版通过，尚未复现。检查断言是否被测试名称、说明或回显输入满足；'
                           '验证目标行为后再提交，不能只改假设。')
 _EXTRA_KEYS = frozenset({'consecutive_command_timeouts','configured_command_timeout_seconds',
-    'previous_candidate_id','previous_run_ids','prior_result_code','replay_unmet_checks'})
+    'previous_candidate_id','previous_run_ids','prior_result_code','replay_unmet_checks','execution_observation'})
 
 
 def render_verification_feedback(verdict, *, result_code, byte_limit, decision='continue',
@@ -29,6 +30,7 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
     for key,value in extras.items():
         if key == 'consecutive_command_timeouts': ok = type(value) is int and value >= 0
         elif key == 'configured_command_timeout_seconds': ok = type(value) in (int,float) and value >= 0
+        elif key == 'execution_observation': ok = valid_execution_observation(value)
         elif key == 'replay_unmet_checks':
             ok = isinstance(value,(tuple,list)) and 1 <= len(value) <= 6 and all(
                 type(v) is str and v in {'verdicts_reproduce_bound_candidate', 'independent_bound_integral_runs',
@@ -42,8 +44,14 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
     default_instruction = (ORIGINAL_PASS_GUIDANCE
         if verdict.issues and verdict.issues[0].code == 'CANDIDATE_NOT_REPRODUCED'
         else INSTRUCTIONS[recovery])
+    minimum_instruction = default_instruction
+    if verdict.issues and verdict.issues[0].code == 'REVIEW_CONTEXT_TOO_LARGE':
+        default_instruction += (' 查看 material_sizes 与 failure_sizes，通过 test_index 对照执行异常位置。'
+            '避免把整页 HTML 或完整大对象作为断言消息；采用有依据的小范围行为检查，完整产物保留在文件中。')
+    call_guidance = (' execution_observation 是程序观察，不是语义判决；message为最多512字符摘录。核对异常位置与目标触发路径；'
+        '若涉及 API 参数或 fixture 用法，先 Read 原版签名/示例再修正，不能把任意异常当作目标复现。')
     payload = {'result_code':result_code, 'decision':decision, 'verdict':data,
-        'instruction':instruction or default_instruction,
+        'instruction':(instruction or default_instruction) + (call_guidance if 'execution_observation' in extras else ''),
         'projection':{'omitted_issues':0,'omitted_refs':0,'omitted_details':0}, **extras}
     def redact(value):
         if isinstance(value,str):
@@ -89,6 +97,19 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
             counts['omitted_details']+=1
     text=output()
     if text is not None: return text
+    if 'execution_observation' in payload:
+        observed = payload['execution_observation']
+        while len(observed['failed_calls'])>1:
+            observed['failed_calls'].pop()
+            observed['omitted_failed_calls']+=1
+            counts['omitted_details']+=1
+            text=output()
+            if text is not None:return text
+        del payload['execution_observation']
+        counts['omitted_details']+=1
+        payload['instruction']=redact(instruction or default_instruction)
+        text=output()
+        if text is not None:return text
     for item in reversed(data['issues']):
         measurements=item['measurements']
         for key in list(measurements):
@@ -115,7 +136,7 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         if key in payload and payload[key] == equivalent:
             del payload[key]; counts['omitted_details'] += 1
     # Replace long custom prose with a complete controlled action, never cut the verb.
-    fallback_instruction = redact(default_instruction)
+    fallback_instruction = redact(minimum_instruction)
     if len(fallback_instruction.encode('utf-8')) < len(payload['instruction'].encode('utf-8')):
         payload['instruction'] = fallback_instruction; counts['omitted_details'] += 1
     for key in ('uncertainties', 'evidence_refs', 'execution_diagnostic'):

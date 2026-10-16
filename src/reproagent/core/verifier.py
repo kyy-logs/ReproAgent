@@ -217,7 +217,8 @@ class Verifier:
             record_check('review_context_fits', False)
             mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
             return verdict(None, _overflow_reason(error.needed_bytes, error.budget_bytes), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate', code='REVIEW_CONTEXT_TOO_LARGE',
-                measurements={'needed_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
+                measurements={'needed_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes,
+                    'material_sizes':error.material_sizes,'failure_sizes':error.failure_sizes})
         except (ValueError, OSError, UnicodeError):
             return verdict(None, 'evidence source is unavailable or altered', code='EVIDENCE_UNAVAILABLE')
         sources = tuple(EvidenceRef(s.path, s.content_hash, s.start_line, s.end_line) for s in contract.sources)

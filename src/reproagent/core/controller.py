@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, field, replace
 
 from ..observability import span, mark
 from .verification_feedback import render_verification_feedback
+from .execution_feedback import execution_observation
 from .budget import BudgetStopped
 from .agent import contract_request_payload, ContractRevisionTooLarge
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
@@ -201,6 +202,9 @@ class Controller:
 
     def candidate_feedback(self, verdict, context, *, result_code, decision='continue', instruction='', extras=None):
         """Project already-saved verification facts; advisory sinks cannot change acceptance."""
+        observation = execution_observation(verdict,self.store,secrets=self.secrets)
+        if observation is not None:
+            extras = {**(extras or {}),'execution_observation':observation}
         try:
             text = render_verification_feedback(verdict, result_code=result_code,
                 byte_limit=min(8192, context.budget.limits.tool_response_bytes), decision=decision,

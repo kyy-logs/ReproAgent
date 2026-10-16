@@ -37,9 +37,11 @@ class ReviewContextTooLarge(Exception):
     narrow the candidate without being told by how much.
     """
 
-    def __init__(self, needed_bytes: int, budget_bytes: int):
+    def __init__(self, needed_bytes: int, budget_bytes: int, *, material_sizes=(), failure_sizes=()):
         self.needed_bytes = needed_bytes
         self.budget_bytes = budget_bytes
+        self.material_sizes = list(material_sizes)
+        self.failure_sizes = list(failure_sizes)
         super().__init__(f'review evidence needs {needed_bytes} bytes; budget is {budget_bytes}')
 
 
@@ -227,6 +229,23 @@ def _reference_duplicate_details(payload, run, run_root):
     payload['projection']['referenced_fields'] = list(fields)
 
 
+def _overflow_sizes(payload, run):
+    """Content sizes only; retain complete evidence and never guess an API defect."""
+    material = sorted(({'field':key,'bytes':len(canonical_bytes(value))}
+                       for key,value in payload.items()),key=lambda row:row['bytes'],reverse=True)[:4]
+    failures = []
+    for index, phase in enumerate(run.observation.tests):
+        if not isinstance(phase,dict) or phase.get('outcome') != 'failed':
+            continue
+        crash = phase.get('crash') or {}
+        failures.append({'test_index':index,
+            'longrepr_bytes':len(str(phase.get('longrepr') or '').encode('utf-8')),
+            'message_bytes':len(str(crash.get('message') or '').encode('utf-8')),
+            'comparison_bytes':len(canonical_bytes(phase.get('assertion_comparison') or {}))})
+    failures.sort(key=lambda row:sum(v for k,v in row.items() if k!='test_index'),reverse=True)
+    return material, failures[:4]
+
+
 def build_review_context(contract: IssueContract, candidate: Candidate, run: ExecutionResult, *,
         read_ref: Callable[[EvidenceRef], str], read_file: Callable[[FileEntry], bytes],
         max_bytes: int, protocol_error: str = '', execution_environment: dict | None = None) -> ReviewContext:
@@ -280,5 +299,6 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         _reference_duplicate_details(payload, run, run_root)
         output_bytes = len(canonical_bytes(payload))
     if output_bytes > max_bytes:
-        raise ReviewContextTooLarge(output_bytes, max_bytes)
+        material_sizes, failure_sizes = _overflow_sizes(payload, run)
+        raise ReviewContextTooLarge(output_bytes, max_bytes, material_sizes=material_sizes, failure_sizes=failure_sizes)
     return ReviewContext(payload, tuple(available), input_bytes, output_bytes, SUMMARIZED_FIELDS)
