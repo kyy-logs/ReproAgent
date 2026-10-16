@@ -3,12 +3,12 @@ import asyncio
 import stat
 import tempfile
 import uuid
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 from .adapters.languages.python_pytest.adapter import PythonPytestAdapter
 from .adapters.runtimes.local import LocalBackend
-from .core.models import ExecutionResult, ProbeResults, ProjectView, ProtectionCheck
+from .core.models import EvidenceRef, ExecutionResult, ProbeResults, ProjectView, ProtectionCheck
 from .observability import span
 from .paths import directory_path, extended_path, is_within, relative_name, workspace_path
 from .store import atomic_write
@@ -177,7 +177,14 @@ class Runner:
         details['collected_nodeids'] = [normalize_node(node) for node in details.get('collected_nodeids', [])]
         details['completed_nodeids'] = [normalize_node(node) for node in details.get('completed_nodeids', [])]
         details['exitstatus_matches_process'] = details.get('exitstatus') == raw.exit_code
-        observation = replace(observation, tests=tuple(dict(t, nodeid=normalize_node(t['nodeid'])) for t in observation.tests), framework_details=details, failure_refs=tuple(self.relative_ref(r) for r in observation.failure_refs))
+        phases = []
+        for phase in observation.tests:
+            phase = dict(phase, nodeid=normalize_node(phase['nodeid']))
+            if 'captured_output_ref' in phase:
+                phase['captured_output_ref'] = asdict(self.relative_ref(EvidenceRef(**phase['captured_output_ref'])))
+            phases.append(phase)
+        observation = replace(observation, tests=tuple(phases), framework_details=details,
+                              failure_refs=tuple(self.relative_ref(r) for r in observation.failure_refs))
         raw = replace(raw, stdout_ref=self.relative_ref(raw.stdout_ref), stderr_ref=self.relative_ref(raw.stderr_ref))
         protection = self.workspace.check(run, snapshot, candidate, context) if raw.stop_reason == 'EXITED' and raw.cleanup_ok else ProtectionCheck(candidate_ok=False)
         result = ExecutionResult(run.run_id, spec.spec_id, snapshot.snapshot_id, environment.environment_id, candidate.candidate_id,

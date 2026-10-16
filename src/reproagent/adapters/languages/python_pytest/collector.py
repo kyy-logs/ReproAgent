@@ -42,7 +42,10 @@ def read_probe(path: Path, expected_run_id: str, max_bytes: int = 33554432) -> T
             errors.append(str(exc))
             break
     complete = bool(events and not errors and events[0]['event'] == 'session_start' and events[-1]['event'] == 'session_finish')
-    phases = tuple(e['payload'] for e in events if e['event'] == 'test_phase')
+    phases = tuple({**e['payload'], 'captured_output_ref': {
+        'path': str(path), 'content_hash': digest, 'start_line': e['seq'] + 1, 'end_line': e['seq'] + 1}}
+        if 'captured_output' in e['payload'] else e['payload']
+        for e in events if e['event'] == 'test_phase')
     lists = [e['payload']['nodeids'] for e in events if e['event'] == 'collected']
     nodes = lists[0] if lists else []
     completed = []

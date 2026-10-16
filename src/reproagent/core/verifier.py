@@ -149,8 +149,13 @@ class Verifier:
             notes = [(item['kind'] + ' ' + item['path'] + ':' + str(item['start_line'])
                 + ' ' + item['expression'] + ' ' + json.dumps(item['details'],ensure_ascii=False)) for item in checks[:8]]
             notes = [note if len(note) <= 512 else note[:480] + ' ...[audit excerpt]' for note in notes]
-            return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', code='CANDIDATE_NOT_REPRODUCED',
-                measurements={'audit_notes':notes,'omitted_oracles':max(0,len(checks)-8)})
+            from .passing_output import passing_outputs
+            outputs, output_refs, omitted = passing_outputs(run, self.resolve, self.store.root)
+            measurements = {'audit_notes':notes, 'omitted_oracles':max(0,len(checks)-8)}
+            if outputs or omitted:
+                measurements.update(passing_outputs=list(outputs), omitted_outputs=omitted)
+            return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', output_refs,
+                code='CANDIDATE_NOT_REPRODUCED', measurements=measurements)
         if not record_check('expectation_is_grounded', bool(contract.expected) and bool(contract.sources)):
             return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',), code='EXPECTATION_UNGROUNDED')
         # Every hard check above ran against the complete ExecutionResult. Only a

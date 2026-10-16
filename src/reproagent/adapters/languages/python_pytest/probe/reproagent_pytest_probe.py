@@ -181,9 +181,23 @@ def pytest_runtest_makereport(item, call):
     _comparison = None
 
 
+def captured_output(text, limit=4096):
+    """Bound observed output, distinguishing an excerpt from a full transcript."""
+    text = text if isinstance(text, str) else ''
+    data = text.encode('utf-8', errors='replace')
+    truncated = len(data) > limit
+    if truncated:
+        gap = '\n[...captured output omitted...]\n'
+        half = (limit - len(gap.encode())) // 2
+        text = data[:half].decode('utf-8', errors='ignore') + gap + data[-half:].decode('utf-8', errors='ignore')
+    return {'text': text, 'original_bytes': len(data),
+            'captured_bytes': len(text.encode('utf-8')), 'truncated': truncated,
+            'excerpt_mode': 'head_tail' if truncated else 'complete'}
+
+
 def pytest_runtest_logreport(report):
     location = getattr(report.longrepr, 'reprcrash', None)
-    emit('test_phase', {
+    payload = {
         'nodeid': report.nodeid, 'when': report.when, 'outcome': report.outcome,
         'wasxfail': getattr(report, 'wasxfail', ''),
         'longrepr': str(report.longrepr) if report.failed else '',
@@ -191,7 +205,12 @@ def pytest_runtest_logreport(report):
         'exception_frames': getattr(report, '_reproagent_exception_frames', []),
         'assertion_comparison': getattr(report, '_reproagent_assertion_comparison', None),
         'crash': {'path': str(location.path), 'lineno': location.lineno, 'message': location.message} if location else {},
-    })
+    }
+    if report.when == 'call' and report.outcome == 'passed':
+        payload['captured_output'] = {
+            'stdout': captured_output(getattr(report, 'capstdout', '')),
+            'stderr': captured_output(getattr(report, 'capstderr', ''))}
+    emit('test_phase', payload)
 
 
 def pytest_sessionfinish(session, exitstatus):

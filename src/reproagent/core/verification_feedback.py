@@ -1,4 +1,5 @@
 """A bounded model-facing projection of saved verification facts; no model calls."""
+import json
 from copy import deepcopy
 from dataclasses import asdict
 from .budget import BudgetStopped
@@ -49,7 +50,29 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
             for secret in secrets:
                 if secret: value=value.replace(secret,'[REDACTED]')
             return value
-        if isinstance(value,dict): return {key:redact(item) for key,item in value.items()}
+        if isinstance(value,dict):
+            result, dropped = {}, 0
+            for key,item in value.items():
+                if key == 'passing_outputs' and isinstance(item,(list,tuple)):
+                    rows = []
+                    for encoded in item:
+                        try:
+                            row = json.loads(encoded)
+                            if not isinstance(row,dict):
+                                raise ValueError('invalid passing observation')
+                        except (ValueError,TypeError):
+                            dropped += 1
+                            continue
+                        clean = redact(row)
+                        if clean != row:
+                            clean['redacted'] = True
+                        rows.append(json.dumps(clean,ensure_ascii=False))
+                    result[key] = rows
+                else:
+                    result[key] = redact(item)
+            if dropped:
+                result['omitted_outputs'] = result.get('omitted_outputs',0) + dropped
+            return result
         if isinstance(value,(tuple,list)): return [redact(item) for item in value]
         return value
     payload=redact(payload)
@@ -70,6 +93,8 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         measurements=item['measurements']
         for key in list(measurements):
             if isinstance(measurements[key],(str,list,dict)):
+                if key == 'passing_outputs':
+                    measurements['omitted_outputs'] = measurements.get('omitted_outputs', 0) + len(measurements[key])
                 del measurements[key]; counts['omitted_details']+=1
                 text=output()
                 if text is not None: return text
