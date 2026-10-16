@@ -56,6 +56,13 @@ def summarize_round(round_data):
     # differential success, and an outcome recorded before the field existed defaults to
     # "not_provided" rather than inheriting either claim.
     fix_status=lambda value:value.get('fix_validation_status','not_provided')
+    # A repaired-environment diagnostic is its own claim: the pinned harness never mounted
+    # that profile, so a confirmation here is a local differential under a recorded
+    # deviation and never an official success. It is counted on its own line and no
+    # official figure below reads it.
+    def repair(value):
+        record=value.get('environment_repair')
+        return record if isinstance(record,dict) else {}
     # A case the runner actually started either reached a terminal run status or recorded a
     # duration; one cancelled before it started, never prepared or never run is not counted
     # as an execution. Independent delivery is the fresh-copy replay of a delivered package:
@@ -73,6 +80,7 @@ def summarize_round(round_data):
         'fix_validation_failed':sum(fix_status(value)=='failed' for value in outcomes),
         'fix_validation_blocked':sum(fix_status(value)=='blocked' for value in outcomes),
         'fix_validation_not_provided':sum(fix_status(value)=='not_provided' for value in outcomes),
+        'environment_repair_confirmed':sum(repair(value).get('result')=='candidate_differential_confirmed' for value in outcomes),
         'independent_delivered':sum(value.get('export_replayed') is True for value in outcomes),
         'independent_delivery_failed':sum(value.get('export_replayed') is False for value in outcomes),
         'independent_delivery_pending':sum(value.get('status')=='DONE' and value.get('export_replayed') is None for value in outcomes),
@@ -118,6 +126,7 @@ def save_summary(root,round_data):
         '原版重复确认只说明报告的失败再次出现，修复版未通过不计作差分成功。',
         f"官方判分：{official_grade}；有来源的官方判分：{summary['official_graded']}；官方成功：{summary['official_successes']}；尚未核验：{summary['official_not_verified']}。",
         '官方报告缺失时保留待判分，本地测量数字仍照原样显示；本地 DONE 不能代替 SWT 判分。',
+        f"环境修复差分确认：{summary['environment_repair_confirmed']}；该流程挂载修复档案，不是固定 harness 的调用，故不计入官方判分，官方条目与官方比率均未改动。",
         f"人工已审查：{summary['human_reviewed']}；待审查：{summary['pending_human_review']}。",
         f"HTTP 尝试：{summary['http_attempts']}；记录 token：{summary['total_tokens']}；费用未知样本：{summary['costs_unknown_count']}。",
         '', '| 样本 | 准备 | 本地状态 | 证据 | 修复版 | 官方状态 |','| --- | --- | --- | --- | --- | --- |']
