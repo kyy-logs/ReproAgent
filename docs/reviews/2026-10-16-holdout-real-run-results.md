@@ -47,4 +47,40 @@ Agent 轮次：E:/ReproAgent/repro-results/holdout-reliability-20261016。
 
 ## 尚未完成的产品能力
 
-8365需要真实目标平台执行，单靠提示或静态skip扫描不够。8474缺具体触发材料且最后一轮仍在修契约。5221 generator地址是已定位机械缺陷，另行小补丁；RunResult和quoted stdout时间仍严格保留。独立语义审查也会波动，应继续用受控重复实验验证，不能靠降低门禁让结果好看。
+8365需要真实目标平台执行，单靠提示或静态skip扫描不够。8474缺具体触发材料且最后一轮仍在修契约。5221 generator地址已按下面的专项修复并验证；RunResult和quoted stdout时间仍严格保留。独立语义审查也会波动，应继续用受控重复实验验证，不能靠降低门禁让结果好看。
+
+
+## Generator专项：机械问题已修，新5221候选仍未过官方
+
+小补丁源指纹5f773aea3dadd3a5fadda6523aab7de0c38216dd32d2467837c1dd5baa9c367b。只观察AssertionError最内层frame前256个局部变量名中的pytest重写临时值，沿既有64 IDs/256visits预算；不保存locals内容、不调用repr/生成器迭代，不把探针自己创建的辅助列表身份放入白名单。collector拒绝畸形或超过64项的ID。正则仅扩展<locals>/<genexpr>；二元比较仍使用左右各自的operand IDs，时间、函数名、实际业务值和引号保护保持原样。
+
+目标回归先RED，再有35项generator/probe/expanded/private-temp关联测试通过；真实pytest重写断言的两次执行可确认。独立非Astra最终只读复核通过。最终全量1362 passed / 10 skipped，exit0，1027.70秒；日志E:/ReproAgent/.local/holdout-five-20261015/generator-full.log。
+
+### 新Agent轮次
+
+E:/ReproAgent/repro-results/generator-replay-5221-20261016：本地DONE / REPEATED_OBSERVATION / fix_validation_status=failed，结束剩7步；99.765秒、16次HTTP、204,441 tokens。官方exit0，119.584秒，resolved=false，added_f2p=0，唯一候选测试FAIL_TO_FAIL。预测hash076c7b35131e8eef1a1ab9aa09a051e3f357c09fd1453f58a1e1817b19ab9a6d。
+
+这次新候选使用fnmatch_lines，要求默认func_fixture同行出现function，再匹配session fixture；默认scope这一要求在修复版仍不成立。同一个测试中的前一断言先失败，后一场景无法独立贡献差分。仅凭这点不能断言是数据集错误：候选可能过度规定显示格式，也可能覆盖了参考修复未解决的需求面，应继续按原版依据界定边界。不能按参考修复改写候选让分数通过。
+
+本轮没有触发generator断言显示，因此不能把DONE进度变化归因generator修复。本地DONE仅证明重复观察，证据等级和修复版失败已如实保留，不等于差分验收通过。
+
+### 历史生成器候选的机械重放（0模型调用）
+
+E:/ReproAgent/repro-results/historical-generator-5221-replay-20261016/receipt.json。
+
+复用旧Agent生成且未改字节的candidate-bbd8ea3197574c88b5e4be3e030bf1ec，manifest hash9ad2da3f1868615e0c513bd36b99d7e64840781ca5fba62558ae9f94fdf2d559。用原冻结Python3.9 / pytest4.4环境，在新任务输出目录真实执行两次；两个original run均完整退出、保护/清理/探针检查正常。
+
+原始签名不一致；仅加探针实际观测ID的地址归一化后签名一致。旧task.json前后hash相同，旧候选和快照每文件hash重新校验。没有从旧显示地址反填ID，没有新语义审阅、没有复用旧语义批准当新验收；receipt明确agent_success=false、fresh_semantic_review=false、official_score_effect=none。它证明机械修复生效，不把历史失败追认成新的Agent成功。
+
+## 本次成本与分支
+
+三个真实Agent轮次合计173次DeepSeek HTTP尝试、3,650,760 tokens；这是调用量总和，不是跨版本成功率。金额因价格配置为空而未知。官方判分、两类历史诊断和离线测试不调用模型。独立代码审查属于Codex工作流，不在这个产品调用量内。
+
+所有实现位于codex/holdout-execution-reliability隔离分支；主工作区其他代理改动未覆盖。本次尚未合并或push。
+
+
+## 最终交付校验
+
+当前源指纹再次核对与generator-replay-5221-20261016一致。最终全量1362通过、10跳过、无失败；真实SDK→HTTP送达回归已纳入最终全量。generator、二元比较、业务值、private-temp、真实旧pytest环境重放均检查。实现经过独立非Astra审查，没有降低独立语义门禁，没有增加模型预算，没有修改受评候选或官方计分规则。
+
+本次实跑尚未证明8365跨平台能力与8474缺信息场景已解决，也未证明5221候选质量已稳定；不能称所有五例修好。可证实的新成功仅是8906独立单例；8627历史环境修复与5221历史机械重放均属于诊断证据。

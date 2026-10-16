@@ -2,7 +2,7 @@
 import re
 
 
-_ADDRESSED_REPR = re.compile(r'<([^<>\n]+?) (?:@ ([0-9]+)|at (0x[0-9a-fA-F]+))>')
+_ADDRESSED_REPR = re.compile(r'<((?:[^<>\n]|<locals>|<genexpr>)+?) (?:@ ([0-9]+)|at (0x[0-9a-fA-F]+))>')
 _QUOTED = re.compile(r'''"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*' ''', re.VERBOSE)
 
 

@@ -375,7 +375,7 @@ class Verifier:
                 if phase.get('outcome') == 'failed':
                     crash = dict(phase.get('crash', {}))
                     crash['path'] = normalized(str(crash.get('path', '')))
-                    crash['message'] = stable_pytester_transcript(stable_failure_message(normalized(str(crash.get('message', '')))), phase)
+                    crash['message'] = stable_pytester_transcript(stable_failure_message(normalized(str(crash.get('message', ''))), phase.get('assertion_context_object_ids', ())), phase)
                     comparison = phase.get('assertion_comparison')
                     if phase.get('exception_type') == 'builtins.AssertionError' and comparison:
                         # Compare the observed complete values, not pytest's

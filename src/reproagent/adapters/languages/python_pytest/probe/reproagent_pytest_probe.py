@@ -154,18 +154,32 @@ def pytest_assertrepr_compare(config, op, left, right):
     _comparison = (str(Path(frame.f_code.co_filename).resolve()), frame.f_lineno, operands)
 
 
+def assertion_context_ids(frame):
+    """Observe only bounded pytest rewrite temporaries; never serialize locals."""
+    local_values = frame.f_locals
+    values = []
+    for name in frame.f_code.co_varnames[:256]:
+        if name.startswith('@py_assert') and name in local_values:
+            values.append(local_values[name])
+            if len(values) == 64:
+                break
+    return [identity for identity in object_identities(values) if identity != id(values)]
+
+
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
     global _comparison
     outcome = yield
     report = outcome.get_result()
     exception_type, frames = '', []
+    innermost_frame = None
     if call.excinfo is not None:
         value = call.excinfo.value
         exception_type = type(value).__module__ + '.' + type(value).__qualname__
         traceback = value.__traceback__
         while traceback is not None:
             frame = traceback.tb_frame
+            innermost_frame = frame
             frames.append({'path': str(Path(frame.f_code.co_filename).resolve()),
                            'lineno': traceback.tb_lineno, 'module': frame.f_globals.get('__name__', '')})
             traceback = traceback.tb_next
@@ -178,6 +192,10 @@ def pytest_runtest_makereport(item, call):
         path, lineno, operands = _comparison
         if frames[-1]['path'] == path and frames[-1]['lineno'] == lineno:
             report._reproagent_assertion_comparison = operands
+    report._reproagent_assertion_context_object_ids = []
+    if (exception_type == 'builtins.AssertionError' and innermost_frame is not None
+            and report._reproagent_assertion_comparison is None):
+        report._reproagent_assertion_context_object_ids = assertion_context_ids(innermost_frame)
     _comparison = None
 
 
@@ -204,6 +222,7 @@ def pytest_runtest_logreport(report):
         'exception_type': getattr(report, '_reproagent_exception_type', ''),
         'exception_frames': getattr(report, '_reproagent_exception_frames', []),
         'assertion_comparison': getattr(report, '_reproagent_assertion_comparison', None),
+        'assertion_context_object_ids': getattr(report, '_reproagent_assertion_context_object_ids', []),
         'crash': {'path': str(location.path), 'lineno': location.lineno, 'message': location.message} if location else {},
     }
     if report.when == 'call' and report.outcome == 'passed':

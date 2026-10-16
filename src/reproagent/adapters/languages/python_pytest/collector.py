@@ -33,6 +33,11 @@ def read_probe(path: Path, expected_run_id: str, max_bytes: int = 33554432) -> T
                 raise ValueError('invalid collected node list')
             if event == 'test_phase' and (type(payload.get('nodeid')) is not str or payload.get('when') not in ('setup','call','teardown') or payload.get('outcome') not in ('passed','failed','skipped')):
                 raise ValueError('invalid test phase')
+            if event == 'test_phase' and 'assertion_context_object_ids' in payload:
+                identities = payload['assertion_context_object_ids']
+                if (not isinstance(identities,list) or len(identities) > 64
+                        or any(type(identity) is not int or identity <= 0 for identity in identities)):
+                    raise ValueError('invalid assertion context identities')
             if event == 'session_finish' and type(payload.get('exitstatus')) is not int:
                 raise ValueError('invalid session exit status')
             events.append(item)
