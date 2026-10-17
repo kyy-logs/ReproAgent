@@ -223,6 +223,8 @@ class Controller:
             'contract_version':verdict.contract_version, 'run_ids':list(verdict.run_ids),
             'output_bytes':len(text.encode('utf-8')), 'projection':projection,
             'feedback_state':'ready' if text else 'capacity_unavailable'}
+        if extras and 'replay_observation' in extras:
+            payload['replay_observation'] = extras['replay_observation']
         if extras and 'replay_unmet_checks' in extras:
             payload['replay_unmet_checks'] = list(extras['replay_unmet_checks'])
         refs = tuple('verdicts/verdict-' + run_id + '.json' for run_id in verdict.run_ids
@@ -434,9 +436,9 @@ class Controller:
             self.store.save_record('verdicts', 'verdict-' + second.run_id, second_verdict)
             if not self.verifier.confirm(contract, candidate, run, second, (verdict, second_verdict)):
                 step.rejected('REPLAY_UNCONFIRMED')
+                replay = self.verifier.replay_diagnostics(contract, candidate, run, second, (verdict, second_verdict))
                 return (result, self.candidate_feedback(second_verdict, context, result_code='REPLAY_UNCONFIRMED',
-                        instruction='Independent replay did not confirm the same failure; revise or request information.',
-                        extras={'previous_run_ids':[run.run_id],
+                        extras={'previous_run_ids':[run.run_id], 'replay_observation':replay,
                                 'replay_unmet_checks':list(self.verifier.confirmation_failures(
                                     contract, candidate, run, second, (verdict, second_verdict))
                                     or ('confirmation_unavailable',))}), 'REPLAY_UNCONFIRMED', False)

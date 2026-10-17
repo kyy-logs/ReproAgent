@@ -5,6 +5,7 @@ from dataclasses import asdict
 from .budget import BudgetStopped
 from .serialization import canonical_bytes
 from .execution_feedback import valid_execution_observation
+from .replay_feedback import valid_replay_observation
 
 INSTRUCTIONS = {
     'revise_candidate': '根据失败检查修改候选，再提交执行；不要只更换假设措辞。',
@@ -18,7 +19,7 @@ ORIGINAL_PASS_GUIDANCE = ('原版通过，可能是正常对照。复核失败�
                           '契约有误凭原版证据 revise_contract。排除名称、说明、回显输入污染；'
                           '勿靠无关断言造失败或只改假设。')
 _EXTRA_KEYS = frozenset({'consecutive_command_timeouts','configured_command_timeout_seconds',
-    'previous_candidate_id','previous_run_ids','prior_result_code','replay_unmet_checks','execution_observation'})
+    'previous_candidate_id','previous_run_ids','prior_result_code','replay_unmet_checks','execution_observation','replay_observation'})
 
 
 def render_verification_feedback(verdict, *, result_code, byte_limit, decision='continue',
@@ -31,6 +32,7 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
     for key,value in extras.items():
         if key == 'consecutive_command_timeouts': ok = type(value) is int and value >= 0
         elif key == 'configured_command_timeout_seconds': ok = type(value) in (int,float) and value >= 0
+        elif key == 'replay_observation': ok = valid_replay_observation(value)
         elif key == 'execution_observation': ok = valid_execution_observation(value)
         elif key == 'replay_unmet_checks':
             ok = isinstance(value,(tuple,list)) and 1 <= len(value) <= 6 and all(
@@ -45,6 +47,24 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
     default_instruction = (ORIGINAL_PASS_GUIDANCE
         if verdict.issues and verdict.issues[0].code == 'CANDIDATE_NOT_REPRODUCED'
         else INSTRUCTIONS[recovery])
+    replay = extras.get('replay_observation')
+    if replay is not None:
+        default_instruction = ({
+            'semantic_disagreement':'两次执行的绑定、完整性、测试清单与失败签名一致，但语义审查意见未确认。核对两份判定和原版依据，修订候选或契约；不得视为成功或投票取肯定结果。',
+            'execution_unconfirmed':'重复执行证据未确认；按 execution_unmet_checks 检查绑定、完整性、测试清单或失败签名，修订或报告障碍。',
+            'verdict_unconfirmed':'执行一致但审查绑定或结论未确认；核对两份判定与对应运行，不得视为成功。',
+            'confirmed':'重复执行及两份审查已确认；完成状态仍由控制器的后续门禁决定。'}[replay['kind']])
+    # A passing run that the probe watched can say why it passed.  Only a complete capture
+    # may conclude anything; unknown adds no claim, because an unmonitored run and a run
+    # that reached nothing are indistinguishable.
+    observed = next((item.measurements.get('reproduction_observation') for item in verdict.issues
+                     if item.measurements.get('reproduction_observation')), None)
+    if observed and observed.get('conclusion') == 'no_diagnostic_emitted':
+        default_instruction += (' 输入已被读取、构建确实执行，但本次运行没有发出任何诊断或警告；'
+            '检查触发报告所述警告的前置条件（文档结构、配置开关、引用形式），不要只更换假设。')
+    elif observed and observed.get('conclusion') == 'diagnostics_emitted':
+        default_instruction += (' 本次运行发出了 %d 条诊断；对照报告的警告文本确认是否命中同一条分支。'
+            % observed['emitted'])
     minimum_instruction = default_instruction
     if any(item.measurements.get('setup_failures') for item in verdict.issues):
         default_instruction += (' setup_failures 是实际准备失败；先 Read 原版 fixture/API 定义与已有用法，'
@@ -114,6 +134,10 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         payload['instruction']=redact(instruction or default_instruction)
         text=output()
         if text is not None:return text
+    if 'replay_observation' in payload:
+        del payload['replay_observation']; counts['omitted_details'] += 1
+        text = output()
+        if text is not None: return text
     for item in reversed(data['issues']):
         measurements=item['measurements']
         for key in list(measurements):

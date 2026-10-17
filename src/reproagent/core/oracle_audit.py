@@ -36,6 +36,7 @@ def _kind(node):
 class _Audit:
     def __init__(self, entry, tree):
         self.entry, self.tree = entry, tree
+        self.literal_cache, self.literal_steps, self.literal_incomplete = {}, 0, False
         self.parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
         self.functions = {}
         for node in ast.walk(tree):
@@ -111,6 +112,32 @@ class _Audit:
             return [text for value in self.binding(node.id, node) for text in self.strings(value, seen)]
         return [text for child in ast.iter_child_nodes(node) for text in self.strings(child, seen)]
 
+    def literal_strings(self, node, seen=frozenset()):
+        """Bound expansion before allocation; never treat call inputs as outputs."""
+        if node in self.literal_cache:
+            return self.literal_cache[node]
+        if node in seen or len(seen) >= 32 or self.literal_steps >= 512:
+            self.literal_incomplete = True
+            return []
+        self.literal_steps += 1
+        seen = seen | {node}
+        values = []
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            values = [node.value[:_LIMIT + 1]]
+        elif isinstance(node, ast.Name):
+            for value in self.binding(node.id, node):
+                values.extend(self.literal_strings(value, seen))
+                if len(values) > 16:
+                    self.literal_incomplete = True
+                    values = values[:16]
+                    break
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = self.literal_strings(node.left, seen), self.literal_strings(node.right, seen)
+            if len(left) == len(right) == 1:
+                values = [(left[0] + right[0])[:_LIMIT + 1]]
+        self.literal_cache[node] = values
+        return values
+
     def questions(self, site, node):
         rows, keys = [], set()
 
@@ -175,9 +202,24 @@ class _Audit:
                     expected.extend(self.strings(part.args[0]))
                     unknown(part, 'regular expression semantics require complete manual review')
                 elif isinstance(part, ast.Compare):
-                    for operand in [part.left, *part.comparators]:
+                    operands = [part.left, *part.comparators]
+                    operators = {ast.Eq:'==', ast.NotEq:'!=', ast.In:'in', ast.NotIn:'not in'}
+                    for index, operation in enumerate(part.ops):
+                        operator = operators.get(type(operation))
+                        if operator is None:
+                            continue
+                        for side, operand in zip(('left', 'right'), operands[index:index + 2]):
+                            for text in self.literal_strings(operand):
+                                add('literal_comparison', part, {'text':text, 'operator':operator,
+                                    'literal_side':side, 'question':
+                                    'Does the source require this exact wording, escaping and representation '
+                                    'in this scenario, rather than an incidental format from another example?'})
+                    for operand in operands:
                         if isinstance(operand, (ast.Constant, ast.Name, ast.BinOp)):
                             expected.extend(self.strings(operand))
+
+        if self.literal_incomplete:
+            unknown(node, 'literal resolution reached a node, depth or value-count limit')
 
         visited, helper_stack = set(), set()
 

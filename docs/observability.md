@@ -17,6 +17,10 @@ OpenTelemetry 管理统一 trace/span ID 和父子上下文。一个任务的主
 页面同时显示 OTel 原始状态与程序展示状态，例如预算正常终止或成功发布后的收尾可能被 SDK 记为 ERROR，
 这与程序最终接受/拒绝结果分开。程序检查以 point 展示，point的展示ID不是OTel span ID。
 
+阶段发布候选、请求修订或请求信息后，程序会在下一次模型调用前终止 SDK 推理，正常终止标为 `PHASE_ENDED`。原生 OTel 状态与程序展示状态分别保留；该终止不应被读成 HTTP 失败或付费模型重试。真正的协议、预算和取消结果仍单独记录。
+
+`verification.feedback.replay_observation` 包含两次运行 ID、执行一致性、未通过的程序检查及两份语义分类。`semantic_disagreement` 表示重复执行一致但语义判定未确认；它不使任务成功，也不能通过反复审查取肯定票。可结合保存的 verdict 和下一轮实际模型输入定位分歧。
+
 每次on_reasoning形成一个推理周期；查看实际模型输入/返回解释、工具选择和中间结果。
 缺失推理内容不补写，也不声明看到了模型内部完整思维。
 
@@ -187,3 +191,6 @@ CLI解析/凭据缺失等任务开始前的错误仍使用已有CLI错误输出�
 不发送到远程平台/OTLP、不做实时监控、跨任务仪表盘、告警或自动优化；不自动回放模型请求或工具；
 不新增"评分 Agent"，也不引入任意百分制——接受标准仍是既有的硬检查 + 语义核验 + 重复/可选差分。
 用户审查的入口仍是既有 `report.md` 与交付包，trace 是**补充**而非第二套判定。
+
+
+逐断言验收材料包含 assertion_sites[*].execution_observation。failure_location_overlap 仅表示失败位置与唯一断言行范围相交，不证明断言已进入或比较已执行；not_established 不能解释为通过、跳过或必定未执行。普通字符串比较的 literal_comparison 问题独立进入 oracle_reviews，核查当前场景是否确实要求该精确表示；语义支持仍由审查模型判断。

@@ -97,16 +97,37 @@ def test_an_original_run_that_passes_returns_to_the_phase_and_is_never_delivered
     assert action_endings(controller.store.read_events()[0]) == [('action.completed', 'run_candidate', 'OK')]
 
 
-def test_an_environment_block_stops_with_its_own_diagnostic(tmp_path, projects, facts):
+def test_a_program_observed_environment_block_stops_with_its_own_diagnostic(tmp_path, projects, facts):
+    """A block the program observed ends the task, and the phase is not asked again."""
+    content = ('from example.parser import parse\n'
+               'def test_missing_dependency():\n'
+               '    assert parse([1]) == [1]\n'
+               '    import dependency_does_not_exist_123\n')
     request, controller, context, requests, _ = exploration(tmp_path / 'blocked', projects, facts, [
-        tool_reply('write_candidate', write_payload(content=BUGGY), call_id='call-1')],
-        classification='ENVIRONMENT_BLOCKED')
+        tool_reply('write_candidate', write_payload(content=content), call_id='call-1')])
     result = run_task(request, controller, context)
     assert result.status == TaskState.BLOCKED and result.stop_reason == 'ENVIRONMENT_BLOCKED'
     assert (request.output_dir / 'artifacts/diagnostic/report.json').exists()
     assert not (request.output_dir / 'artifacts/reproduction').exists()
     # The blocked environment ends the task: the phase is not asked for another candidate.
     assert len(requests) == 1
+
+
+def test_a_claimed_environment_block_without_program_evidence_does_not_stop_the_task(tmp_path, projects, facts):
+    """A block is a program observation; a reviewer's claim alone keeps exploring.
+
+    The reviewer used to be able to end the task by filing a candidate's own scaffolding
+    crash as an environment limit.  The claim is still reported as feedback, and the
+    phase gets the next turn instead of the task stopping on the claim.
+    """
+    request, controller, context, requests, _ = exploration(tmp_path / 'claimed', projects, facts, [
+        tool_reply('write_candidate', write_payload(content=BUGGY), call_id='call-1'),
+        tool_reply('request_information', {'question': '需要确认环境'}, call_id='ask')],
+        classification='ENVIRONMENT_BLOCKED')
+    result = run_task(request, controller, context)
+    assert result.status == TaskState.NEEDS_INFORMATION and result.stop_reason == 'MISSING_INFORMATION'
+    assert not (request.output_dir / 'artifacts/reproduction').exists()
+    assert len(requests) == 2
 
 
 def test_a_published_candidate_is_executed_verified_and_repeated_without_a_decision(tmp_path, projects, facts):

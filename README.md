@@ -81,6 +81,10 @@ The CLI enables a shared experience library by default. The agent can browse a c
 
 Every run writes an AgentScope/OpenTelemetry-backed local activity trace: what the model was sent and returned, what each tool was given and gave back, the program's checks behind an acceptance, and where the time, HTTP attempts and tokens went. It is **on by default** — `--no-trace` turns it off for one run — and never leaves the machine. See [observability](docs/observability.md).
 
+SWT 评测可先运行 `./scripts/run-sdk-round.ps1 -CheckOnly`，核对实际 Python 导入路径、提交和源码指纹；这个预检不读取凭据、不调用模型。真实运行沿用 manifest/bindings/output 参数，数据与凭据在另一目录时指定 `-DataRoot`。旧 `.local` 入口要求显式 `-ProjectRoot`，避免静默评测旧检出。
+
+重复执行的 `replay_observation` 分开记录执行证据是否一致和语义审查是否确认。`accepted_candidate_id` 可能只代表曾获单次认可的候选，`export_state=published` 也可能是诊断包已输出；成功仍看 `status=DONE` 及对应证据等级，评测正式 patch 仍只从 DONE 导出。
+
 ## Known limitations
 
 - 文件副本隔离不是安全沙箱。目标代码、pytest 插件与生成的测试拥有当前用户的系统与网络权限；只在可信项目和可丢弃环境使用。

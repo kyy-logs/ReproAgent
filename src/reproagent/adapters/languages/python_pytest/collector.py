@@ -38,6 +38,36 @@ def read_probe(path: Path, expected_run_id: str, max_bytes: int = 33554432) -> T
                 if (not isinstance(identities,list) or len(identities) > 64
                         or any(type(identity) is not int or identity <= 0 for identity in identities)):
                     raise ValueError('invalid assertion context identities')
+            if event == 'test_phase' and 'sphinx_inputs' in payload:
+                # The observation decides whether a candidate's document was ever read, so
+                # its shape is checked here like every other record the probe emits.
+                value = payload['sphinx_inputs']
+                if (not isinstance(value, dict) or set(value) != {'testroot','source_suffix','created','unread'}
+                        or type(value['testroot']) is not str
+                        or any(not isinstance(value[key], list) or any(type(name) is not str for name in value[key])
+                               for key in ('source_suffix','created','unread'))):
+                    raise ValueError('invalid sphinx input observation')
+            if event == 'test_phase' and 'target_functions' in payload:
+                value = payload['target_functions']
+                # The probe bounds this at 256 (a whole package is a target, and each
+                # module gets its own share); the record has to accept what it can emit.
+                if (not isinstance(value, dict) or len(value) > 256
+                        or any(type(key) is not str or type(count) is not int or count < 0
+                               for key, count in value.items())):
+                    raise ValueError('invalid target function observation')
+            if event == 'test_phase' and 'diagnostics' in payload:
+                value = payload['diagnostics']
+                if (not isinstance(value, list) or len(value) > 64
+                        or any(not isinstance(row, dict) or set(row) != {'message','path','lineno','level'}
+                               or any(type(row[key]) is not str for key in ('message','path','level'))
+                               or type(row['lineno']) is not int or row['lineno'] < 0 for row in value)):
+                    raise ValueError('invalid diagnostic observation')
+            if event == 'test_phase' and 'monitoring' in payload:
+                value = payload['monitoring']
+                allowed = {'captured', 'not_configured', 'incomplete'}
+                if (not isinstance(value, dict) or set(value) != {'inputs','functions','diagnostics'}
+                        or any(not isinstance(value[key], str) or value[key] not in allowed for key in value)):
+                    raise ValueError('invalid monitoring status')
             if event == 'session_finish' and type(payload.get('exitstatus')) is not int:
                 raise ValueError('invalid session exit status')
             events.append(item)

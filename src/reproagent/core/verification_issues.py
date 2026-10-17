@@ -46,7 +46,8 @@ _ALLOWED['FRAMEWORK_CHECK_FAILED'] |= frozenset({'setup_failures','omitted_setup
 _ALLOWED['TEST_SETUP_FAILED'] = frozenset({'setup_failures','omitted_setup_failures','collected','executed'})
 _ALLOWED['DELIVERY_ALL_TESTS_SKIPPED'] = frozenset({'target_platform','skipped_tests'})
 _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage','material_sizes','failure_sizes'})
-_ALLOWED['CANDIDATE_NOT_REPRODUCED'] = frozenset({'audit_notes','omitted_oracles','passing_outputs','omitted_outputs'})
+_ALLOWED['CANDIDATE_NOT_REPRODUCED'] = frozenset({'audit_notes','omitted_oracles','passing_outputs','omitted_outputs',
+    'reproduction_observation'})
 _ALLOWED['CANDIDATE_ORACLES_UNCONFIRMED'] = frozenset({'oracle_ids','omitted_oracles'})
 _ALLOWED['CANDIDATE_ASSERTIONS_UNCONFIRMED'] = frozenset({'assertion_ids','omitted_assertions'})
 _ALLOWED['MODEL_PROTOCOL_ERROR'] = frozenset({'attempts','needed_bytes','budget_bytes','stage','protocol_error',
@@ -72,6 +73,14 @@ def validate_issue(code, check, origin, recovery, message, measurements):
             ok = type(value) is bool
         elif key in ('needed_bytes','budget_bytes','attempts','omitted_assertions','omitted_oracles','omitted_outputs','omitted_negative_checks','omitted_setup_failures'):
             ok = type(value) is int and value >= 0
+        elif key == 'reproduction_observation':
+            # Closed vocabulary: a reader may act on a conclusion only in the three forms
+            # the program can actually establish, and "unknown" is one of them.
+            ok = (isinstance(value, dict) and set(value) == {'inputs','diagnostics','emitted','conclusion'}
+                  and value['inputs'] in ('captured','incomplete','not_configured')
+                  and value['diagnostics'] in ('captured','incomplete','not_configured')
+                  and type(value['emitted']) is int and value['emitted'] >= 0
+                  and value['conclusion'] in ('no_diagnostic_emitted','diagnostics_emitted','unknown'))
         elif key == 'setup_failures':
             ok = (isinstance(value, (list,tuple)) and 1 <= len(value) <= 4
                   and all(isinstance(row, dict) and set(row) == {'nodeid','exception_type','message'}
@@ -80,7 +89,7 @@ def validate_issue(code, check, origin, recovery, message, measurements):
             ok = (isinstance(value,(list,tuple)) and len(value)<=4 and all(
                 isinstance(row,dict) and set(row)=={'field','bytes'} and type(row['field']) is str and row['field'] in
                 {'contract','expectation_sources','candidate','failure_evidence','observation','available_refs',
-                 'projection','assertion_sites','response_schema','execution_environment','oracle_checks','protocol_error'}
+                 'projection','assertion_sites','response_schema','execution_environment','oracle_checks','protocol_error','original_issue'}
                 and type(row['bytes']) is int and row['bytes']>=0 for row in value))
         elif key == 'failure_sizes':
             ok = (isinstance(value,(list,tuple)) and len(value)<=4 and all(

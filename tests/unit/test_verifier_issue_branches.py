@@ -77,13 +77,44 @@ def test_semantic_false_is_an_unconfirmed_provider_claim(tmp_path, projects, fac
     assert len(model.calls)==1 and verdict.issues[0].evidence_refs
 
 
-@pytest.mark.parametrize('classification', ['NOT_REPRODUCED','INVALID_CANDIDATE',None,'ENVIRONMENT_BLOCKED'])
+@pytest.mark.parametrize('classification', ['NOT_REPRODUCED','INVALID_CANDIDATE',None])
 def test_valid_non_success_classification_gets_general_semantic_gap(tmp_path,projects,facts,classification):
     model=Claims({'classification':classification})
     contract,candidate,run,verifier,*_=prepare(tmp_path,projects,facts,model=model)
     verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context()))
     assert verdict.issues and verdict.issues[0].origin=='provider_claim'
-    assert verdict.issues[0].code==('ENVIRONMENT_BLOCKED' if classification=='ENVIRONMENT_BLOCKED' else 'SEMANTIC_REPRODUCTION_UNCONFIRMED')
+    assert verdict.issues[0].code=='SEMANTIC_REPRODUCTION_UNCONFIRMED'
+
+
+def test_a_claimed_environment_block_without_program_evidence_is_not_terminal(tmp_path,projects,facts):
+    """A block is a program observation, not a reviewer's conclusion.
+
+    Acting on an unsupported claim ends the task and files a candidate defect as an
+    environment limit.  That happened when a candidate handed a pathlib.Path to a helper
+    expecting py.path, crashed in its own scaffolding, and was reported as a block.  The
+    claim stays visible as the reason and as an uncertainty; the task keeps exploring.
+    """
+    model=Claims({'classification':'ENVIRONMENT_BLOCKED'})
+    contract,candidate,run,verifier,*_=prepare(tmp_path,projects,facts,model=model)
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(run,),facts.context()))
+    assert verdict.classification is None
+    assert verdict.issues and verdict.issues[0].origin=='provider_claim'
+    assert verdict.issues[0].code=='SEMANTIC_REPRODUCTION_UNCONFIRMED'
+    assert 'environment block claimed but not observed by the program' in verdict.uncertainties
+
+
+def test_a_claimed_environment_block_the_program_observed_is_accepted(tmp_path,projects,facts):
+    """The claim may still end the task when a blocked framework check backs it.
+
+    The issue has to be about the import failure itself; otherwise the program returns
+    its own block before the reviewer is ever asked.
+    """
+    model=Claims({'classification':'ENVIRONMENT_BLOCKED'})
+    contract,candidate,run,verifier,*_=prepare(tmp_path,projects,facts,model=model)
+    contract=replace(contract, reported_actual='import fails: ModuleNotFoundError')
+    observation=replace(run.observation, tests=({'when':'call','outcome':'failed','longrepr':'ModuleNotFoundError'},))
+    verdict=asyncio.run(verifier.evaluate(contract,candidate,(replace(run,observation=observation),),facts.context()))
+    assert verdict.classification is CandidateClass.ENVIRONMENT_BLOCKED
 
 
 def test_invalid_answer_with_false_is_protocol_failure_without_semantic_promotion(tmp_path,projects,facts):

@@ -412,8 +412,10 @@ def test_an_unconfirmed_replay_returns_to_the_phase_without_a_package(tmp_path, 
     # the task keeps the single observation it verified and asks the phase again.
     request, controller, ctx = controller_for(tmp_path, projects, facts, ScriptedModel(),
                                               plan=[publish(), ask('the replay did not confirm it')])
-    def unconfirmed(*args, **kwargs): return False
-    controller.verifier.confirm = unconfirmed
+    # Inject a concrete program comparison failure, so confirmation and the
+    # diagnostic feedback describe the same observation.
+    def unconfirmed(*args, **kwargs): return ('failure_signature_matches',)
+    controller.verifier.execution_confirmation_failures = unconfirmed
     result = asyncio.run(controller.run(request, ctx))
     assert result.status == TaskState.NEEDS_INFORMATION and result.evidence_level == EvidenceLevel.SINGLE_OBSERVATION
     assert len(list((request.output_dir / 'runs').glob('*/execution.json'))) == 2
@@ -423,7 +425,11 @@ def test_an_unconfirmed_replay_returns_to_the_phase_without_a_package(tmp_path, 
     assert action_endings(events) == [('action.completed', 'run_candidate', 'OK'),
                                       ('action.rejected', 'submit_candidate', 'REPLAY_UNCONFIRMED')]
     assert phase_results(events) == [('candidate', 'REPLAY_UNCONFIRMED'), ('request_information', 'MISSING_INFORMATION')]
-    assert 'did not confirm' in controller.explorer.contexts[1].feedback
+    feedback = json.loads(controller.explorer.contexts[1].feedback)
+    assert feedback['result_code'] == 'REPLAY_UNCONFIRMED' and feedback['decision'] == 'continue'
+    assert feedback['replay_observation']['kind'] == 'execution_unconfirmed'
+    assert feedback['replay_observation']['execution_consistent'] is False
+    assert feedback['replay_observation']['execution_unmet_checks'] == ['failure_signature_matches']
 
 
 def test_a_revision_that_exceeds_the_context_budget_is_refused(tmp_path, projects, facts):

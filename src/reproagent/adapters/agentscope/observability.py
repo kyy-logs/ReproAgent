@@ -75,6 +75,11 @@ class SafeTracingMiddleware(TracingMiddleware):
                 exhausted=True
             except BaseException as exc:
                 domain_error=exc
+                if isinstance(exc, PhaseEnded):
+                    handle = current_handle()
+                    handle.annotate(result_code='PHASE_ENDED')
+                    if hasattr(handle, '_entry'):
+                        handle._entry['_display_status'] = 'ok'
                 raise
         gen=native(agent,input_kwargs,tracked)
         try:

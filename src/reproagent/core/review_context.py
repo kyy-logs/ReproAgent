@@ -17,7 +17,7 @@ from typing import Any, Callable
 from .models import Candidate, EvidenceRef, ExecutionResult, FileEntry, IssueContract
 from .protocol import verdict_schema
 from .serialization import bytes_hash, canonical_bytes, parse_json
-from .assertion_audit import assertion_sites
+from .assertion_audit import assertion_sites, with_execution_observations
 from .oracle_audit import oracle_checks
 
 # Stable marker for the run root: necessary paths stay readable without exporting the
@@ -148,6 +148,17 @@ def _phase(phase, run_root):
         projected['assertion_comparison'] = phase['assertion_comparison']
     if phase.get('longrepr'):
         projected['longrepr'] = _message_text(phase['longrepr'], run_root)
+    # What the run reached, and what it could not watch.  A reader may conclude "not
+    # reached" only from a monitoring status of captured; anything else stays unknown.
+    if phase.get('target_functions'):
+        projected['target_functions'] = {str(key): int(count)
+            for key, count in list(phase['target_functions'].items())[:64]}
+    if phase.get('diagnostics'):
+        projected['diagnostics'] = [{'message': _message_text(row.get('message', ''), run_root),
+            'path': _path_text(row.get('path', ''), run_root), 'lineno': row.get('lineno'),
+            'level': str(row.get('level', ''))} for row in list(phase['diagnostics'])[:64]]
+    if phase.get('monitoring'):
+        projected['monitoring'] = dict(phase['monitoring'])
     return projected
 
 
@@ -270,6 +281,13 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
             # Every cited reference is checked, even when another reference already
             # read the same file.
             raise ValueError('evidence hash mismatch')
+    original_issue = None
+    if contract.description_hash:
+        # Contract wording is model-derived. Keep the bound original independently
+        # visible even when the selected expectation sources omit the Issue.
+        issue_ref = EvidenceRef('input/issue.md', contract.description_hash)
+        issue_text = read_ref(issue_ref)
+        original_issue = {'path':issue_ref.path, 'content_hash':issue_ref.content_hash, 'text':issue_text}
     candidate_files = []
     for entry in candidate.files:
         data = read_file(entry)
@@ -278,9 +296,9 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
     input_bytes = len(canonical_bytes({'contract': asdict(contract), 'source_text': [texts[ref.path] for ref in sources],
         'candidate': [{'path': entry['path'], 'content': entry['content']} for entry in candidate_files],
         'observations': asdict(run.observation), 'available_refs': [asdict(ref) for ref in available],
-        'response_schema': verdict_schema()}))
+        'response_schema': verdict_schema(), **({'original_issue':original_issue} if original_issue else {})}))
     phases = [_phase(phase, run_root) for phase in run.observation.tests]
-    sites = assertion_sites(candidate_files)
+    sites = with_execution_observations(assertion_sites(candidate_files), phases)
     oracles = oracle_checks(candidate_files)
     payload = {'contract': _contract_view(contract),
         'expectation_sources': [_segment(texts[ref.path], ref, run_root) for ref in sources],
@@ -291,6 +309,17 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'projection': {'paths': f'absolute run paths are shown as {RUN_ROOT}', 'summarized_fields': list(SUMMARIZED_FIELDS)},
         'assertion_sites': sites,
         'response_schema': verdict_schema(tuple(site['id'] for site in sites), tuple(item['id'] for item in oracles))}
+    if original_issue is not None:
+        whole_issue = _message_text('\n'.join(original_issue['text'].splitlines()), run_root)
+        for index, source in enumerate(payload['expectation_sources']):
+            if (source['content_hash'] == original_issue['content_hash'] and source['start_line'] == 1
+                    and source['text'] == whole_issue):
+                # Independent original binding remains explicit; reuse only an exact
+                # full-body match, never a selected partial excerpt.
+                original_issue = {key:value for key,value in original_issue.items() if key != 'text'}
+                original_issue['expectation_source_index'] = index
+                break
+        payload['original_issue'] = original_issue
     if execution_environment is not None:
         payload['execution_environment'] = execution_environment
     if oracles:

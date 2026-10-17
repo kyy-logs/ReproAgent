@@ -118,3 +118,13 @@ def test_two_eval_cases_keep_separate_traces(tmp_path, projects, monkeypatch):
     assert documents[0]['trace_id'] != documents[1]['trace_id']
     assert 'CASE_TWO' not in json.dumps(documents[0]) and 'CASE_ONE' not in json.dumps(documents[1])
     assert all(result.status == 'NEEDS_INFORMATION' for result in results) and len(requests) == 6
+
+
+def test_eval_result_preserves_task_candidate_and_export_state(tmp_path, projects, monkeypatch):
+    from dataclasses import asdict
+    case, model, requests, _ = eval_environment(tmp_path, projects, monkeypatch)
+    result = asyncio.run(run_case(case, model, tmp_path / "out"))
+    task = json.loads((tmp_path / "out/task/task.json").read_text(encoding="utf8"))
+    saved = asdict(result)
+    assert saved["accepted_candidate_id"] == task["accepted_candidate_id"]
+    assert saved["export_state"] == task["export_state"] == "published"

@@ -75,6 +75,10 @@ class PythonPytestAdapter:
             run.run_id, run.snapshot_id, candidate.candidate_id, candidate.manifest_hash, candidate.contract_id, candidate.contract_version,
             env_overrides={'PYTHONPATH': os.pathsep.join([str(probe), *roots]), 'PYTEST_ADDOPTS': '', 'PYTEST_DISABLE_PLUGIN_AUTOLOAD': '1',
                 'REPROAGENT_RUN_ID': run.run_id, 'REPROAGENT_PROBE_PATH': str(path), 'REPROAGENT_TARGET_MODULES': json.dumps(environment.target_modules),
+                # The candidate's own files are already in the copy when the fixture builds
+                # its source dir, so a before/after comparison cannot see them.  Naming them
+                # lets the probe tell which documents the candidate meant to add.
+                'REPROAGENT_CANDIDATE_FILES': json.dumps([entry.path for entry in candidate.files]),
                 'TMP': str(run.temp_root), 'TEMP': str(run.temp_root), 'PYTHONDONTWRITEBYTECODE': '1'},
             probe_path=path, target_modules=environment.target_modules, source_roots=environment.source_roots)
 
@@ -91,9 +95,13 @@ class PythonPytestAdapter:
             invalid.append('target source origin is outside run snapshot')
         if not observation.collected:
             invalid.append('no collected tests')
+        unread_inputs = []
         for phase in observation.tests:
             if phase.get('wasxfail') or phase.get('outcome') == 'skipped':
                 invalid.append('skip/xfail cannot establish reproduction')
+            observed = phase.get('sphinx_inputs') or {}
+            if observed.get('unread'):
+                unread_inputs.append(observed)
             text = phase.get('longrepr', '')
             exception_type = phase.get('exception_type', '')
             syntax_error = exception_type in ('builtins.SyntaxError', 'builtins.IndentationError', 'builtins.TabError') or (not exception_type and 'SyntaxError' in text)
@@ -108,6 +116,18 @@ class PythonPytestAdapter:
                 invalid.append('candidate syntax or fixture error')
             elif 'ModuleNotFoundError' in text:
                 blocked.append('dependency/import unavailable; semantic attribution required')
+        # A document the test wrote and the build never read is not evidence of anything:
+        # the build ran on the original input, so a passing test says nothing about the
+        # candidate's document.  It vetoes a run that has no other evidence, and is named
+        # exactly so the next phase can act on it instead of concluding the report lacked
+        # information.  When another test really failed, that reproduction may be genuine,
+        # so the unread input is recorded by the test phase but is not a veto.
+        if unread_inputs and not any(phase.get('when') == 'call' and phase.get('outcome') == 'failed'
+                                     for phase in observation.tests):
+            observed = unread_inputs[0]
+            invalid.append('candidate input not read by the build: ' + ', '.join(observed['unread'][:4])
+                + ' (testroot ' + str(observed.get('testroot', '')) + ' reads '
+                + ', '.join(observed.get('source_suffix') or ()) + ')')
         for item in observation.framework_details.get('collection_failures', []):
             if 'SyntaxError' in item.get('longrepr', ''):
                 invalid.append('collection syntax error')

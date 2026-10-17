@@ -194,6 +194,18 @@ class ExplorationMiddleware(MiddlewareBase):
     # SDK hooks
     # =======================================================================
 
+    async def on_reasoning(self, agent, input_kwargs, next_handler):
+        # End before the SDK enters _call_model: an already-published result is
+        # ordinary phase control flow, not a failed provider attempt to retry.
+        if self.gate.finished:
+            raise PhaseEnded("the phase already produced its result")
+        gen = next_handler()
+        try:
+            async for item in gen:
+                yield item
+        finally:
+            await gen.aclose()
+
     async def on_model_call(self, agent, input_kwargs, next_handler):
         """Call the model with the configured output ceiling, then check the whole reply.
 

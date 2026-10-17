@@ -540,7 +540,8 @@ def test_a_finished_phase_does_not_report_a_failed_model_round(tmp_path, project
     assert rounds
     assert all(entry["status"] != "error" for entry in rounds), \
         [(entry["status"], entry["attributes"]) for entry in rounds]
-    assert any(entry["attributes"].get("result_code") == "PHASE_ENDED" for entry in rounds)
+    assert not any(entry["attributes"].get("result_code") == "PHASE_ENDED" for entry in rounds)
+    assert named(doc, "sdk.agent_reply")[-1]["attributes"]["result_code"] == "PHASE_ENDED"
 
 
 def test_a_budget_stop_is_not_a_failed_model_round(tmp_path, projects, facts):
@@ -626,3 +627,14 @@ def test_missing_tool_call_is_captured_and_correlated_with_correction(tmp_path, 
     assert "MISSING_TOOL_CALL" in second_input and "JSON is only text" not in second_input
     assert doc["summary"]["tool_executions"] == 1
     assert len(env.requests) == env.context.budget.steps_used == 2
+
+
+def test_normal_phase_end_is_not_an_agent_reply_failure_or_sdk_model_retry(tmp_path, projects, facts, caplog):
+    with traced(tmp_path, projects, facts, answers=[terminal_reply()]) as env:
+        result = explore(env)
+        doc = document(env, status="NEEDS_INFORMATION")
+    assert result.kind == "request_information" and len(env.requests) == 1
+    replies = named(doc, "sdk.agent_reply")
+    assert replies and all(row["status"] == "ok" for row in replies)
+    assert replies[-1]["attributes"]["result_code"] == "PHASE_ENDED"
+    assert not any("exhausted all" in r.message for r in caplog.records)

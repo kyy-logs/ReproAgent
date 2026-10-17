@@ -65,3 +65,5 @@ class EvalResult:
     learning: dict[str, Any] = field(default_factory=dict)
     delivery: dict[str, Any] = field(default_factory=dict)
     delivery_status: str = "not_requested"
+    accepted_candidate_id: str = ""
+    export_state: str = "pending"

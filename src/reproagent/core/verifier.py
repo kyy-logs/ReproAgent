@@ -186,7 +186,11 @@ class Verifier:
             notes = [note if len(note) <= 512 else note[:480] + ' ...[audit excerpt]' for note in notes]
             from .passing_output import passing_outputs
             outputs, output_refs, omitted = passing_outputs(run, self.resolve, self.store.root)
-            measurements = {'audit_notes':notes, 'omitted_oracles':max(0,len(checks)-8)}
+            from .reproduction_observation import reproduction_observation
+            measurements = {'audit_notes':notes, 'omitted_oracles':max(0,len(checks)-8),
+                # Why the passing run passed, when the run itself can say: the input read,
+                # the diagnostics emitted, or unknown when it was not watching.
+                'reproduction_observation': reproduction_observation(run.observation)}
             if outputs or omitted:
                 measurements.update(passing_outputs=list(outputs), omitted_outputs=omitted)
             return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', output_refs,
@@ -346,10 +350,21 @@ class Verifier:
                         else:
                             return verdict(classification, result['reason'], refs, origin='provider')
                     else:
+                        unobserved_block = ()
+                        if classification == CandidateClass.ENVIRONMENT_BLOCKED and not checks.blocked:
+                            # A block is a program observation.  With no blocked framework
+                            # check recorded, acting on the reviewer's claim ends the task
+                            # on its word alone -- and it has been wrong: a candidate that
+                            # handed a pathlib.Path to a helper expecting py.path crashed
+                            # in its own scaffolding and was reported as an environment
+                            # limit.  Keep the claim visible; do not act on it.
+                            classification = None
+                            unobserved_block = ('environment block claimed but not observed by the program',)
                         if not semantic_issues:
                             code = 'ENVIRONMENT_BLOCKED' if classification == CandidateClass.ENVIRONMENT_BLOCKED else 'SEMANTIC_REPRODUCTION_UNCONFIRMED'
                             semantic_issues = (self._issue(code, result['reason'], check='provider_semantic_claims', refs=refs, origin='provider_claim'),)
-                        return verdict(classification, result['reason'], refs, origin='provider', issues=semantic_issues)
+                        return verdict(classification, result['reason'], refs, origin='provider',
+                                       uncertainty=unobserved_block, issues=semantic_issues)
             # A correction re-measures the whole payload, protocol error included: the
             # request that is actually sent has to stay inside the same budget.
             try:
@@ -381,7 +396,27 @@ class Verifier:
         """First unmet program check; semantic verdicts remain independent facts."""
         if len(verdicts) != 2 or any(v.classification != CandidateClass.REPRODUCED or v.candidate_id != candidate.candidate_id or v.manifest_hash != candidate.manifest_hash or v.contract_id != contract.contract_id or v.contract_version != contract.version for v in verdicts):
             return ('verdicts_reproduce_bound_candidate',)
-        if first.run_id == second.run_id or any(not self._bound(contract, candidate, run) or not run.protection.ok or not run.raw.cleanup_ok or not run.observation.probe_complete for run in (first, second)):
+        return self.execution_confirmation_failures(contract, candidate, first, second)
+
+    def replay_diagnostics(self, contract, candidate, first, second, verdicts):
+        """Program-observed execution agreement, separate from reviewer opinions."""
+        physical = self.execution_confirmation_failures(contract, candidate, first, second)
+        bound = len(verdicts) == 2 and all(
+            v.candidate_id == candidate.candidate_id and v.manifest_hash == candidate.manifest_hash
+            and v.contract_id == contract.contract_id and v.contract_version == contract.version
+            and v.run_ids == (run.run_id,) for v, run in zip(verdicts, (first, second)))
+        semantic = bound and all(v.classification == CandidateClass.REPRODUCED for v in verdicts)
+        disagreement = bound and verdicts[0].classification == CandidateClass.REPRODUCED and not semantic
+        kind = ('execution_unconfirmed' if physical else 'semantic_disagreement' if disagreement
+                else 'confirmed' if semantic else 'verdict_unconfirmed')
+        return {'origin':'program_observation', 'kind':kind, 'first_run_id':first.run_id,
+            'second_run_id':second.run_id, 'execution_consistent':not physical,
+            'execution_unmet_checks':list(physical), 'semantic_confirmed':bool(semantic),
+            'verdict_classes':[v.classification.value if v.classification else 'UNCLASSIFIED' for v in verdicts]}
+
+    def execution_confirmation_failures(self, contract, candidate, first, second):
+        """Compare the complete bound executions, without accepting any semantic claim."""
+        if first.run_id == second.run_id or any(not self._integrity_ok(contract, candidate, run) for run in (first, second)):
             return ('independent_bound_integral_runs',)
         if first.observation.framework_details.get('preconditions') != second.observation.framework_details.get('preconditions') or candidate.preconditions:
             # External-state reset cannot yet be demonstrated by this local runner.

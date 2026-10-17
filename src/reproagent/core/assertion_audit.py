@@ -6,6 +6,37 @@ Custom assertion helpers still require review of the complete candidate.
 import ast
 
 
+def with_execution_observations(sites, phases):
+    """Locate unique failure-frame overlaps; never infer assertion entry.
+
+    Input phases already have checked run paths normalized by review_context.
+    Absent frames (including passing tests) never prove an assertion was skipped
+    or passed; this is traceback evidence, not line/branch coverage.
+    """
+    failed_locations = []
+    for index, phase in enumerate(phases):
+        if phase.get('outcome') != 'failed':
+            continue
+        for frame in [*phase.get('exception_frames', ()), phase.get('crash') or {}]:
+            path, line = frame.get('path', ''), frame.get('lineno')
+            if type(path) is not str or type(line) is not int or line < 1:
+                continue
+            failed_locations.append((path.removeprefix('<run>/'), line, index))
+    observed = {}
+    for path, line, index in set(failed_locations):
+        matches = [site['id'] for site in sites
+                   if path == site['path'] and site['start_line'] <= line <= site['end_line']]
+        if len(matches) == 1:
+            observed.setdefault(matches[0], set()).add(index)
+    result = []
+    for site in sites:
+        indexes = sorted(observed.get(site['id'], ()))
+        result.append({**site, 'execution_observation': {
+            'state':'failure_location_overlap' if indexes else 'not_established',
+            'phase_indexes':indexes}})
+    return result
+
+
 EXPECTATION_CALLS = frozenset({'raises', 'warns', 'deprecated_call', 'fail',
     'fnmatch_lines', 'fnmatch_lines_random', 're_match_lines', 're_match_lines_random'})
 
