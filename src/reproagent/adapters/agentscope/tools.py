@@ -21,8 +21,10 @@ policy — the controller reads the phase result and continues.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from agentscope.message import TextBlock, ToolResultState
@@ -33,14 +35,14 @@ from pydantic import ConfigDict, Field
 from .citation_feedback import render_citation_feedback
 from .dependency import require_agentscope
 from .evidence import READ_LINE_CHARACTERS, EvidenceLedger, original_lines
-from .snapshot_backend import SnapshotRefusal, UnverifiedContent
+from .snapshot_backend import MAX_PATH_CHARS, SnapshotRefusal, UnverifiedContent
 from ...core.budget import BudgetStopped
 from ...core.candidate_service import CandidateService, GroundedContractRequired
 from ...core.models import CandidateDraft, DraftFile, EvidenceRef
 from ...core.phase import PhaseGate, PhaseResult
 from ...core.serialization import canonical_bytes
 from ...experience_triggers import ERROR_METADATA
-from ...paths import relative_name
+from ...paths import display_path, relative_name
 
 #: The phase's whole surface, in the order the toolkit registers it.  Nothing else is
 #: registered: no shell, no editor, and no run/submit decision for the model to make.
@@ -49,6 +51,9 @@ DOMAIN_TOOL_NAMES = ("write_candidate", "revise_contract", "request_information"
 ARTIFACT_TOOL_NAMES = ("read_artifact",)
 TOOL_NAMES = FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES + ARTIFACT_TOOL_NAMES
 EXPERIENCE_TOOL_NAMES = ('list_experiences', 'read_experience')
+
+# Saved output has its own display ceiling; this is not the storage budget.
+MATERIAL_PREVIEW_BYTES = 4096
 
 #: Appended when a response had to be cut to fit the tool budget.  Marked in the response
 #: itself, because a response that looks complete is read as complete.
@@ -220,17 +225,29 @@ class SnapshotResponseMiddleware(ToolMiddlewareBase):
     #: How the tool's body names the lines it showed.
     LINE_PATTERNS = {
         "read": re.compile(r" *(?P<number>\d+)\t(?P<content>.*)\Z"),
-        "search": re.compile(r"(?P<path>.+?)(?P<sep>[:-])(?P<number>\d+)(?P=sep)(?P<content>.*)\Z"),
+        "search": re.compile(r"(?=(?P<sep>[:-])(?P<number>[0-9]{1,12})(?P=sep))"),
         "none": None,
     }
     #: A search of a single file prints no file name; the requested path is the file.
-    SINGLE_FILE = re.compile(r"(?P<number>\d+)[:-](?P<content>.*)\Z")
+    SINGLE_FILE = re.compile(r"(?P<number>[0-9]{1,12})[:-](?P<content>.*)\Z")
 
     def __init__(self, backend, ledger: EvidenceLedger, context, *, view: str) -> None:
         """Bind the middleware to the backend it reads through and the view it records."""
         if view not in self.LINE_PATTERNS:
             raise ValueError(f"unknown file tool view: {view!r}")
         self.backend, self.ledger, self.context, self.view = backend, ledger, context, view
+        self._search_paths, self._search_lengths = set(), set()
+        if view == 'search':
+            for item in ledger.project.snapshot.files:
+                path = ledger.snapshot.path_of(item)
+                aliases = {item.path, str(Path(item.path)), str(path), path.as_posix(), display_path(path)}
+                if os.name == 'nt':
+                    aliases.add(display_path(path).replace('\\', '/'))
+                for alias in aliases:
+                    if len(alias) <= MAX_PATH_CHARS:
+                        self._search_paths.add(os.path.normcase(alias))
+                        self._search_lengths.add(len(alias))
+        self._search_end = max(self._search_lengths, default=0) + 14
 
     async def on_tool_call(self, tool, input_kwargs, next_handler):
         """Keep the tool's own result, capped, with the evidence of what it displayed."""
@@ -250,11 +267,13 @@ class SnapshotResponseMiddleware(ToolMiddlewareBase):
         if len(body.encode('utf-8')) > min(8192, cap):
             meta = self.backend.store.materials.capture(body, kind='tool_output',
                 description=tool.name + ' SDK response', upstream_complete=None)
+            if 'id' in meta:
+                cap = min(cap, MATERIAL_PREVIEW_BYTES)
             shown = {key: meta[key] for key in ('id','storage_complete','upstream_complete','read_via') if key in meta}
             if not shown: shown = {'code':meta.get('code','material_store_error')}
-            notice = '\n<material>' + _dump(shown) + '</material>'
+            notice = '\n<material>' + _dump(shown) + '</material>\n'
             if len(notice.encode('utf-8')) + 128 > cap: notice = ''
-        text = await self._capped(input_kwargs, body, cap=cap-len(notice.encode('utf-8'))) + notice
+        text = notice + await self._capped(input_kwargs, body, cap=cap-len(notice.encode('utf-8')))
         yield ToolChunk(content=[TextBlock(text=text)], state=last.state, is_last=True, metadata=dict(last.metadata))
 
     async def _capped(self, input_kwargs: dict, body: str, *, cap=None) -> str:
@@ -286,36 +305,63 @@ class SnapshotResponseMiddleware(ToolMiddlewareBase):
         citations = [run for run in citations if self._issue(run)]
         return self._compose(kept, citations, truncated)
 
+    def _parse_search_line(self, line, default_path, registered):
+        """Yield registered locations, longest prefix first; never split code on colons.
+
+        Only known path lengths and spellings are candidates. Numeric separators in
+        arbitrarily long code never become cached paths or trigger filesystem probes.
+        _original and _issue still verify fresh source bytes after this prefilter.
+        """
+        matches = self.LINE_PATTERNS['search'].finditer(line, 0, self._search_end)
+        for match in reversed(list(matches)):
+            if match.start() not in self._search_lengths:
+                continue
+            path = line[:match.start()]
+            if os.path.normcase(path) not in self._search_paths:
+                continue
+            item = registered.get(path)
+            if item is None:
+                item = self.ledger.snapshot.registered(path)
+                if item is not None:
+                    registered[path] = item
+            if item is not None:
+                yield item, int(match.group('number')), line[match.end('number')+1:]
+        match = self.SINGLE_FILE.match(line) if default_path is not None else None
+        if match is not None:
+            item = registered.get(default_path)
+            if item is None:
+                item = self.ledger.snapshot.registered(default_path)
+                if item is not None:
+                    registered[default_path] = item
+            if item is not None:
+                yield item, int(match.group('number')), match.group('content')
+
     async def _shown(self, input_kwargs: dict, lines: list[str]) -> list[_Shown]:
         """The lines of *lines* this tool displayed whole, in body order."""
-        pattern = self.LINE_PATTERNS[self.view]
-        if pattern is None:
+        if self.view == 'none':
             return []
-        default_path = self._single_file(input_kwargs) if self.view == "search" else input_kwargs.get("file_path")
-        originals: dict[str, list[str] | None] = {}
-        shown: list[_Shown] = []
+        default_path = self._single_file(input_kwargs) if self.view == 'search' else input_kwargs.get('file_path')
+        originals, registered = {}, {}
+        shown = []
         for index, line in enumerate(lines):
-            match = pattern.match(line)
-            path = match.group("path") if match and "path" in match.groupdict() else default_path
-            if match is None and default_path is not None:
-                match = self.SINGLE_FILE.match(line)
-            if match is None:
-                continue
-            item = self.ledger.snapshot.registered(path) if isinstance(path, str) else None
-            if item is None:
-                continue
-            original = await self._original(item.path, originals)
-            number = int(match.group("number"))
-            if original is None or not 1 <= number <= len(original):
-                continue
-            text = original[number - 1]
-            if match.group("content") != text:
-                # The tool showed something other than this whole original line: a truncated
-                # line, a reformatted one, or a line of another file entirely.
-                continue
-            if len(text.encode("utf-8")) > self.ledger.max_line_characters:
-                continue
-            shown.append(_Shown(index, item.path, item.content_hash, number))
+            if self.view == 'search':
+                candidates = self._parse_search_line(line, default_path, registered)
+            else:
+                match = self.LINE_PATTERNS['read'].match(line)
+                item = self.ledger.snapshot.registered(default_path) if isinstance(default_path, str) else None
+                candidates = [(item,int(match.group('number')),match.group('content'))] if item is not None and match else []
+            verified = {}
+            for item, number, content in candidates:
+                original = await self._original(item.path, originals)
+                if original is None or not 1 <= number <= len(original):
+                    continue
+                text = original[number-1]
+                if content != text or len(text.encode('utf-8')) > self.ledger.max_line_characters:
+                    continue
+                verified[(item.path,number)] = _Shown(index,item.path,item.content_hash,number)
+            # An ambiguous plain-text search result must not issue a guessed citation.
+            if len(verified) == 1:
+                shown.append(next(iter(verified.values())))
         return shown
 
     def _single_file(self, input_kwargs: dict) -> str | None:

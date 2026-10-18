@@ -230,6 +230,29 @@ def _capture_response(message: dict) -> None:
             availability='captured' if isinstance(reasoning, str) and reasoning else 'not_returned')
 
 
+def _capture_wire_task_state(payload):
+    """Keep the exact formatted user message separately from a potentially huge wire copy."""
+    candidates = []
+    for message in payload.get('messages', ()):
+        if not isinstance(message, dict) or message.get('role') != 'user':
+            continue
+        text = message.get('content')
+        if not isinstance(text, str):
+            continue
+        try:
+            value = parse_json(text)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(value, dict) and set(value) == {'task_state'} and isinstance(value['task_state'], dict):
+            candidates.append(text)
+    if not candidates:
+        return  # Direct model callers need not use the task-state runtime.
+    if len(candidates) != 1 or len(candidates[0].encode('utf-8')) > 4096:
+        capture('wire_task_state', None, source='wire_task_state', availability='unsupported')
+        return
+    capture('wire_task_state', candidates[0], source='wire_task_state')
+
+
 def _request_hook(purpose: str):
     """Keep the request the provider would actually receive, once per HTTP attempt.
 
@@ -246,9 +269,22 @@ def _request_hook(purpose: str):
             if len(body) > RESPONSE_LIMIT_BYTES:
                 capture('wire_request', None, source='wire_request', availability='unsupported')
                 return
-            capture('wire_request', parse_json(body.decode('utf-8')), source='wire_request')
+            payload = parse_json(body.decode('utf-8'))
+            if purpose == 'exploration' and isinstance(payload, dict):
+                try:
+                    # Small, independently readable state gets capacity before the full copy.
+                    _capture_wire_task_state(payload)
+                except Exception:  # noqa: BLE001 - one failed copy cannot prevent another
+                    try:
+                        capture('wire_task_state', None, source='wire_task_state', availability='capture_error')
+                    except Exception:
+                        pass
+            capture('wire_request', payload, source='wire_request')
         except Exception:  # noqa: BLE001 - observation never escapes
-            capture('wire_request', None, source='wire_request', availability='unsupported')
+            try:
+                capture('wire_request', None, source='wire_request', availability='unsupported')
+            except Exception:
+                pass
     return observe
 
 

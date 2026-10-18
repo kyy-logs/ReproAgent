@@ -606,3 +606,70 @@ def test_disabled_tracing_leaves_the_middleware_chain_alone(tmp_path, projects, 
 
     assert [type(middleware).__name__ for middleware in env.runtime._agent._model_call_middlewares] \
         == ["ExplorationMiddleware"]
+
+
+def test_actual_wire_state_survives_large_request_capture_truncation(tmp_path,projects,facts,monkeypatch):
+    import sys
+    from hashlib import sha256
+    monkeypatch.setattr(sys.modules[__name__],'SYSTEM_PROMPT','Stable rules. '+'padding '*6000)
+    with traced(tmp_path,projects,facts,answers=[text_reply()]) as env:
+        explore(env)
+        doc=document(env)
+    assert len(env.requests)==1
+    assert contents(doc,'wire_request')[0]['truncated'] is True
+    states=contents(doc,'wire_task_state')
+    assert len(states)==1 and states[0]['truncated'] is False
+    expected=[]
+    for message in env.requests[0]['messages']:
+        try:value=json.loads(message.get('content',''))
+        except (ValueError,TypeError):continue
+        if isinstance(value,dict) and set(value)=={'task_state'}:expected.append(message['content'])
+    assert [record['text'] for record in states]==expected
+    owner=next(s for s in doc['spans'] if s['span_id']==states[0]['owner_span_id'])
+    assert owner['name']=='model.http_attempt'
+    prepared=next(event.payload for event in env.store.read_events()[0] if event.kind=='context.prepared')
+    assert prepared['content_hash']==sha256(expected[0].encode()).hexdigest()
+
+
+def test_state_copy_fault_keeps_actual_request_and_full_capture(tmp_path,monkeypatch):
+    import reproagent.adapters.agentscope.model_factory as factory
+    def fail(_payload):raise RuntimeError('state copy failed')
+    monkeypatch.setattr(factory,'_capture_wire_task_state',fail)
+    payload={'messages':[{'role':'user','content':'{"task_state":{"revision":1}}'}]}
+    request=httpx.Request('POST','https://offline.example/v1/chat/completions',json=payload)
+    before=request.content
+    with TraceRecorder() as recorder:
+        asyncio.run(factory._request_hook('exploration')(request))
+        doc=recorder.finish(task_id='t',status='DONE',main_duration=0)
+    assert request.content==before
+    assert json.loads(contents(doc,'wire_request')[0]['text'])==payload
+    assert contents(doc,'wire_task_state')[0]['availability']=='capture_error'
+
+
+@pytest.mark.parametrize('texts',[
+    ['{"task_state":{"revision":1}}','{"task_state":{"revision":2}}'],
+    [json.dumps({'task_state':{'goal':'x'*5000}})],
+])
+def test_invalid_wire_state_is_explicit_and_does_not_change_request(texts):
+    from reproagent.adapters.agentscope.model_factory import _request_hook
+    payload={'messages':[{'role':'user','content':text} for text in texts]}
+    request=httpx.Request('POST','https://offline.example/v1/chat/completions',json=payload)
+    before=request.content
+    with TraceRecorder() as recorder:
+        asyncio.run(_request_hook('exploration')(request))
+        doc=recorder.finish(task_id='t',status='DONE',main_duration=0)
+    state=contents(doc,'wire_task_state')
+    assert len(state)==1 and state[0]['availability']=='unsupported'
+    assert request.content==before and json.loads(contents(doc,'wire_request')[0]['text'])==payload
+
+
+def test_capture_failure_cannot_escape_http_request_hook(monkeypatch):
+    import reproagent.adapters.agentscope.model_factory as factory
+    def fail(*args,**kwargs):raise RuntimeError('capture unavailable')
+    monkeypatch.setattr(factory,'capture',fail)
+    request=httpx.Request('POST','https://offline.example/v1/chat/completions',json={
+        'messages':[{'role':'user','content':'{"task_state":{"revision":1}}'}]})
+    before=request.content
+    with TraceRecorder():
+        asyncio.run(factory._request_hook('exploration')(request))
+    assert request.content==before

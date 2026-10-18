@@ -36,6 +36,7 @@ SECTIONS = ("overview", "calls", "decisions")
 #: the recorder and this page; it was never meant to be the thing a person reads.
 SOURCE_LABELS = {
     "wire_request": "request the model received",
+    "wire_task_state": "task state sent to the model",
     "provider_response": "what the model returned",
     "provider_reasoning": "model reasoning (as returned)",
     "sdk_tool_input": "tool arguments",

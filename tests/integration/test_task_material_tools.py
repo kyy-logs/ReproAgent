@@ -39,3 +39,24 @@ def test_tiny_tool_capacity_never_returns_oversized_notice(tmp_path,projects,fac
     env=environment(tmp_path,projects,facts,limits=BudgetLimits(tool_response_bytes=64))
     text=text_of(call(env,'Read',{'file_path':str(env.root/'example/big.py')}))
     assert len(text.encode()) <= 64
+
+
+def test_saved_large_result_uses_short_preview_with_notice_first(tmp_path,projects,facts):
+    env=environment(tmp_path,projects,facts)
+    text=text_of(call(env,'Read',{'file_path':str(env.root/'example/big.py')}))
+    assert len(text.encode())<=4096
+    assert text.lstrip().startswith('<material>')
+    meta=env.store.materials.catalog()[0]
+    assert meta['stored_bytes']>8192
+    page=env.store.materials.read(meta['id'],offset=1000,limit=1)
+    assert 'padding_line_1000' in page['text']
+    assert sidecar_refs(text)
+    assert '\n     1\tpadding_line_1' in text
+
+
+def test_failed_offload_keeps_existing_fallback_capacity(tmp_path,projects,facts,monkeypatch):
+    env=environment(tmp_path,projects,facts)
+    monkeypatch.setattr(env.store.materials,'capture',lambda *a,**k:{'code':'material_store_error'})
+    text=text_of(call(env,'Read',{'file_path':str(env.root/'example/big.py')}))
+    assert 4096<len(text.encode())<=env.context.budget.limits.tool_response_bytes
+    assert 'material_store_error' in text
