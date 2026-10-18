@@ -88,12 +88,17 @@ class AgentScopeRuntime:
         self.browse_gate = ExperienceBrowseGate(
             experience_view is not None and experience_view.notice() is not None)
         self.store = store
+        if store is not None:
+            store.materials.secrets = self.secrets
         self.allowed_tools = tuple(tool.name for group in toolkit.tool_groups for tool in group.tools)
         if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + EXPERIENCE_TOOL_NAMES):
             raise ValueError("unexpected exploration toolkit")
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
             experience_event=self._experience_event if experience_view is not None else None,
             browse_gate=self.browse_gate)
+        if store is not None:
+            from .context_builder import ExplorationContextBuilder
+            self.middleware.context_builder = ExplorationContextBuilder(store, context, self.secrets)
         self.middleware.record_browse()
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when
@@ -160,6 +165,8 @@ class AgentScopeRuntime:
         # The reserve reads the contract per permission check, so it has to know this phase's.
         self.middleware.contract = context.contract
         self.middleware.phase_context = context
+        if self.store is not None:
+            self.store.progress.phase(context)
         self._bind_guard()
         self._agent.react_config.max_iters = max(1, self._steps_remaining())
         self.middleware.record("exploration.phase", action="", result_code="BEGIN",

@@ -31,6 +31,7 @@ from agentscope.tool import ToolBase, ToolChunk
 from reproagent.adapters.agentscope.evidence import EvidenceLedger
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend
 from reproagent.adapters.agentscope.tools import (
+    ARTIFACT_TOOL_NAMES,
     DOMAIN_TOOL_NAMES,
     FILE_TOOL_NAMES,
     RESPONSE_TRUNCATION_MARKER,
@@ -351,7 +352,7 @@ def test_first_phase_result_wins_and_toolkit_is_exact(tmp_path, projects, facts)
     env = environment(tmp_path, projects, facts)
     # Exactly the six tools the phase registers: no shell, no editor, no run/submit choice.
     names = tuple(tool.name for tool in env.toolkit.tool_groups[0].tools)
-    assert names == TOOL_NAMES == FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES
+    assert names == TOOL_NAMES == FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES + ARTIFACT_TOOL_NAMES
     schemas = asyncio.run(env.toolkit.get_tool_schemas())
     assert tuple(schema["function"]["name"] for schema in schemas) == TOOL_NAMES
     for absent in ("Bash", "PowerShell", "Write", "Edit", "run_candidate", "submit_candidate",
@@ -404,7 +405,8 @@ def test_the_permission_engine_itself_allows_every_phase_tool(tmp_path, projects
               "write_candidate": write_payload(),
               "revise_contract": {"source_refs": [{"path": "example/中文模块.py", "content_hash": "0" * 64,
                                                    "start_line": 1, "end_line": 1}], "reason": "cite"},
-              "request_information": {"question": "which parser?"}}
+              "request_information": {"question": "which parser?"},
+              "read_artifact": {"artifact_id": "unknown"}}
     assert tuple(inputs) == TOOL_NAMES
     for name, tool_input in inputs.items():
         tool = asyncio.run(env.toolkit.get_tool(name))

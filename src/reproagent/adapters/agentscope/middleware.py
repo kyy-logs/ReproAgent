@@ -57,7 +57,7 @@ PROTOCOL_ATTEMPTS = 3
 #: The tools that only read.  They are the ones a phase can spend its whole budget on: the
 #: SDK's ReAct loop has no reason to stop reading a large repository, and the fixed-point
 #: run spent 20 of 20 decisions on Read/Grep/Glob without ever publishing a candidate.
-READER_TOOLS = ("Read", "Grep", "Glob", "list_experiences", "read_experience")
+READER_TOOLS = ("Read", "Grep", "Glob", "list_experiences", "read_experience", "read_artifact")
 
 #: Steps kept for publishing and its bounded protocol corrections.  The controller runs,
 #: repeats and submits the candidate itself, so those steps cost no budget of their own.
@@ -134,6 +134,7 @@ class ExplorationMiddleware(MiddlewareBase):
         #: then there is nothing to reserve the last steps for.
         self.contract = None
         self.phase_context: AgentContext | None = None
+        self.context_builder = None
         self.experience_event, self.experience_input = experience_event, experience_input
         self.browse_gate = browse_gate
         self._browse_delivery_info = {}
@@ -243,6 +244,9 @@ class ExplorationMiddleware(MiddlewareBase):
                 raise BudgetStopped('NEEDS_INFORMATION', 'exploration progress exceeds its bounded message') from exc
             input_kwargs = {**input_kwargs, 'messages': [*input_kwargs['messages'],
                 SystemMsg(name='exploration-progress', content=progress)]}
+            await self._check_progress_capacity(agent, input_kwargs['messages'], input_kwargs['tools'])
+        if self.context_builder is not None and self.phase_context is not None and not self.gate.finished:
+            input_kwargs = {**input_kwargs, 'messages':self.context_builder.build(input_kwargs['messages'], self.phase_context)}
             await self._check_progress_capacity(agent, input_kwargs['messages'], input_kwargs['tools'])
         model = input_kwargs["current_model"]
         response = await model(
@@ -374,6 +378,12 @@ class ExplorationMiddleware(MiddlewareBase):
                         elif code in ('response_capacity', 'catalog_budget', 'catalog_limit', 'catalog_unavailable'):
                             self.browse_gate.bypass(code)
                             self.record_browse()
+                    if self.store is not None:
+                        try:
+                            self.store.append_event('exploration.tool_result', (), {'action':name,
+                                'result_code':'TOOL_ERROR' if str(item.state)=='error' else 'TOOL_SUCCEEDED'})
+                        except (OSError,ValueError):
+                            pass
                     if str(item.state) == "error":
                         fact = {"kind":"tool_error", "tool":name, "code":item.metadata.get(ERROR_METADATA)}
                         if trigger_from_fact(fact) is not None:

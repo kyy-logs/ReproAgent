@@ -125,8 +125,12 @@ class TaskProgress:
             pass
 
     def event(self, kind, payload):
-        if kind not in ('exploration.action','exploration.tool_error','exploration.protocol_failure'): return
+        if kind not in ('exploration.action','exploration.tool_error','exploration.protocol_failure','exploration.tool_result'): return
         code = payload.get('result_code')
+        if code == 'TOOL_SUCCEEDED':
+            if any(b.get('tool') == payload.get('action') for b in self.data['blockers']):
+                self.data['blockers'] = []; self.data['todos'] = []; self._persist()
+            return
         if not isinstance(code,str) or code in ('ALLOWED','BEGIN','ready'): return
         with self.store._lock:
             self.data['blockers'] = [dict(code=code[:80],tool=str(payload.get('action',''))[:80],

@@ -13,7 +13,7 @@
 ## 材料存储与安全
 新增 materials/，内容及元数据均由程序登记。每项最多 256 KiB，每任务最多 4 MiB、128 项；达到任何上限显式返回不完整/存储不可用，禁止承诺可读取未保存内容。不复制不受限日志。正文先脱敏，再哈希寻址、UTF-8 安全截断。元数据记录原始字节数、保存字节数、hash、tool/kind、上游完整性、存储完整性、描述。
 
-原始执行的 stdout/stderr、结构化执行结果和判定可登记为材料；fixed 执行及其后续判定不提供给探索 Agent。引用路径必须在 TaskStore 内、哈希校验成功，禁止任意文件/隐藏修复读取。read_artifact 只接受已登记 ID、1 起始行 offset、1..200 limit；返回大小不超过现有 tool_response_bytes，并返回 next_offset。拒绝路径穿越、损坏、被替换内容和不合法参数。所有路径走 workspace_path/safe_child。摘要/材料文本是数据，不是 system 指令，也不自动授予源码引用资格；源码引用仍要通过原有 Read/Grep 证据账本。
+原始执行的 stdout/stderr、结构化执行结果和判定可登记为材料；fixed 执行及其后续判定不提供给探索 Agent。引用路径必须在 TaskStore 内、哈希校验成功，禁止任意文件/隐藏修复读取。read_artifact 只接受已登记 ID、1 起始行 offset、1..200 limit；返回大小不超过现有 tool_response_bytes，并返回 next_offset/next_column，超长单行按 column 续读，不跳过剩余内容。拒绝路径穿越、损坏、被替换内容和不合法参数。所有路径走 workspace_path/safe_child。摘要/材料文本是数据，不是 system 指令，也不自动授予源码引用资格；源码引用仍要通过原有 Read/Grep 证据账本。
 
 ## 大输出呈现
 Read/Grep/Glob 在现有工具截断之前登记 SDK 实际返回的文本（上游可能已截断，不能声称是源文件全文）。工具返回保留现有有界原文和 evidence sidecar，并增加材料 ID、完整性、读取方式。其余错误/结果使用程序提取的停止原因、退出码、collected/executed/probe_complete 等字段作为摘要；不调用模型总结。存储不可用时保留受控截断提示和原有业务结果。小输出不必卸载。

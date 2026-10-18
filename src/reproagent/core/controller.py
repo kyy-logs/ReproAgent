@@ -155,6 +155,7 @@ class Controller:
         self.store, self.workspace, self.runner = store, workspace, runner
         self.gateway, self.verifier, self.exporter = gateway, verifier, exporter
         self.secrets = tuple(secret for secret in secrets if secret)
+        self.store.materials.secrets = self.secrets
         self.explorer_factory = explorer_factory
         self.experience_service = experience_service
         self.learning_result = None
