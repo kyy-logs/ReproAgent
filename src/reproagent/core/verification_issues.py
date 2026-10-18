@@ -17,6 +17,7 @@ ISSUE_SPECS = {
     'CANCELLED': (('binding_and_integrity_ok','execution_exited'), 'program_check','inspect_evidence'),
     'EXHAUSTED': (('binding_and_integrity_ok','execution_exited'), 'program_check','inspect_evidence'),
     'FRAMEWORK_CHECK_FAILED': (('no_non_origin_framework_errors',), 'program_check','revise_candidate'),
+    'CANDIDATE_PRE_TARGET_WARNING': (('candidate_setup_compatible',), 'program_check','revise_candidate'),
     'CANDIDATE_IMPORT_BLOCKED': (('framework_not_blocked',), 'program_check','inspect_evidence'),
     'ENVIRONMENT_BLOCKED': (('framework_not_blocked','provider_semantic_claims'), None,'request_information'),
     'TEST_EXECUTION_INVALID': (('tests_executed_and_valid',), 'program_check','inspect_evidence'),
@@ -37,7 +38,7 @@ _RUNTIME = frozenset({'RUN_BINDING_MISMATCH','CANDIDATE_HASH_MISMATCH','SOURCE_P
 _ALLOWED = {code: frozenset() for code in ISSUE_SPECS}
 for code in _RUNTIME:
     _ALLOWED[code] = frozenset({'stop_reason','duration_seconds','probe_complete','protection_checked','last_test_stage'})
-for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVALID','CANDIDATE_IMPORT_BLOCKED'):
+for code in ('FRAMEWORK_CHECK_FAILED','ENVIRONMENT_BLOCKED','TEST_EXECUTION_INVALID','CANDIDATE_IMPORT_BLOCKED','CANDIDATE_PRE_TARGET_WARNING'):
     _ALLOWED[code] = frozenset({'framework_errors','collected','executed'})
 _ALLOWED['REVIEW_CONTEXT_TOO_LARGE'] = frozenset({'needed_bytes','budget_bytes','stage'})
 _ALLOWED['CANDIDATE_ASSERTIONS_UNCONFIRMED'] = frozenset({'assertion_ids','omitted_assertions'})

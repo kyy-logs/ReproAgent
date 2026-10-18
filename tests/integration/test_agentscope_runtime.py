@@ -103,7 +103,7 @@ def find_ripgrep():
     return next((path for path in candidates if path and Path(path).is_file()), None)
 
 
-def environment(tmp_path, projects, facts, answers=None, *, limits=None, handler=None, **contract_overrides):
+def environment(tmp_path, projects, facts, answers=None, *, limits=None, handler=None, inject_task_state=False, **contract_overrides):
     """One frozen task with the phase toolkit, a mock SDK transport and a runtime."""
     repo = projects.plain(tmp_path / "repo")
     (repo / "example" / "parser.py").write_text(MODULE_TEXT, encoding="utf-8", newline="")
@@ -129,7 +129,8 @@ def environment(tmp_path, projects, facts, answers=None, *, limits=None, handler
         ModelConfig(base_url="https://offline.example/v1", model="offline", output_limit_field="max_tokens",
                     max_output_tokens=OUTPUT_LIMIT), store, transport=httpx.MockTransport(handler or scripted))
     model = factory.create(context, "exploration")
-    runtime = AgentScopeRuntime(model, toolkit, gate, context, system_prompt=SYSTEM_PROMPT, store=store)
+    runtime = AgentScopeRuntime(model, toolkit, gate, context, system_prompt=SYSTEM_PROMPT, store=store,
+                                inject_task_state=inject_task_state)
     return SimpleNamespace(repo=repo, task=task, store=store, workspace=workspace, snapshot=snapshot, project=project,
                            context=context, gate=gate, service=service, backend=backend, ledger=ledger,
                            toolkit=toolkit, factory=factory, model=model, runtime=runtime, requests=requests,

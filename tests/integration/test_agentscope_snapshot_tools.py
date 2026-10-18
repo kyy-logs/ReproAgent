@@ -433,6 +433,7 @@ def test_helper_is_bounded_and_cannot_run_arbitrary_commands(tmp_path, projects,
 
 
 def test_without_ripgrep_the_sdk_search_blocks_instead_of_falling_back(tmp_path, projects, facts, monkeypatch):
+    monkeypatch.delenv("REPROAGENT_RG_PATH", raising=False)
     monkeypatch.setattr(shutil, "which", lambda name: None)
     env = environment(tmp_path, projects, facts, rg=None)
     result = asyncio.run(env.backend.exec_shell(["rg", "--hidden", "--sort", "path", MARKER, str(env.root)]))

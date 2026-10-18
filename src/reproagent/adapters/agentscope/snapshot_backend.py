@@ -260,9 +260,39 @@ class SnapshotBackend(BackendBase):
         self.project, self.store, self.context = project, store, context
         self.snapshot = FrozenSnapshot(project, store)
         self.root = self.snapshot.root
-        self.rg_path = rg_path if rg_path is not None else shutil.which("rg")
+        self.rg_path = rg_path if rg_path is not None else (os.environ.get("REPROAGENT_RG_PATH") or shutil.which("rg"))
+        self._preflight_done = False
         self._helper_root = self._installed_sdk()
         self._reads = 0
+
+    async def preflight(self) -> None:
+        """Run one real, manifest-bound search before any model request of this task."""
+        self._check()
+        if self._preflight_done:
+            return
+        def record(code, executed, exit_code=None):
+            from ...observability import mark
+            payload = {'tool':'Grep', 'result_code':code, 'executed':executed, 'exit_code':exit_code}
+            self.store.append_event('tools.preflight', (), payload)
+            mark('tools.preflight', attributes=payload)
+        if not self.rg_path:
+            record('GREP_UNAVAILABLE', False)
+            raise BudgetStopped('NEEDS_INFORMATION',
+                'GREP_UNAVAILABLE: install ripgrep and put rg on the product process PATH, '
+                'or set REPROAGENT_RG_PATH to its executable before retrying')
+        entries = self.project.snapshot.files
+        if not entries:
+            record('GREP_EXECUTION_FAILED', False)
+            raise BudgetStopped('NEEDS_INFORMATION', 'GREP_EXECUTION_FAILED: no registered file for search preflight')
+        target = self.snapshot.path_of(entries[0])
+        result = await self.exec_shell(['rg', '-l', '-e', '.', str(target)], timeout=5)
+        if result.exit_code not in (0, 1):
+            record('GREP_EXECUTION_FAILED', True, result.exit_code)
+            raise BudgetStopped('NEEDS_INFORMATION',
+                'GREP_EXECUTION_FAILED: the configured ripgrep could not search a registered snapshot file; '
+                'check REPROAGENT_RG_PATH and executable permissions before retrying')
+        record('READY', True, result.exit_code)
+        self._preflight_done = True
 
     @staticmethod
     def _installed_sdk() -> Path | None:

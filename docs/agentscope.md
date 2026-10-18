@@ -72,8 +72,9 @@ inspect 和 replay 不调用模型。
 发出的两种程序形状（ripgrep argv 与 SDK 的 `_glob_helper.py`），并拒绝该名字触发的敏感文件读取。
 其他文件系统查询从清单回答，因此冻结后写入快照的文件不可见，字节变化的注册文件在每次读取时被拒。
 
-Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时搜索被明确拒绝为"无法运行"，
-而不是报"无匹配"；`REPROAGENT_RG_PATH` 只被测试用来指定一个已知的二进制位置。
+Grep 需要主机上的 ripgrep。生产运行支持 `REPROAGENT_RG_PATH` 指定可执行文件；未指定时通过 `shutil.which("rg")` 从实际产品进程的 PATH 查找。首次分析 Issue 前，程序在注册快照的一份文件上真正执行一次有界搜索，确认进程可启动；返回 0（命中）或 1（无匹配）才算通过。同一任务内缓存成功结果，不消耗探索步骤，也不调用模型。缺少或损坏的工具分别记录 `GREP_UNAVAILABLE` / `GREP_EXECUTION_FAILED`，任务进入 NEEDS_INFORMATION；取消、任务超时和进程清理仍由原有预算边界控制。
+
+Windows 示例：`$env:REPROAGENT_RG_PATH="E:/tools/rg.exe"`。只检查文件存在或仅在测试脚本中配置路径，不等于实际产品进程已经能运行搜索。
 
 ## 证据与阶段结果
 
@@ -115,3 +116,14 @@ Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时�
 ## Optional experience infrastructure
 
 When an experience snapshot is enabled, the toolkit adds one readonly `read_experience` tool to the existing six. The task keeps one snapshot, first-round summaries and at most one successful detail read. Post-sealing learning uses a separate SDK client with purpose=learning, no tools or exploration history, and an independent deadline. Controller, Verifier and evidence rules remain the domain authority. See [experience lifecycle and configuration](experience.md).
+
+
+## Experimental STATE input
+
+Local `STATE.json` continues to record program facts, budgets and material references.
+Per-call STATE injection is disabled by default. Set `"inject_task_state": true` in the
+existing task JSON to enable it experimentally; the saved request records this choice.
+The flag affects only the extra user data message, not SDK history, tool-output offloading,
+trace capture, permission checks or Controller/Verifier acceptance. No extra command or
+model call is needed. Historical reproduction observations are distinct from final
+acceptance in STATE; see [state fields](observability.md#探索状态与大结果材料).

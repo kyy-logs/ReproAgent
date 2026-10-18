@@ -73,7 +73,7 @@ def create_controller(request, model, gateway=None, *, model_backend=None, agent
         if injected_gateway:
             raise ValueError('a Controller drives an exploration strategy: pass explorer_factory with an injected gateway')
         from .adapters.agentscope.explorer import agentscope_explorer_factory
-        explorer_factory = agentscope_explorer_factory(model, store, transport=transport)
+        explorer_factory = agentscope_explorer_factory(model, store, transport=transport, inject_task_state=request.inject_task_state)
     workspace = Workspace(request.output_dir, store)
     runner = Runner(workspace, store)
     secrets = (os.environ.get(model.api_key_env, ''),)

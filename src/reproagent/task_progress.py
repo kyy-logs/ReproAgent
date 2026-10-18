@@ -4,6 +4,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import asdict
 
+from .core.models import EvidenceLevel, TaskState
 from .core.serialization import canonical_bytes, parse_json, bytes_hash
 from .paths import workspace_path
 from .store import atomic_write, safe_child
@@ -14,7 +15,8 @@ def empty_state():
                 status='UNKNOWN', stage='unknown', contract=None, facts=[], hypotheses=[],
                 latest_candidate=None, blockers=[], todos=[], materials=[], budgets={},
                 materials_catalog=dict(artifact_id='catalog',read_via='read_artifact'),
-                completion=dict(accepted_candidate_id=None, evidence_level='NONE', verdict_ids=[]))
+                completion=dict(accepted_candidate_id=None, observation_candidate_id=None, final_accepted=False,
+                                evidence_level='NONE', verdict_ids=[]))
 
 
 class TaskProgress:
@@ -62,8 +64,16 @@ class TaskProgress:
         state = self.data
         if kind == 'task':
             state.update(task_id=obj.task_id,status=obj.status.value,stage=obj.status.value.lower())
-            state['completion'].update(accepted_candidate_id=obj.accepted_candidate_id or None,
-                                      evidence_level=obj.evidence_level.value)
+            # TaskResult retains the best historical observation, including after an
+            # unconfirmed replay or an exhausted task. That is not final acceptance.
+            final = bool(obj.status == TaskState.DONE and obj.accepted_candidate_id
+                         and obj.export_state == 'published'
+                         and obj.evidence_level in (EvidenceLevel.REPEATED_OBSERVATION,
+                                                    EvidenceLevel.DIFFERENTIAL_VALIDATED))
+            state['completion'].update(
+                accepted_candidate_id=obj.accepted_candidate_id if final else None,
+                observation_candidate_id=obj.accepted_candidate_id or None,
+                final_accepted=final, evidence_level=obj.evidence_level.value)
         elif kind == 'contracts':
             current = state['contract']
             changed = current is not None and (current['id'], current['version']) != (obj.contract_id,obj.version)
@@ -72,7 +82,9 @@ class TaskProgress:
                 state['completion'] = empty_state()['completion']
             state['contract'] = dict(id=obj.contract_id,version=obj.version,
                 path=ref.path if ref is not None else '',expected=obj.expected[:512],
-                missing_information=list(obj.missing_information)[:8])
+                excerpted_fields=['expected'] if len(obj.expected)>512 else [],
+                missing_information=list(obj.missing_information)[:8],
+                assumptions=list(obj.assumptions), observable_checks=list(obj.observable_checks))
             state['goal'] = obj.trigger[:512] or state['goal']
         elif kind == 'candidates' and self._current(obj):
             state['latest_candidate'] = dict(id=obj.candidate_id,contract_version=obj.contract_version,
@@ -158,9 +170,40 @@ class TaskProgress:
                 self._persist()
             return deepcopy(self.data)
 
+    @staticmethod
+    def _contract_view(contract):
+        if contract is None:
+            return None
+        data = deepcopy(contract)
+        excerpted = list(data.get('excerpted_fields', []))
+        marker = '…[excerpt]'
+        def shorten(text, size):
+            raw = text.encode('utf-8')
+            if len(raw) <= size:
+                return text
+            return raw[:max(0,size-len(marker.encode()))].decode('utf-8',errors='ignore') + marker
+        before = data['expected']
+        data['expected'] = shorten(before, 512)
+        if before != data['expected'] and 'expected' not in excerpted:
+            excerpted.append('expected')
+        for field, cap in (('assumptions',512),('observable_checks',256)):
+            original = data.get(field, [])
+            values = original[:8]
+            per_item = max(16, (cap-3*len(values)-2)//max(1,len(values)))
+            data[field] = [shorten(value,per_item) for value in values]
+            # JSON escapes count toward the actual wire budget as well as UTF-8.
+            while len(canonical_bytes(data[field])) > cap:
+                per_item = max(len(marker.encode('utf-8')), per_item//2)
+                data[field] = [shorten(value,per_item) for value in values]
+            if data[field] != original:
+                excerpted.append(field)
+        data['excerpted_fields'] = excerpted
+        return data
+
     def view(self, max_bytes=4096):
         with self.store._lock:
             data=deepcopy(self.data)
+            data['contract']=self._contract_view(data['contract'])
             data['materials']=[{k:m[k] for k in ('id','kind','description','storage_complete','upstream_complete')}
                                for m in self.store.materials.catalog()[-3:]]
             data['material_count']=len(self.store.materials.catalog())

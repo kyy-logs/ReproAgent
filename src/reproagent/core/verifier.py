@@ -11,7 +11,7 @@ from .models import CandidateClass, EvidenceRef, ModelRequest, Verdict, Verifica
 #: it can avoid reading as a check that passed.
 VERIFIER_CHECKS = ("execution_evidence_present", "binding_and_integrity_ok",
                    "no_non_origin_framework_errors", "framework_not_blocked",
-                   "tests_executed_and_valid", "candidate_reproduced",
+                   "tests_executed_and_valid", "candidate_setup_compatible", "candidate_reproduced",
                    "expectation_is_grounded", "review_context_fits", "candidate_assertions_supported",
                    "provider_semantic_claims", "citations_cover_expectation_and_failure")
 from .review_context import RUN_ROOT, ReviewContextTooLarge, _root_spellings, build_review_context
@@ -36,6 +36,37 @@ def _overflow_reason(needed_bytes: int, budget_bytes: int) -> str:
     """
     return (f'semantic evidence exceeds bounded context (review evidence needs {needed_bytes} bytes; '
             f'budget is {budget_bytes} bytes); narrow candidate')
+
+
+def _pre_target_candidate_warnings(contract, candidate, run):
+    """Narrow factual recovery, not a general downgrade of environment failures.
+
+    Imports may count as target calls; uncertain attribution deliberately falls through
+    to the unchanged semantic review. A warning mentioned by the issue is never treated
+    as incidental setup, and warnings inside observed target modules are excluded.
+    """
+    details = run.observation.framework_details
+    if details.get('target_calls') != {}:
+        return ()
+    reported = ' '.join((contract.trigger, contract.expected, contract.reported_actual, *contract.observable_checks)).lower()
+    if any(term in reported for term in ('warning', 'deprecat', '警告', '弃用')):
+        return ()
+    failures = [p for p in run.observation.tests if p.get('outcome') == 'failed']
+    if not failures or not isinstance(details.get('run_root'), str):
+        return ()
+    from ..paths import identity_key, workspace_path
+    root = workspace_path(details['run_root'])
+    candidate_paths = {identity_key(root / entry.path) for entry in candidate.files}
+    allowed = {'builtins.DeprecationWarning', 'builtins.FutureWarning'}
+    for phase in failures:
+        if phase.get('when') != 'call' or phase.get('exception_type') not in allowed:
+            return ()
+        frames = phase.get('exception_frames', ())
+        if not any(frame.get('path') and identity_key(workspace_path(frame['path'])) in candidate_paths for frame in frames):
+            return ()
+        if any(frame.get('module') in run.observation.target_origins for frame in frames):
+            return ()
+    return tuple(sorted({p['exception_type'] for p in failures}))
 
 
 class Verifier:
@@ -132,6 +163,14 @@ class Verifier:
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(checks.invalid) or 'no executed tests',
                 run.observation.failure_refs, code='TEST_EXECUTION_INVALID',
                 measurements={'framework_errors':list(checks.invalid[:16]), 'collected':bool(run.observation.collected), 'executed':bool(run.observation.executed)})
+        setup_warnings = _pre_target_candidate_warnings(contract, candidate, run)
+        if not record_check('candidate_setup_compatible', not setup_warnings):
+            return verdict(CandidateClass.INVALID_CANDIDATE,
+                'candidate raised a non-target deprecation warning before any target call; '
+                'revise candidate construction using original-source evidence; do not disable warnings or modify original code',
+                run.observation.failure_refs, code='CANDIDATE_PRE_TARGET_WARNING',
+                measurements={'framework_errors':list(setup_warnings), 'collected':bool(run.observation.collected),
+                              'executed':bool(run.observation.executed)})
         if not record_check('candidate_reproduced', run.raw.exit_code != 0):
             return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', code='CANDIDATE_NOT_REPRODUCED')
         if not record_check('expectation_is_grounded', bool(contract.expected) and bool(contract.sources)):

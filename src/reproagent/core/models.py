@@ -157,6 +157,12 @@ class TaskRequest:
     language: PythonPytestConfig = field(default_factory=PythonPytestConfig)
     experience_file: Path | None = None
     learn_experience: bool = True
+    # Experimental model-input policy; local STATE persistence is independent.
+    inject_task_state: bool = False
+
+    def __post_init__(self):
+        if not isinstance(self.inject_task_state, bool):
+            raise ValueError('inject_task_state must be a bool')
 
 
 @dataclass(frozen=True, slots=True)

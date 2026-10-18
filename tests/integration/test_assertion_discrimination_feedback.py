@@ -1,5 +1,6 @@
 """Offline scripted requests prove delivery, not real-model adoption or benchmark success."""
 import asyncio
+from dataclasses import replace
 import json
 
 import httpx
@@ -12,6 +13,7 @@ from tests.unit.test_controller import ScriptedModel, setup
 
 def test_original_pass_guidance_reaches_next_actual_wire_without_semantic_retry(tmp_path, projects, facts):
     request, _, _, context = setup(tmp_path, projects, facts)
+    request = replace(request, inject_task_state=True)
     script = ScriptedModel()
     wires, domain_kinds = [], []
     candidate = ('from example.parser import parse\n'
@@ -88,6 +90,7 @@ def test_original_pass_guidance_reaches_next_actual_wire_without_semantic_retry(
 def test_timeout_facts_reach_next_actual_exploration_request(tmp_path,projects,facts):
     from tests.unit.test_controller_execution_recovery import fault_sequence
     request,_,_,context=setup(tmp_path,projects,facts)
+    request=replace(request,inject_task_state=True)
     script,wires=ScriptedModel(),[]
     async def handle(http_request):
         payload=json.loads(http_request.content)

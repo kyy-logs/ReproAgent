@@ -76,7 +76,7 @@ class AgentScopeRuntime:
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None, secrets=(), experience_view=None) -> None:
+    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None, secrets=(), experience_view=None, inject_task_state=False) -> None:
         require_agentscope()
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             raise ValueError("an exploration phase needs the product's system prompt")
@@ -98,7 +98,7 @@ class AgentScopeRuntime:
             browse_gate=self.browse_gate)
         if store is not None:
             from .context_builder import ExplorationContextBuilder
-            self.middleware.context_builder = ExplorationContextBuilder(store, context, self.secrets)
+            self.middleware.context_builder = ExplorationContextBuilder(store, context, self.secrets, enabled=inject_task_state)
         self.middleware.record_browse()
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when

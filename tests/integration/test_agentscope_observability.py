@@ -108,7 +108,7 @@ def find_ripgrep():
     return next((path for path in candidates if path and Path(path).is_file()), None)
 
 
-def environment(tmp_path, projects, facts, answers=(), *, limits=None, handler=None, **contract_overrides):
+def environment(tmp_path, projects, facts, answers=(), *, limits=None, handler=None, inject_task_state=False, **contract_overrides):
     repo = projects.plain(tmp_path / "repo")
     (repo / "example" / "parser.py").write_text(MODULE_TEXT, encoding="utf-8", newline="")
     task = tmp_path / "task"
@@ -134,7 +134,8 @@ def environment(tmp_path, projects, facts, answers=(), *, limits=None, handler=N
         ModelConfig(base_url="https://offline.example/v1", model="offline", output_limit_field="max_tokens",
                     max_output_tokens=OUTPUT_LIMIT), store, transport=httpx.MockTransport(handler or scripted))
     model = factory.create(context, "exploration")
-    runtime = AgentScopeRuntime(model, toolkit, gate, context, system_prompt=SYSTEM_PROMPT, store=store)
+    runtime = AgentScopeRuntime(model, toolkit, gate, context, system_prompt=SYSTEM_PROMPT, store=store,
+                                inject_task_state=inject_task_state)
     return SimpleNamespace(repo=repo, task=task, store=store, workspace=workspace, snapshot=snapshot, project=project,
                            context=context, gate=gate, service=service, backend=backend, ledger=ledger,
                            toolkit=toolkit, factory=factory, model=model, runtime=runtime, requests=requests,
@@ -612,7 +613,7 @@ def test_actual_wire_state_survives_large_request_capture_truncation(tmp_path,pr
     import sys
     from hashlib import sha256
     monkeypatch.setattr(sys.modules[__name__],'SYSTEM_PROMPT','Stable rules. '+'padding '*6000)
-    with traced(tmp_path,projects,facts,answers=[text_reply()]) as env:
+    with traced(tmp_path,projects,facts,answers=[text_reply()],inject_task_state=True) as env:
         explore(env)
         doc=document(env)
     assert len(env.requests)==1

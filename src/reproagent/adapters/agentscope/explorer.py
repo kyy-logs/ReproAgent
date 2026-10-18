@@ -43,12 +43,13 @@ class AgentScopeExplorer(ReproAgent):
             runtime installs its own guard on the model it creates.
     """
 
-    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, model_factory, experience_view=None):
+    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, model_factory, experience_view=None, inject_task_state=False):
         require_agentscope()
         super().__init__(gateway, context, candidate_parent)
         self.project, self.workspace, self.model_factory = project, workspace, model_factory
         self.store = workspace.store
         self.experience_view = experience_view
+        self.inject_task_state = inject_task_state
         self.gate = PhaseGate()
         self.candidates = CandidateService(project, workspace, context)
         self.backend = SnapshotBackend(project, self.store, context)
@@ -57,6 +58,10 @@ class AgentScopeExplorer(ReproAgent):
         self.runtime = None
         self.learning_context = {'source_refs':(), 'tool_errors':(), 'capture_issues':()}
 
+    async def analyze(self, description, evidence):
+        await self.backend.preflight()
+        return await super().analyze(description, evidence)
+
     async def explore(self, phase):
         """Run the phase *phase* describes under the contract it carries.
 
@@ -64,6 +69,7 @@ class AgentScopeExplorer(ReproAgent):
         is the one this contract version and this frozen snapshot imply -- the phase cannot
         choose either.
         """
+        await self.backend.preflight()
         self.candidates.bind_contract(phase.contract)
         if self.runtime is None:
             self.runtime = self._runtime(phase)
@@ -106,10 +112,11 @@ class AgentScopeExplorer(ReproAgent):
         return AgentScopeRuntime(model, toolkit, self.gate, self.context,
                                  system_prompt=exploration_prompt(phase, self.candidate_parent,
                                      experience_enabled=self.experience_view is not None),
-                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()), experience_view=self.experience_view)
+                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()), experience_view=self.experience_view,
+                                 inject_task_state=self.inject_task_state)
 
 
-def agentscope_explorer_factory(config, store, *, transport=None):
+def agentscope_explorer_factory(config, store, *, transport=None, inject_task_state=False):
     """The product explorer over the SDK infrastructure, built per task.
 
     Returns:
@@ -121,7 +128,8 @@ def agentscope_explorer_factory(config, store, *, transport=None):
 
     def factory(gateway, context, candidate_parent, *, project, workspace, experience_view=None):
         return AgentScopeExplorer(gateway, context, candidate_parent, project=project, workspace=workspace,
-                                  model_factory=AgentScopeModelFactory(config, store, transport=transport), experience_view=experience_view)
+                                  model_factory=AgentScopeModelFactory(config, store, transport=transport), experience_view=experience_view,
+                                  inject_task_state=inject_task_state)
     return factory
 
 

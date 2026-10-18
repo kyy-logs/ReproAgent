@@ -7,8 +7,9 @@ from ...observability import mark
 
 
 class ExplorationContextBuilder:
-    def __init__(self, store, context, secrets=()):
+    def __init__(self, store, context, secrets=(), *, enabled=False):
         self.store, self.context = store, context
+        self.enabled = enabled
         self.store.materials.secrets = tuple(s for s in secrets if s)
 
     def build(self, messages, phase_context):
@@ -16,6 +17,8 @@ class ExplorationContextBuilder:
         progress.snapshot(self.context.budget)
         if progress.last_error:
             raise BudgetStopped('NEEDS_INFORMATION','current task state could not be persisted: '+progress.last_error)
+        if not self.enabled:
+            return messages
         try:
             # Include the envelope in the byte budget, not just its inner state.
             data = {'task_state':progress.view(max_bytes=4070)}
