@@ -45,6 +45,24 @@ class TaskStore:
     def __init__(self, root: Path):
         self.root = workspace_path(Path(root).resolve())
         self._lock = threading.RLock()
+        self._materials = None
+        self._progress = None
+
+    @property
+    def materials(self):
+        with self._lock:
+            if self._materials is None:
+                from .materials import MaterialStore
+                self._materials = MaterialStore(self)
+            return self._materials
+
+    @property
+    def progress(self):
+        with self._lock:
+            if self._progress is None:
+                from .task_progress import TaskProgress
+                self._progress = TaskProgress(self)
+            return self._progress
 
     def record_path(self, kind: str, key: str) -> Path:
         if kind not in REGISTRY or kind in ("events", "manifest"):
@@ -74,7 +92,9 @@ class TaskStore:
                     raise ValueError(f"immutable {kind} record already exists: {key}")
             else:
                 atomic_write(path, data)
-            return EvidenceRef(relative_name(path, self.root), bytes_hash(data))
+            ref = EvidenceRef(relative_name(path, self.root), bytes_hash(data))
+            self.progress.record(kind, obj, ref)
+            return ref
 
     def load_record(self, kind: str, key: str):
         path = self.record_path(kind, key)
@@ -124,6 +144,7 @@ class TaskStore:
                 handle.write(canonical_bytes(encode_record(event)) + b"\n")
                 handle.flush()
                 os.fsync(handle.fileno())
+            self.progress.event(kind, payload)
             return event
 
     def inspect(self):
