@@ -103,3 +103,62 @@ def test_same_saved_prefix_does_not_conflate_complete_and_partial_material(tmp_p
     second=store.capture('abcdef',kind='tool',description='partial')
     assert first['id']!=second['id']
     assert store.read(second['id'])['storage_complete'] is False
+
+
+def test_duplicate_at_full_quota_keeps_original_completeness(tmp_path):
+    store=material_store(tmp_path)
+    store.total_limit=3
+    first=store.capture('abc',kind='tool',description='one')
+    second=store.capture('abc',kind='tool',description='one')
+    assert second['storage_complete'] is True
+    assert second['stored_bytes']==3 and second['id']==first['id']
+
+
+def test_metadata_failure_does_not_leave_unaccounted_payloads(tmp_path,monkeypatch):
+    import reproagent.materials as module
+    store=material_store(tmp_path)
+    original=module.atomic_write
+    def fail_metadata(path,data):
+        if str(path).endswith('.json'):raise OSError('metadata unavailable')
+        return original(path,data)
+    monkeypatch.setattr(module,'atomic_write',fail_metadata)
+    for value in ('abc','def','ghi'):
+        assert store.capture(value,kind='tool',description='test')['code']=='material_store_error'
+    assert not list((tmp_path/'materials').glob('*.txt'))
+
+
+def test_all_materials_remain_reachable_through_paged_catalog(tmp_path):
+    store=material_store(tmp_path)
+    ids=[store.capture(str(i),kind='tool',description='item '+str(i))['id'] for i in range(8)]
+    page=store.read('catalog',limit=2,max_bytes=1024)
+    assert [item['id'] for item in page['items']]==ids[:2]
+    assert page['next_offset']==3 and page['total']==8
+    assert store.read('catalog',offset=7,limit=2)['next_offset'] is None
+    assert store.read(ids[0])['text']=='0'
+
+
+def test_incomplete_manifest_is_ignored_instead_of_crashing_reader(tmp_path):
+    store=material_store(tmp_path)
+    meta=store.capture('abc',kind='tool',description='test')
+    path=next((tmp_path/'materials').glob('*.json'))
+    data=json.loads(path.read_text());data.pop('hash')
+    path.write_text(json.dumps(data),encoding='utf-8')
+    assert material_store(tmp_path).read(meta['id'])['code']=='unknown_artifact'
+
+
+def test_unavailable_material_directory_is_controlled(tmp_path,monkeypatch):
+    import reproagent.materials as module
+    original=module.safe_child
+    def refuse_directory(root,relative):
+        if relative=='materials':raise ValueError('path escapes workspace')
+        return original(root,relative)
+    monkeypatch.setattr(module,'safe_child',refuse_directory)
+    store=material_store(tmp_path)
+    assert store.capture('abc',kind='tool',description='test')['code']=='material_store_error'
+    assert store.catalog()==[]
+
+
+def test_catalog_tiny_capacity_does_not_claim_progress(tmp_path):
+    store=material_store(tmp_path)
+    store.capture('abc',kind='tool',description='test')
+    assert store.read('catalog',max_bytes=64)['code']=='response_capacity'

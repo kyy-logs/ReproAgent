@@ -193,12 +193,14 @@ CLI解析/凭据缺失等任务开始前的错误仍使用已有CLI错误输出�
 
 每个任务新增程序维护的 `STATE.json`。它是现有契约、候选、原始执行、判定与任务记录的当前投影，不代替 Verifier，不提供断点恢复执行。契约变化会清除当前候选/事实/完成引用；旧记录仍保留。模型没有写 STATE 或修改完成等级的工具。hypotheses 初版为空，不从聊天推断已验证事实。
 
-每次探索模型调用前，Context Builder 注入一条临时 user 数据消息 `task_state`（外层及内容合计不超过 4096 UTF-8 字节），不累加到 SDK 历史。包含目标、当前契约、最新结果、阻塞、实时预算、最近材料入口和省略标记。`context.prepared` 记录 revision、实际字节数和哈希；可在原有 HTTP trace 中核对实际输入。必需状态持久化或容量失败会明确停止，不发送过时状态。
+每次探索模型调用前，Context Builder 注入一条临时 user 数据消息 `task_state`（外层及内容合计不超过 4096 UTF-8 字节），不累加到 SDK 历史。包含目标、当前契约、最新结果、阻塞、实时预算、最近材料入口和省略标记。完整目录入口始终是 `read_artifact(artifact_id="catalog")`，按 offset/limit 分页；STATE 只展示最近三项材料的短信息。`context.prepared` 记录 revision、实际字节数和哈希；可在原有 HTTP trace 中核对实际输入。必需状态持久化或容量失败会明确停止，不发送过时状态。
 
 `Read/Grep/Glob` 的 SDK 文本大于 min(8192, tool_response_bytes) 时，先在 `materials/` 保存脱敏版本，再返回现有有界原文/evidence sidecar 和 `<material>` 入口。源文件本身和上游 SDK 返回可能不同，`upstream_complete: null` 表示无法保证是上游全文。`storage_complete` 只表示当前收到的文本是否全部保存；两者不能混用。
 
 材料每项最多 256 KiB，每任务最多 4 MiB/128 项。原始执行日志与判定可登记；fixed 版本执行及其判定不会供探索读取。达到存储上限或写入失败时，工具保留截断结果并报告不可用原因。小输出不必保存。追加入口同样计入原有工具返回字节上限。
 
-`read_artifact(artifact_id, offset=1, limit=100, column=0)` 只读已登记材料，limit 最大 200 行。根据返回的 next_offset 和 next_column（作为 column）继续读取；超长单行也能续读。未知 ID、路径、损坏及越界参数被拒绝。读回只提供诊断数据，不会授予新的源码引用资格；要引用源码仍须用原有 Read/Grep。此工具受相同步骤、时间、权限和预留发布预算限制。
+`read_artifact(artifact_id, offset=1, limit=100, column=0)` 只读已登记材料，limit 最大 200 行。根据返回的 next_offset 和 next_column（作为 column）继续读取；超长单行也能续读。目录页与正文页都受相同返回字节上限限制；没有一项能放下时明确返回 response_capacity，不返回无进展的续页。未知 ID、路径、损坏及越界参数被拒绝。读回只提供诊断数据，不会授予新的源码引用资格；要引用源码仍须用原有 Read/Grep。此工具受相同步骤、时间、权限和预留发布预算限制。
 
 存储、状态更新、摘录和读取均不调用摘要模型；状态和摘录进入实际请求后会消耗输入 token。
+
+材料重复登记复用已有完整性信息，不因总额度耗尽误报；元数据写入失败回滚正文，回滚失败停止继续写入。重开材料库时仅接受完整的受控元数据结构，损坏条目不进入可读目录，孤立正文仍计入磁盘额度。

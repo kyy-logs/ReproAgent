@@ -13,6 +13,7 @@ def empty_state():
     return dict(schema_version=1, revision=0, task_id='unknown', goal='Reproduce the frozen issue',
                 status='UNKNOWN', stage='unknown', contract=None, facts=[], hypotheses=[],
                 latest_candidate=None, blockers=[], todos=[], materials=[], budgets={},
+                materials_catalog=dict(artifact_id='catalog',read_via='read_artifact'),
                 completion=dict(accepted_candidate_id=None, evidence_level='NONE', verdict_ids=[]))
 
 
@@ -125,7 +126,7 @@ class TaskProgress:
             pass
 
     def event(self, kind, payload):
-        if kind not in ('exploration.action','exploration.tool_error','exploration.protocol_failure','exploration.tool_result'): return
+        if kind not in ('exploration.action','exploration.tool_error','exploration.protocol_error','exploration.tool_result'): return
         code = payload.get('result_code')
         if code == 'TOOL_SUCCEEDED':
             if any(b.get('tool') == payload.get('action') for b in self.data['blockers']):

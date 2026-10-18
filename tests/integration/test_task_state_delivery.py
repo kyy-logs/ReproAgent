@@ -67,3 +67,14 @@ def test_current_contract_replaces_current_state_across_phases(tmp_path,projects
     assert current['contract']['version']==2
     assert current['completion']['evidence_level']=='NONE'
     assert current['facts']==[]
+
+
+def test_material_reader_respects_reserved_publish_steps_on_real_wire(tmp_path,projects,facts):
+    env=environment(tmp_path,projects,facts,limits=BudgetLimits(agent_steps=3),answers=[
+        tool_reply('read_artifact',{'artifact_id':'catalog'},call_id='reserved-read'),
+        tool_reply('request_information',{'question':'need remaining material'},call_id='finish')])
+    assert explore(env).kind=='request_information'
+    assert len(env.requests)==2
+    tools=[m for m in env.requests[1]['messages'] if m.get('role')=='tool']
+    assert len(tools)==1 and 'read_artifact is refused' in tools[0]['content']
+    assert state_of(env.requests[1])['blockers'][0]['code']=='RESERVED_FOR_PUBLISHING'

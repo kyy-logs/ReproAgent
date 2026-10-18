@@ -413,5 +413,7 @@ def test_deeply_corrupt_optional_library_does_not_stop_main_task(tmp_path, proje
     request, controller, result, seen, main, learning = run_sdk_task(tmp_path, projects, facts, seed=False)
     assert result.status == TaskState.DONE and not learning
     assert controller.learning_result.code == "store_error"
-    assert all(len(p["tools"]) == 6 for p in seen if p.get("tools"))
+    assert all([tool['function']['name'] for tool in p['tools']] ==
+               ['Read','Grep','Glob','write_candidate','revise_contract','request_information','read_artifact']
+               for p in seen if p.get('tools'))
     assert path.read_bytes() == content

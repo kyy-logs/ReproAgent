@@ -501,10 +501,15 @@ def test_capture_does_not_change_the_request_or_add_a_call(tmp_path, projects, f
     scripted = [read_reply(None, "call-1"), text_reply()]
 
     plain = environment(tmp_path / "plain", projects, facts, answers=list(scripted))
+    # Compare every field, including task_state, against the same deterministic time.
+    plain.context.budget.clock = lambda: 100.0
+    plain.context.budget.deadline = 100.0 + plain.context.budget.limits.task_timeout_seconds
     plain.answers[0] = read_reply(plain.module, "call-1")
     explore(plain)
 
     with traced(tmp_path / "traced", projects, facts, answers=list(scripted)) as env:
+        env.context.budget.clock = lambda: 100.0
+        env.context.budget.deadline = 100.0 + env.context.budget.limits.task_timeout_seconds
         env.answers[0] = read_reply(env.module, "call-1")
         explore(env)
 

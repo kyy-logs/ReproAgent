@@ -506,6 +506,9 @@ def measure_threshold(env):
     env.runtime._agent.state.context.append(env.runtime._message(phase))
     env.runtime._agent.state.context.append(SystemMsg(name='exploration-progress', content=render_progress(
         step_budget_view(env.context.budget.limits.agent_steps, env.context.budget.steps_used), phase)))
+    env.store.progress.phase(phase)
+    env.runtime._agent.state.context[:] = env.runtime.middleware.context_builder.build(
+        list(env.runtime._agent.state.context), phase)
     try:
         first = asyncio.run(env.runtime.middleware._estimated_tokens(env.runtime._agent))
     finally:
@@ -723,7 +726,7 @@ def test_the_permission_layer_allows_only_the_phase_tools(tmp_path, projects, fa
     # user is turned into a refusal: this phase has no user to ask.
     assert check("Read", {"file_path": "a.py"}, PermissionBehavior.ALLOW).behavior is PermissionBehavior.ALLOW
     assert check("write_candidate", write_payload(), PermissionBehavior.ASK).behavior is PermissionBehavior.DENY
-    assert tuple(TOOL_NAMES) == ("Read", "Grep", "Glob", "write_candidate", "revise_contract", "request_information")
+    assert tuple(TOOL_NAMES) == ("Read", "Grep", "Glob", "write_candidate", "revise_contract", "request_information", "read_artifact")
     actions = events(env, "exploration.action")
     assert [payload["result_code"] for payload in actions] == ["DENIED", "ALLOWED", "DENIED"]
     assert actions[1]["action"] == "Read" and actions[1]["arguments_hash"] == canonical_hash({"file_path": "a.py"})

@@ -1,4 +1,4 @@
-"""The six-tool phase surface: three snapshot-bound file tools and three domain tools.
+"""The phase surface: snapshot-bound file tools, domain tools and diagnostic material reading.
 
 The toolkit is built over a real frozen snapshot, so a candidate is published through the
 existing Workspace, a contract revision cites only lines a tool really displayed at the
@@ -350,7 +350,7 @@ async def _chunks(tool):
 
 def test_first_phase_result_wins_and_toolkit_is_exact(tmp_path, projects, facts):
     env = environment(tmp_path, projects, facts)
-    # Exactly the six tools the phase registers: no shell, no editor, no run/submit choice.
+    # Exactly the registered phase tools: no shell, no editor, no run/submit choice.
     names = tuple(tool.name for tool in env.toolkit.tool_groups[0].tools)
     assert names == TOOL_NAMES == FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES + ARTIFACT_TOOL_NAMES
     schemas = asyncio.run(env.toolkit.get_tool_schemas())

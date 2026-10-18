@@ -274,7 +274,7 @@ class ExplorationMiddleware(MiddlewareBase):
     async def on_check_permission(self, agent, input_kwargs, next_handler):
         """Refuse every tool outside the phase surface, and never ask a user who is absent.
 
-        The six phase tools are still decided by the SDK's own engine, so a configured
+        The registered phase tools are still decided by the SDK's own engine, so a configured
         deny rule keeps winning over them; what cannot happen is an answer that parks the
         phase on a confirmation nobody can give, or a tool the phase never registered.
         Once only the reserved steps are left, the readers are refused too, whatever the

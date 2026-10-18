@@ -78,3 +78,17 @@ def test_state_write_failure_leaves_old_snapshot_and_marks_unavailable(tmp_path,
     store.save_contract(IssueContract('c1',version=2))
     assert (tmp_path/'STATE.json').read_bytes()==old
     assert store.progress.last_error=='state_store_error'
+
+
+def test_protocol_error_is_a_current_blocker(tmp_path):
+    store=TaskStore(tmp_path)
+    store.append_event('exploration.protocol_error',(),{'result_code':'MULTIPLE_TOOL_CALLS'})
+    assert store.progress.snapshot()['blockers'][0]['code']=='MULTIPLE_TOOL_CALLS'
+
+
+def test_current_view_has_a_full_material_catalog_entry(tmp_path):
+    store=TaskStore(tmp_path)
+    for i in range(8):store.materials.capture(str(i),kind='tool',description=str(i))
+    view=store.progress.view()
+    assert len(view['materials'])==3
+    assert view['materials_catalog']=={'artifact_id':'catalog','read_via':'read_artifact'}
