@@ -167,7 +167,8 @@ def pytest_runtest_makereport(item, call):
         while traceback is not None:
             frame = traceback.tb_frame
             frames.append({'path': str(Path(frame.f_code.co_filename).resolve()),
-                           'lineno': traceback.tb_lineno, 'module': frame.f_globals.get('__name__', '')})
+                           'lineno': traceback.tb_lineno, 'module': frame.f_globals.get('__name__', ''),
+                           'function': frame.f_code.co_name})
             traceback = traceback.tb_next
     report._reproagent_exception_type = exception_type
     # Preserve the innermost frames needed for attribution without repeating a

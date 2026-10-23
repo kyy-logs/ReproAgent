@@ -20,6 +20,8 @@ from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
 from .verification_issues import ISSUE_SPECS
 from .budget import BudgetStopped
+from .semantic_reuse import SemanticApproval, rebound_refs, review_key
+from .serialization import canonical_hash
 from .protocol import ModelOutputError, validate_verdict
 from .execution_diagnostics import diagnose_execution, execution_bound, diagnostic_reason, INVALID_INTEGRITY_CODES
 
@@ -41,6 +43,7 @@ def _overflow_reason(needed_bytes: int, budget_bytes: int) -> str:
 class Verifier:
     def __init__(self, store, adapter, gateway, secrets=()):
         self.store, self.adapter, self.gateway, self.secrets = store, adapter, gateway, tuple(s for s in secrets if s)
+        self._semantic_approval = None
 
     def resolve(self, ref):
         path = safe_child(self.store.root, ref.path)
@@ -86,6 +89,9 @@ class Verifier:
 
     async def _evaluate(self, contract, candidate, executions, context):
         context.budget.check()
+        if context.cancel_event.is_set():
+            raise BudgetStopped('CANCELLED')
+        previous, self._semantic_approval = self._semantic_approval, None
         def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore', diagnostic=None, unmet=(), code=None, check=None, measurements=None, issues=()):
             if code is not None:
                 issues = (self._issue(code, reason, check=check, refs=refs, measurements=measurements), *issues)
@@ -164,6 +170,41 @@ class Verifier:
         mark('review.context', attributes={'input_bytes':review.input_bytes, 'output_bytes':review.output_bytes,
             'budget_bytes':cap})
         prompt = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
+        key = review_key(contract, candidate, run, review, prompt, self.gateway,
+                         byte_limit=cap, secrets=self.secrets)
+        if previous is not None and key is not None and previous.key == key and previous.run_id != run.run_id:
+            try:
+                for ref in previous.verdict.evidence_refs:
+                    self.resolve(ref)
+                refs = rebound_refs(previous, review)
+                for ref in refs:
+                    self.resolve(ref)
+                if not (any(ref in sources for ref in refs)
+                        and any(ref in run.observation.failure_refs for ref in refs)):
+                    raise ValueError('reused citations do not cover this execution')
+                context.budget.check()
+                if context.cancel_event.is_set():
+                    raise BudgetStopped('CANCELLED')
+                audit = {'first_run_id': previous.run_id, 'run_id': run.run_id,
+                    'candidate_id': candidate.candidate_id, 'material_key': key,
+                    'basis_verdict_hash': canonical_hash(asdict(previous.verdict)),
+                    'review_origin': 'reused_provider_claim', 'new_model_call': False}
+                self.store.append_event('verification.semantic_reused',
+                    tuple('runs/' + rid + '/execution.json' for rid in (previous.run_id, run.run_id)), audit)
+                context.budget.check()
+                if context.cancel_event.is_set():
+                    raise BudgetStopped('CANCELLED')
+            except (OSError, ValueError, KeyError, RuntimeError):
+                # No unverifiable approval or unaudited reuse becomes success.
+                pass
+            else:
+                mark('verification.semantic_reused', attributes=audit)
+                record_check('candidate_assertions_supported', True, source='reused_provider_claim')
+                record_check('provider_semantic_claims', True, source='reused_provider_claim')
+                record_check('citations_cover_expectation_and_failure', True)
+                return verdict(CandidateClass.REPRODUCED,
+                    '独立重跑的完整审查材料等价；复用 ' + previous.run_id + ' 的语义审查，未再次调用模型。',
+                    refs, origin='reused_provider_claim')
         error = ''
         protocol_code = 'MODEL_PROTOCOL_ERROR'
         for attempt in range(3):
@@ -256,7 +297,10 @@ class Verifier:
                             error = 'REPRODUCED requires citations to both expectation source and actual failure'
                             protocol_code = 'SEMANTIC_CITATIONS_INCOMPLETE'
                         else:
-                            return verdict(classification, result['reason'], refs, origin='provider')
+                            approved = verdict(classification, result['reason'], refs, origin='provider')
+                            if key is not None and attempt == 0:
+                                self._semantic_approval = SemanticApproval(key, run.run_id, approved, review.available_refs)
+                            return approved
                     else:
                         if not semantic_issues:
                             code = 'ENVIRONMENT_BLOCKED' if classification == CandidateClass.ENVIRONMENT_BLOCKED else 'SEMANTIC_REPRODUCTION_UNCONFIRMED'
@@ -315,7 +359,7 @@ class Verifier:
             return tuple(sorted(_root_spellings(run_root) + _root_spellings(workspace), key=len, reverse=True))
 
         def signatures(run):
-            from .failure_signature import stable_failure_message
+            from .failure_signature import stable_failure_message, stable_pytester_message
             roots = [(spelling, RUN_ROOT) for spelling in
                      _run_roots(run.observation.framework_details.get('run_root', ''))]
             temp_root = run.observation.framework_details.get('temp_root', '')
@@ -331,7 +375,11 @@ class Verifier:
                 if phase.get('outcome') == 'failed':
                     crash = dict(phase.get('crash', {}))
                     crash['path'] = normalized(str(crash.get('path', '')))
-                    crash['message'] = stable_failure_message(normalized(str(crash.get('message', ''))))
+                    message = stable_pytester_message(str(crash.get('message', '')), phase, run.observation.target_origins)
+                    if message != str(crash.get('message', '')):
+                        mark('replay.metadata_normalized', attributes={'run_id': run.run_id,
+                            'field': 'crash.message', 'rule': 'pytest_line_matcher_summary_elapsed'})
+                    crash['message'] = stable_failure_message(normalized(message))
                     comparison = phase.get('assertion_comparison')
                     if phase.get('exception_type') == 'builtins.AssertionError' and comparison:
                         # Compare the observed complete values, not pytest's

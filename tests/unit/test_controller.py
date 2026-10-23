@@ -240,7 +240,8 @@ def test_candidate_is_run_and_confirmed_without_run_submit_decisions(tmp_path, p
     assert action_endings(events) == [('action.completed', 'run_candidate', 'OK'),
                                       ('action.completed', 'submit_candidate', 'OK')]
     assert phase_results(events) == [('candidate', 'REPRODUCED')]
-    assert model.kinds == ['contract', 'verdict', 'verdict']
+    assert model.kinds == ['contract', 'verdict']
+    assert sum(event.kind == 'verification.semantic_reused' for event in events) == 1
     assert controller.explorer.closed
 
 

@@ -138,6 +138,7 @@ class ExplorationMiddleware(MiddlewareBase):
         self.browse_gate = browse_gate
         self._browse_delivery_info = {}
         self._convergence_recorded = False
+        self._skill_injected = False
 
     @property
     def steps_remaining(self) -> int:
@@ -218,6 +219,21 @@ class ExplorationMiddleware(MiddlewareBase):
                 raise
             except Exception:
                 pass  # Optional advice cannot replace the original model input.
+        if not self._skill_injected:
+            # The method is a first-request view, never a persistent history entry.
+            from ...core.agent import reproduction_skill
+            body = reproduction_skill()
+            message = SystemMsg(name='reproduction-skill',
+                content='<reproduction_skill name="reproduce-bug">\n' + body
+                        + '\n</reproduction_skill>')
+            messages = list(input_kwargs['messages'])
+            insert_at = 0
+            while (insert_at < len(messages)
+                   and getattr(messages[insert_at], 'role', '') == 'system'):
+                insert_at += 1
+            messages.insert(insert_at, message)
+            input_kwargs = {**input_kwargs, 'messages': messages}
+            self._skill_injected = True
         results = []
         if self.browse_gate is not None and 'list_experiences' in self.allowed_tools:
             for message in input_kwargs['messages']:

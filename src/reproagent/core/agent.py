@@ -45,6 +45,16 @@ def prompt(name):
     return files('reproagent').joinpath('prompts/' + name + '.md').read_text(encoding='utf-8')
 
 
+def reproduction_skill():
+    """Load the bundled method, independently of checkout paths and the caller's cwd."""
+    source = files('reproagent').joinpath(
+        'resources/skills/reproduce-bug/SKILL.md').read_text(encoding='utf-8')
+    _, separator, body = source.partition('\n---\n')
+    if not source.startswith('---\n') or not separator or not body.strip():
+        raise ValueError('bundled reproduction skill has invalid frontmatter or an empty body')
+    return body.strip()
+
+
 def require_correctable_output(error):
     """A truncation, filter or oversized body cannot be corrected by asking again.
 
@@ -90,6 +100,8 @@ def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=
         EXPERIENCE_CATALOG_TOKEN, sentence)
     if not experience_enabled:
         text = text.partition('Optional historical experience tools')[0].rstrip() + '\n'
+    # The method is injected once into the first exploration request, not into the
+    # persistent system prompt that every later request would repeat.
     return text
 
 
