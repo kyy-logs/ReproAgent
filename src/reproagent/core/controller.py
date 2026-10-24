@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, field, replace
 
 from ..observability import span, mark
 from .verification_feedback import evidence_excerpts, render_verification_feedback
+from .execution_log_evidence import execution_log_evidence
 from .budget import BudgetStopped
 from .models import (AgentContext, CandidateClass, EnvironmentSnapshot, EvidenceContext, EvidenceLevel,
                      IssueDescription, ProjectView, SourceRef, TaskRequest, TaskResult, TaskState,
@@ -39,7 +40,7 @@ from reproagent.store import atomic_write
 # with a rejected argument, a model failure or an internal error.
 ACTION_RESULT_CODES = frozenset({'OK', 'INVALID_ARGUMENT', 'MISSING_FILE', 'INVALID_ENCODING', 'UNKNOWN_CANDIDATE',
     'STALE_CANDIDATE', 'CANDIDATE_NOT_REPRODUCED', 'CONTRACT_INCOMPLETE', 'UNAUTHORIZED_EVIDENCE_REF',
-    'REVISION_BUDGET_EXCEEDED', 'REPLAY_UNCONFIRMED', 'DUPLICATE_CANDIDATE', 'REVIEW_CONTEXT_TOO_LARGE', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR',
+    'REVISION_BUDGET_EXCEEDED', 'REPLAY_UNCONFIRMED', 'ENVIRONMENT_BLOCKED', 'DUPLICATE_CANDIDATE', 'REVIEW_CONTEXT_TOO_LARGE', 'INTERRUPTED', 'CLEANUP_FAILED', 'MODEL_OUTPUT_ERROR',
     'MODEL_PROTOCOL_ERROR', 'INTERNAL_ERROR', 'COMMAND_TIMEOUT', 'REPEATED_COMMAND_TIMEOUT',
     'LOG_LIMIT', 'PROBE_INCOMPLETE', 'EXECUTION_NOT_EXITED'})
 
@@ -211,13 +212,29 @@ class Controller:
         refs.extend(verdict.evidence_refs)
         return evidence_excerpts(refs, read_ref=self.verifier.resolve)
 
+    def execution_log_evidence(self, verdict):
+        logs = []
+        for run_id in verdict.run_ids:
+            try:
+                run = self.store.load_record('runs', run_id)
+            except (ValueError, OSError):
+                continue
+            if (run.execution_role != 'original' or run.run_id != run_id
+                    or any(getattr(run, key) != getattr(verdict, key) for key in
+                           ('candidate_id', 'contract_id', 'contract_version', 'manifest_hash'))):
+                continue
+            evidence = execution_log_evidence(run, read_ref=self.verifier.resolve)
+            if evidence is not None:
+                logs.append(evidence)
+        return tuple(logs)
+
     def candidate_feedback(self, verdict, context, *, result_code, decision='continue', instruction='', extras=None):
         """Project already-saved verification facts; advisory sinks cannot change acceptance."""
         try:
             text = render_verification_feedback(verdict, result_code=result_code,
                 byte_limit=min(8192, context.budget.limits.tool_response_bytes), decision=decision,
                 instruction=instruction, secrets=self.secrets, extras=extras,
-                evidence=self.cited_evidence(verdict))
+                evidence=self.cited_evidence(verdict), log_evidence=self.execution_log_evidence(verdict))
         except BudgetStopped:
             if decision != 'stop':
                 raise
@@ -405,6 +422,12 @@ class Controller:
                 step.rejected(code)
                 return result, self.feedback({'error':str(exc)}), code, False
             self.store.save_record('verdicts', 'verdict-' + second.run_id, second_verdict)
+            if second_verdict.classification == CandidateClass.ENVIRONMENT_BLOCKED:
+                step.rejected('ENVIRONMENT_BLOCKED')
+                result = self.state(result, TaskState.BLOCKED, stop_reason='ENVIRONMENT_BLOCKED',
+                                    uncertainties=(*result.uncertainties, second_verdict.reason))
+                return (result, self.candidate_feedback(second_verdict, context,
+                        result_code='ENVIRONMENT_BLOCKED', decision='stop'), 'ENVIRONMENT_BLOCKED', True)
             if not self.verifier.confirm(contract, candidate, run, second, (verdict, second_verdict)):
                 step.rejected('REPLAY_UNCONFIRMED')
                 return (result, self.candidate_feedback(second_verdict, context, result_code='REPLAY_UNCONFIRMED',

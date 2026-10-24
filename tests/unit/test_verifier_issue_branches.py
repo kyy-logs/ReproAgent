@@ -9,7 +9,7 @@ from tests.unit.test_verifier import prepare, EvidenceModel
 @pytest.mark.parametrize('change,code', [
     ('missing','EXECUTION_EVIDENCE_MISSING'), ('binding','RUN_BINDING_MISMATCH'),
     ('probe','PROBE_INCOMPLETE'), ('framework','FRAMEWORK_CHECK_FAILED'),
-    ('import','CANDIDATE_IMPORT_BLOCKED'), ('environment','ENVIRONMENT_BLOCKED'),
+    ('import','CANDIDATE_IMPORT_BLOCKED'),
     ('unexecuted','TEST_EXECUTION_INVALID'), ('passes','CANDIDATE_NOT_REPRODUCED'),
     ('expectation','EXPECTATION_UNGROUNDED'), ('capacity','REVIEW_CONTEXT_TOO_LARGE'),
     ('source','EVIDENCE_UNAVAILABLE'), ('changed','CANDIDATE_HASH_MISMATCH'),
@@ -22,7 +22,7 @@ def test_program_rejections_have_structured_factual_gaps(tmp_path, projects, fac
     elif change == 'probe': runs = (replace(run, observation=replace(run.observation, probe_complete=False)),)
     elif change == 'framework':
         runs = (replace(run, observation=replace(run.observation, tests=({'when':'call','outcome':'skipped','wasxfail':'known'},))),)
-    elif change in ('import','environment'):
+    elif change == 'import':
         observation = replace(run.observation, tests=({'when':'call','outcome':'failed','longrepr':'ModuleNotFoundError'},),
             target_origins={} if change == 'import' else run.observation.target_origins)
         runs = (replace(run, observation=observation),)
@@ -195,3 +195,52 @@ def test_rejected_claim_preserves_trace_contract(tmp_path, projects, facts, monk
     else:
         decisions = [attrs for name, attrs in events if name == 'verdict']
         assert decisions and all(attrs['reason_origin'] == 'program' for attrs in decisions)
+
+
+@pytest.mark.parametrize('source', ['provider', 'import_signal'])
+def test_environment_block_records_stop_instead_of_explore(tmp_path, projects, facts, source):
+    model = Claims({'classification': 'ENVIRONMENT_BLOCKED', 'target_triggered': False})
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, model=model)
+    if source == 'import_signal':
+        run = replace(run, observation=replace(run.observation,
+            tests=({'when': 'call', 'outcome': 'failed', 'longrepr': 'ModuleNotFoundError: required_dependency'},)))
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert verdict.classification == CandidateClass.ENVIRONMENT_BLOCKED
+    assert verdict.next_action == 'stop'
+    assert verdict.issues[0].origin == 'provider_claim'
+    assert len(model.calls) == 1
+
+
+def test_semantic_candidate_setup_error_keeps_correction_available(tmp_path, projects, facts):
+    model = Claims({'classification': 'INVALID_CANDIDATE', 'target_triggered': False,
+                    'failure_matches_issue': False,
+                    'reason': 'Candidate used HTML output but tried reading index.txt before its assertion.'})
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, model=model)
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert verdict.classification == CandidateClass.INVALID_CANDIDATE
+    assert verdict.next_action == 'explore'
+    assert set(verdict.unmet_checks) == {'target_triggered', 'failure_matches_issue'}
+    assert all(item.origin == 'provider_claim' for item in verdict.issues)
+
+
+def test_importing_invented_module_after_target_call_reaches_semantic_attribution(tmp_path, projects, facts, monkeypatch):
+    text = ('from example.parser import parse\n'
+            'def test_wrong_module():\n'
+            '    parse([1])\n'
+            '    import candidate_invented_module_123456\n'
+            '    assert parse([]) == []\n')
+    import importlib
+    events = []
+    monkeypatch.setattr(importlib.import_module('reproagent.core.verifier'), 'mark',
+                        lambda name, *, attributes: events.append((name, attributes)))
+    model = Claims({'classification': 'INVALID_CANDIDATE', 'target_triggered': False,
+                    'failure_matches_issue': False, 'reason': 'Candidate imported an invented module.'})
+    contract, candidate, run, verifier, *_ = prepare(tmp_path, projects, facts, text=text, model=model)
+    assert run.observation.executed and run.observation.target_origins
+    verdict = asyncio.run(verifier.evaluate(contract, candidate, (run,), facts.context()))
+    assert verdict.classification == CandidateClass.INVALID_CANDIDATE
+    assert verdict.next_action == 'explore'
+    assert len(model.calls) == 1
+    assert any(name == 'verification.attribution_required' and attrs['run_id'] == run.run_id
+               for name, attrs in events)
+    assert all(item.origin == 'provider_claim' for item in verdict.issues)

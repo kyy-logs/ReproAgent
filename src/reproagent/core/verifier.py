@@ -93,6 +93,10 @@ class Verifier:
             raise BudgetStopped('CANCELLED')
         previous, self._semantic_approval = self._semantic_approval, None
         def verdict(classification, reason, refs=(), uncertainty=(), origin='program', next_action='explore', diagnostic=None, unmet=(), code=None, check=None, measurements=None, issues=()):
+            # Controller treats this classification as terminal, for both program
+            # and provider findings. Persist the same action in the verdict.
+            if classification == CandidateClass.ENVIRONMENT_BLOCKED:
+                next_action = 'stop'
             if code is not None:
                 issues = (self._issue(code, reason, check=check, refs=refs, measurements=measurements), *issues)
             if issues:
@@ -127,14 +131,25 @@ class Verifier:
         if not record_check('no_non_origin_framework_errors', not non_origin_errors):
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(non_origin_errors), run.observation.failure_refs,
                 code='FRAMEWORK_CHECK_FAILED', measurements={'framework_errors':list(non_origin_errors[:16])})
-        if not record_check('framework_not_blocked', not checks.blocked):
-            if not run.observation.target_origins:
-                return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate import references an unavailable module before target execution',
-                    run.observation.failure_refs, code='CANDIDATE_IMPORT_BLOCKED')
-            if 'ModuleNotFoundError' not in contract.reported_actual and 'import' not in contract.reported_actual.lower():
-                return verdict(CandidateClass.ENVIRONMENT_BLOCKED, '; '.join(checks.blocked), run.observation.failure_refs,
-                    code='ENVIRONMENT_BLOCKED', measurements={'framework_errors':list(checks.blocked[:16])})
-        if not record_check('tests_executed_and_valid', not checks.invalid and bool(run.observation.executed)):
+        if not checks.blocked:
+            record_check('framework_not_blocked', True)
+        elif not run.observation.target_origins:
+            record_check('framework_not_blocked', False)
+            return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate import references an unavailable module before target execution',
+                run.observation.failure_refs, code='CANDIDATE_IMPORT_BLOCKED')
+        else:
+            # An imported target plus a later import error does not locate the fault:
+            # the candidate may have invented a module, or a real dependency may be
+            # missing. Defer ownership to the existing cited semantic review, rather
+            # than pretending this signal proves an unavailable environment.
+            mark('verification.attribution_required', attributes={'check': 'framework_not_blocked',
+                'candidate_id': candidate.candidate_id, 'run_id': run.run_id,
+                'framework_errors': list(checks.blocked[:16])})
+        execution_valid = not checks.invalid and bool(run.observation.executed)
+        collection_attribution = (bool(checks.blocked) and all(error == 'no collected tests' for error in checks.invalid)
+                                  and not run.observation.executed
+                                  and bool(run.observation.framework_details.get('collection_failures')))
+        if not record_check('tests_executed_and_valid', execution_valid) and not collection_attribution:
             return verdict(CandidateClass.INVALID_CANDIDATE, '; '.join(checks.invalid) or 'no executed tests',
                 run.observation.failure_refs, code='TEST_EXECUTION_INVALID',
                 measurements={'framework_errors':list(checks.invalid[:16]), 'collected':bool(run.observation.collected), 'executed':bool(run.observation.executed)})
@@ -142,9 +157,9 @@ class Verifier:
             return verdict(CandidateClass.NOT_REPRODUCED, 'candidate passes on original snapshot', code='CANDIDATE_NOT_REPRODUCED')
         if not record_check('expectation_is_grounded', bool(contract.expected) and bool(contract.sources)):
             return verdict(None, 'expected behavior lacks source', uncertainty=('expectation is ungrounded',), code='EXPECTATION_UNGROUNDED')
-        # Every hard check above ran against the complete ExecutionResult. Only a
-        # bounded, citable projection reaches the model, and nothing here may turn a
-        # failed hard check or an unusable projection into a success.
+        # Hard checks use the complete record. Collection imports may receive a
+        # diagnostic-only review to distinguish candidate setup from unavailable
+        # environment; that review cannot override the failed execution check.
         def read_file(entry):
             data = safe_child(candidate.storage_root, entry.path).read_bytes()
             if bytes_hash(data) != entry.content_hash:
@@ -153,25 +168,25 @@ class Verifier:
         cap = context.budget.limits.tool_response_bytes
         def project(protocol_error=''):
             return build_review_context(contract, candidate, run, read_ref=self.resolve, read_file=read_file,
-                max_bytes=cap, protocol_error=protocol_error)
+                max_bytes=cap, protocol_error=protocol_error, secrets=self.secrets)
         try:
             review = project()
         except CandidateFileChanged:
             return verdict(CandidateClass.INVALID_CANDIDATE, 'candidate file hash changed', code='CANDIDATE_HASH_MISMATCH', check='candidate_file_hash')
         except ReviewContextTooLarge as error:
             record_check('review_context_fits', False)
-            mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
+            mark('review.context', attributes={'output_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes, 'stage':error.stage})
             return verdict(None, _overflow_reason(error.needed_bytes, error.budget_bytes), uncertainty=('evidence omitted rather than silently truncated',), next_action='narrow_candidate', code='REVIEW_CONTEXT_TOO_LARGE',
-                measurements={'needed_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes})
+                measurements={'needed_bytes':error.needed_bytes, 'budget_bytes':error.budget_bytes, 'stage':error.stage})
         except (ValueError, OSError, UnicodeError):
             return verdict(None, 'evidence source is unavailable or altered', code='EVIDENCE_UNAVAILABLE')
         sources = tuple(EvidenceRef(s.path, s.content_hash, s.start_line, s.end_line) for s in contract.sources)
         record_check('review_context_fits', True)
         mark('review.context', attributes={'input_bytes':review.input_bytes, 'output_bytes':review.output_bytes,
-            'budget_bytes':cap})
+            'budget_bytes':cap, 'omitted_fields':list(review.omitted_fields)})
         prompt = files('reproagent').joinpath('prompts/review_evidence.md').read_text(encoding='utf-8')
-        key = review_key(contract, candidate, run, review, prompt, self.gateway,
-                         byte_limit=cap, secrets=self.secrets)
+        key = (review_key(contract, candidate, run, review, prompt, self.gateway,
+                          byte_limit=cap, secrets=self.secrets) if execution_valid else None)
         if previous is not None and key is not None and previous.key == key and previous.run_id != run.run_id:
             try:
                 for ref in previous.verdict.evidence_refs:
@@ -280,6 +295,18 @@ class Verifier:
                             ('failure_matches_issue','ISSUE_FAILURE_MATCH_UNCONFIRMED')) if not result[key])
                     for item in semantic_issues:
                         record_check(item.check, False, source='provider_claim')
+                    if not execution_valid:
+                        # A semantic diagnosis may stop an unavailable environment,
+                        # but even an all-true REPRODUCED answer cannot accept a test
+                        # that never executed, or reuse a prior success approval.
+                        if classification == CandidateClass.ENVIRONMENT_BLOCKED:
+                            return verdict(classification, result['reason'], refs, origin='provider',
+                                code='ENVIRONMENT_BLOCKED', check='provider_semantic_claims', issues=semantic_issues)
+                        return verdict(CandidateClass.INVALID_CANDIDATE,
+                            'no executed tests; diagnostic reviewer: ' + result['reason'], refs,
+                            code='TEST_EXECUTION_INVALID', issues=semantic_issues,
+                            measurements={'framework_errors':list(checks.invalid[:16]),
+                                'collected':bool(run.observation.collected), 'executed':False})
                     if classification == CandidateClass.REPRODUCED:
                         # The three booleans are the model's own claim, and are recorded
                         # as a claim -- they are not the program accepting anything.

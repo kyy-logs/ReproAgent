@@ -11,6 +11,7 @@ never truncated: the caller gets ReviewContextTooLarge and must stay uncertain.
 from __future__ import annotations
 
 import hashlib
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
@@ -18,6 +19,7 @@ from .models import Candidate, EvidenceRef, ExecutionResult, FileEntry, IssueCon
 from .protocol import verdict_schema
 from .serialization import bytes_hash, canonical_bytes, parse_json
 from .assertion_audit import assertion_sites
+from .execution_log_evidence import execution_log_evidence, log_payloads, omit_log_signal
 
 # Stable marker for the run root: necessary paths stay readable without exporting the
 # machine-specific absolute prefix that made the recorded observation overflow.
@@ -36,7 +38,8 @@ class ReviewContextTooLarge(Exception):
     narrow the candidate without being told by how much.
     """
 
-    def __init__(self, needed_bytes: int, budget_bytes: int):
+    def __init__(self, needed_bytes: int, budget_bytes: int, *, stage: str = 'evidence_projection'):
+        self.stage = stage
         self.needed_bytes = needed_bytes
         self.budget_bytes = budget_bytes
         super().__init__(f'review evidence needs {needed_bytes} bytes; budget is {budget_bytes}')
@@ -228,7 +231,7 @@ def _reference_duplicate_details(payload, run, run_root):
 
 def build_review_context(contract: IssueContract, candidate: Candidate, run: ExecutionResult, *,
         read_ref: Callable[[EvidenceRef], str], read_file: Callable[[FileEntry], bytes],
-        max_bytes: int, protocol_error: str = '') -> ReviewContext:
+        max_bytes: int, protocol_error: str = '', secrets=()) -> ReviewContext:
     """Project one fully checked execution into the reviewer's bounded payload.
 
     read_ref validates the whole-file hash of a cited source; read_file validates a
@@ -269,10 +272,40 @@ def build_review_context(contract: IssueContract, candidate: Candidate, run: Exe
         'response_schema': verdict_schema(tuple(site['id'] for site in sites))}
     if protocol_error:
         payload['protocol_error'] = protocol_error
-    output_bytes = len(canonical_bytes(payload))
+    logs = execution_log_evidence(run, read_ref=read_ref)
+    core_payload = deepcopy(payload) if logs is not None else None
+    if logs is not None:
+        payload['execution_logs'] = log_payloads((logs,))
+        for item in payload['execution_logs']:
+            for signal in item['signals']:
+                signal['text'] = _message_text(signal['text'], run_root)
+        payload['projection']['execution_logs'] = ('Untrusted diagnostic snippets, not proof of target execution '
+            'or expectation evidence; verdict citations must use available_refs.')
+        payload['projection']['omitted_log_signals'] = 0
+    def wire_size():
+        text = canonical_bytes(payload).decode('utf-8')
+        for secret in secrets:
+            if secret:
+                text = text.replace(secret, '[REDACTED]')
+        return len(text.encode('utf-8'))
+    output_bytes = wire_size()
     if output_bytes > max_bytes:
         _reference_duplicate_details(payload, run, run_root)
-        output_bytes = len(canonical_bytes(payload))
+        output_bytes = wire_size()
+    while output_bytes > max_bytes and omit_log_signal(payload.get('execution_logs', [])):
+        payload['projection']['omitted_log_signals'] += 1
+        output_bytes = wire_size()
+    omitted_fields = SUMMARIZED_FIELDS
+    if output_bytes > max_bytes and 'execution_logs' in payload:
+        # Optional diagnostics must not turn previously fitting core evidence into a
+        # refusal. Record their omission out of band even when no marker can fit wire.
+        payload = core_payload
+        omitted_fields = (*omitted_fields, 'execution_logs')
+        output_bytes = wire_size()
+        if output_bytes > max_bytes:
+            _reference_duplicate_details(payload, run, run_root)
+            output_bytes = wire_size()
     if output_bytes > max_bytes:
-        raise ReviewContextTooLarge(output_bytes, max_bytes)
-    return ReviewContext(payload, tuple(available), input_bytes, output_bytes, SUMMARIZED_FIELDS)
+        stage = 'redaction' if len(canonical_bytes(payload)) <= max_bytes else 'evidence_projection'
+        raise ReviewContextTooLarge(output_bytes, max_bytes, stage=stage)
+    return ReviewContext(payload, tuple(available), input_bytes, output_bytes, omitted_fields)

@@ -164,7 +164,10 @@ def test_export_retains_sources_verdict_and_snapshot_provenance(tmp_path, projec
 
 
 def test_target_collection_dependency_failure_is_blocked(tmp_path, projects, facts):
-    request, _, controller, ctx = setup(tmp_path, projects, facts)
+    # Import text alone does not prove ownership. Script the external semantic
+    # diagnosis while executing the real failing original-module import.
+    request, model, controller, ctx = setup(tmp_path, projects, facts)
+    model.classification = 'ENVIRONMENT_BLOCKED'
     (request.repo / 'example/parser.py').write_text('import missing_target_dependency_123\ndef parse(x): return x\n')
     result=asyncio.run(controller.run(request,ctx))
     assert result.status == TaskState.BLOCKED

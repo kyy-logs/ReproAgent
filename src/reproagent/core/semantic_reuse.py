@@ -90,6 +90,21 @@ def review_key(contract, candidate, run, review, prompt, gateway, *, byte_limit,
                 return None
             record['run_id'] = '<run-id>'
             evidence['text'] = paths(record)
+        for log in payload.get('execution_logs', []):
+            if log.get('execution_role') != 'original' or log.get('run_id') != run.run_id:
+                return None
+            log['run_id'] = '<run-id>'
+            for signal in log.get('signals', []):
+                stream = next((name for name in ('stdout', 'stderr')
+                    if signal.get('path') == getattr(run.raw, name + '_ref').path
+                    and signal.get('content_hash') == getattr(run.raw, name + '_ref').content_hash), None)
+                if stream is None:
+                    return None
+                # The selected, checked text and exact range remain in the key.
+                # Only run identity and its whole-file hash alias are rebound.
+                signal['path'] = '<execution-log:' + stream + '>'
+                signal['content_hash'] = '<checked-execution-log:' + stream + '>'
+            log.update(paths(log))
         payload['observation'] = paths(payload['observation'])
         payload = refs(payload)
         policy = _gateway_policy(gateway)

@@ -45,7 +45,13 @@ def test_first_timeout_provides_actionable_feedback_then_next_candidate_can_fini
     assert feedback['result_code'] == 'COMMAND_TIMEOUT'
     assert feedback['verdict']['execution_diagnostic']['last_test_stage'] == 'setup:passed'
     assert feedback['consecutive_command_timeouts'] == 1
-    assert model.kinds.count('verdict') == 2
+    # Both original executions are still verified; equivalent material reuses the
+    # first semantic approval instead of making a second provider request.
+    assert model.kinds.count('verdict') == 1
+    verdicts = [controller.store.load_record('verdicts', path.stem)
+                for path in (request.output_dir / 'verdicts').glob('*.json')]
+    assert sum(v.classification is not None and v.classification.value == 'REPRODUCED'
+               for v in verdicts) == 2
 
 
 def test_two_different_timeout_candidates_stop_before_third_execution(tmp_path, projects, facts):
@@ -150,3 +156,44 @@ def test_fixed_completed_protection_failure_is_failed_not_incomplete(tmp_path, p
     assert result.fix_validation_status == 'failed'
     assert any('SOURCE_PROTECTION_FAILED' in text for text in result.uncertainties)
     assert not any('execution incomplete' in text for text in result.uncertainties)
+
+
+def test_environment_block_during_independent_replay_stops_exploration(tmp_path, projects, facts):
+    from reproagent.core.models import CandidateClass
+    request, _, controller, ctx = setup(tmp_path, projects, facts, plan=[publish(), ask()])
+    evaluate = controller.verifier.evaluate
+    seen = []
+    async def replay_block(contract, candidate, runs, context):
+        verdict = await evaluate(contract, candidate, runs, context)
+        seen.append(verdict)
+        if len(seen) == 2:
+            # Inject a verdict at the semantic boundary; real original runs remain intact.
+            return replace(verdict, classification=CandidateClass.ENVIRONMENT_BLOCKED,
+                           reason='Required external service unavailable on replay', next_action='stop')
+        return verdict
+    controller.verifier.evaluate = replay_block
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.BLOCKED
+    assert result.stop_reason == 'ENVIRONMENT_BLOCKED'
+    assert result.evidence_level == EvidenceLevel.SINGLE_OBSERVATION
+    assert len(seen) == 2 and len(controller.explorer.contexts) == 1
+    rejected = [e for e in controller.store.read_events()[0] if e.kind == 'action.rejected']
+    assert rejected[-1].payload['action'] == 'submit_candidate'
+    assert rejected[-1].payload['result_code'] == 'ENVIRONMENT_BLOCKED'
+
+
+def test_real_missing_target_dependency_still_stops(tmp_path, projects, facts):
+    request, model, controller, ctx = setup(tmp_path, projects, facts, plan=[publish(), ask()])
+    (request.repo / 'example/parser.py').write_text(
+        'def parse(values):\n    import required_external_dependency_123456\n    return values\n', encoding='utf-8')
+    model.classification = 'ENVIRONMENT_BLOCKED'
+    result = asyncio.run(controller.run(request, ctx))
+    assert result.status == TaskState.BLOCKED
+    assert result.stop_reason == 'ENVIRONMENT_BLOCKED'
+    assert result.evidence_level == EvidenceLevel.NONE
+    assert not result.accepted_candidate_id
+    assert len(controller.explorer.contexts) == 1
+    assert model.kinds.count('verdict') == 1
+    verdicts = [controller.store.load_record('verdicts', p.stem)
+                for p in (request.output_dir / 'verdicts').glob('*.json')]
+    assert len(verdicts) == 1 and verdicts[0].next_action == 'stop'

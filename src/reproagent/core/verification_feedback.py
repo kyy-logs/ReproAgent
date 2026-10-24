@@ -3,6 +3,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from .budget import BudgetStopped
 from .serialization import canonical_bytes
+from .execution_log_evidence import log_payloads, omit_log_signal
 
 INSTRUCTIONS = {
     'revise_candidate': '根据失败检查修改候选，再提交执行；不要只更换假设措辞。',
@@ -69,7 +70,7 @@ def _validated_evidence(evidence):
 
 
 def render_verification_feedback(verdict, *, result_code, byte_limit, decision='continue',
-                                 instruction='', secrets=(), extras=None, evidence=()):
+                                 instruction='', secrets=(), extras=None, evidence=(), log_evidence=()):
     if type(byte_limit) is not int or byte_limit < 0 or decision not in ('continue','stop'):
         raise ValueError('invalid verification feedback capacity or decision')
     evidence = _validated_evidence(evidence)
@@ -103,6 +104,12 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
         if isinstance(value,dict): return {key:redact(item) for key,item in value.items()}
         if isinstance(value,(tuple,list)): return [redact(item) for item in value]
         return value
+    base_instruction = payload['instruction']
+    if log_evidence:
+        payload['execution_logs'] = log_payloads(log_evidence)
+        payload['projection']['omitted_log_signals'] = 0
+        payload['instruction'] = ('Inspect original execution log signals for input/import/build obstacles '
+            'before tuning assertions; snippets alone do not prove the target was skipped. ' + payload['instruction'])
     payload=redact(payload)
     data=payload['verdict']; counts=payload['projection']
     def output():
@@ -132,6 +139,17 @@ def render_verification_feedback(verdict, *, result_code, byte_limit, decision='
                 del measurements[key]; counts['omitted_details']+=1
                 text=output()
                 if text is not None: return text
+    while omit_log_signal(payload.get('execution_logs', [])):
+        counts['omitted_log_signals'] += 1
+        text = output()
+        if text is not None: return text
+    if payload.get('execution_logs'):
+        logs = payload.pop('execution_logs')
+        payload['instruction'] = redact(base_instruction)
+        counts.pop('omitted_log_signals', None)
+        counts['omitted_details'] += max(1, sum(len(item['signals']) + item['omitted_signals'] for item in logs))
+        text = output()
+        if text is not None: return text
     for refs in [data['evidence_refs'], *[item['evidence_refs'] for item in reversed(data['issues'])]]:
         while refs:
             refs.pop(); counts['omitted_refs']+=1
