@@ -55,7 +55,7 @@ def test_a_run_can_be_read_back_afterwards(tmp_path, projects, facts):
               if record['availability'] == 'captured' and not record['truncated']]
     for record in wire_records:
         if record['truncated']:
-            assert record['excerpt_mode'] in {'head', 'head_tail'}
+            assert record['excerpt_mode'] in {'head', 'head_tail', 'json'}
             assert record['original_bytes'] > record['captured_bytes']
             assert document['content_complete'] is False
     exploration = next(body for body in seen if "tools" in body)
@@ -63,14 +63,19 @@ def test_a_run_can_be_read_back_afterwards(tmp_path, projects, facts):
     from reproagent.observability_content import EXCERPT_MARKER, redact
     original = json.dumps(redact(exploration), ensure_ascii=False, sort_keys=True)
     matching_excerpt = False
+    json_excerpt = False
     for record in wire_records:
         if not record['truncated']:
+            continue
+        if record['excerpt_mode'] == 'json':
+            if 'tools' in json.loads(record['text']):
+                json_excerpt = True
             continue
         head, marker, tail = record['text'].partition(EXCERPT_MARKER)
         if marker and original.startswith(head) and original.endswith(tail):
             assert record['original_bytes'] == len(original.encode('utf-8'))
             matching_excerpt = True
-    assert exploration in bodies or matching_excerpt
+    assert exploration in bodies or matching_excerpt or json_excerpt
 
     # A tool's arguments and its result are the same call, by key.
     permission = next(entry for entry in document["spans"] if entry["name"] == "permission")

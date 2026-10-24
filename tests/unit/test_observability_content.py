@@ -81,11 +81,28 @@ def test_an_oversized_entry_keeps_a_marked_head_and_tail():
     # it covers the text plus the JSON envelope the projection puts around it.
     assert record["original_bytes"] >= len(text.encode("utf-8"))
     assert record["captured_bytes"] < record["original_bytes"]
-    assert record["excerpt_mode"] in ("head_tail", "head")
+    assert record["excerpt_mode"] in ("head_tail", "head", "json")
     # Both ends survive: a head-only excerpt hides the newest tool message.
     assert "HEAD" in json.dumps(record) and "TAIL" in json.dumps(record)
     # ...and the whole entry still fits the per-entry ceiling.
     assert len(json.dumps(record, ensure_ascii=False).encode("utf-8")) <= MAX_CONTENT_BYTES
+
+
+def test_oversized_json_payload_stays_parseable():
+    store = ContentStore()
+    payload = {
+        "messages": [{"role": "system", "content": "HEAD" + ("x" * 100_000) + "TAIL"}],
+        "tools": [{"name": "Read"}],
+    }
+
+    capture(store, payload)
+
+    record = store.records()[0]
+    body = json.loads(record["text"])
+    assert record["truncated"] is True and record["excerpt_mode"] == "json"
+    assert body["tools"] == [{"name": "Read"}]
+    assert "HEAD" in body["messages"][0]["content"]
+    assert "TAIL" in body["messages"][0]["content"]
 
 
 def test_byte_limits_are_measured_in_utf8_not_characters():

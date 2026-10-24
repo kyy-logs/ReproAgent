@@ -7,6 +7,16 @@ description: Guide Python and pytest reproduction tests when locating an issue's
 
 Find a source-supported trigger and publish the smallest discriminating test. Borrow systematic debugging's backward tracing, working-example comparison and hypothesis testing. Full root-cause diagnosis is not required before publishing.
 
+<!-- decision-card -->
+Before `write_candidate`:
+
+- Preserve the issue's trigger: input shape, configuration values, initialization and cache conditions.
+- Verify the fixture/helper you call: required plugin registration, test root, constructor signature, and accepted path type.
+- `pathlib.Path` / `WindowsPath` cannot feed a helper that calls `.makedirs()`; use the accepted type. For legacy `py.path` helpers use `path(str(tmp_path))`; for string APIs use `str(path)`.
+- Build the smallest setup that produces the target output; drop unrelated root, theme and plugin dependencies.
+- If execution stops before the target, fix the earliest setup, import or initialization blocker before changing assertions.
+<!-- /decision-card -->
+
 ## Start from the Strongest Anchor
 
 Choose an entry, not a mandatory sequence:
