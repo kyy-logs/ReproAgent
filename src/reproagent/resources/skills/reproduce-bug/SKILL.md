@@ -14,6 +14,7 @@ Before `write_candidate`:
 - Verify the fixture/helper you call: required plugin registration, test root, constructor signature, and accepted path type.
 - `pathlib.Path` / `WindowsPath` cannot feed a helper that calls `.makedirs()`; use the accepted type. For legacy `py.path` helpers use `path(str(tmp_path))`; for string APIs use `str(path)`.
 - Build the smallest setup that produces the target output; drop unrelated root, theme and plugin dependencies.
+- When asserting on captured stdout/stderr, compare stable lines or structure; do not attach the full subprocess output as the assertion message (object addresses and elapsed times vary between runs).
 - If execution stops before the target, fix the earliest setup, import or initialization blocker before changing assertions.
 <!-- /decision-card -->
 

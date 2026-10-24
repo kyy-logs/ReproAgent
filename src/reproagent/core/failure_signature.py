@@ -4,6 +4,10 @@ import re
 
 _ADDRESSED_REPR = re.compile(r'<([^<>\n]+?) (?:@ ([0-9]+)|at (0x[0-9a-fA-F]+))>')
 _QUOTED = re.compile(r'''"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*' ''', re.VERBOSE)
+_BUILTIN_ADDRESS = re.compile(r'(<built-in method [^<>\n]+? at )0x[0-9a-fA-F]+(>)')
+_REPLAY_SUMMARY = re.compile(
+    r'(?m)^([ \t]*\d+ (?:passed|failed|errors?|skipped)'
+    r'(?:, \d+ (?:passed|failed|errors?|skipped))* in )\d+(?:\.\d+)?s([ \t]*)$')
 
 
 def stable_failure_message(message, object_ids=()):
@@ -21,6 +25,20 @@ def stable_failure_message(message, object_ids=()):
     # provide unabridged operands and observed object identities separately;
     # without that provenance even a full repr's number might be business data.
     return _ADDRESSED_REPR.sub(addressed, message)
+
+
+def stable_replay_message(message):
+    """Normalize only two known replay-only sources of noise.
+
+    A built-in method's representation embeds its allocation address, and a nested
+    pytest summary embeds elapsed time.  Both vary between two executions of the same
+    candidate; neither is part of the reproduced failure.  Unrelated hex values and
+    arbitrary durations are left untouched.
+    """
+    if type(message) is not str:
+        return message
+    message = _BUILTIN_ADDRESS.sub(r'\1<address>\2', message)
+    return _REPLAY_SUMMARY.sub(r'\1<elapsed>\2', message)
 
 
 

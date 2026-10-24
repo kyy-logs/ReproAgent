@@ -386,7 +386,7 @@ class Verifier:
             return tuple(sorted(_root_spellings(run_root) + _root_spellings(workspace), key=len, reverse=True))
 
         def signatures(run):
-            from .failure_signature import stable_failure_message, stable_pytester_message
+            from .failure_signature import stable_failure_message, stable_pytester_message, stable_replay_message
             roots = [(spelling, RUN_ROOT) for spelling in
                      _run_roots(run.observation.framework_details.get('run_root', ''))]
             temp_root = run.observation.framework_details.get('temp_root', '')
@@ -414,6 +414,10 @@ class Verifier:
                         crash['message'] = {'operator': comparison['operator'],
                             **{key:stable_failure_message(normalized(comparison[key]), comparison.get(key + '_object_ids', ()))
                                for key in ('left', 'right')}}
+                    if isinstance(crash['message'], dict):
+                        crash['message'] = {key: stable_replay_message(value) for key, value in crash['message'].items()}
+                    else:
+                        crash['message'] = stable_replay_message(crash['message'])
                     nodeid = phase.get('nodeid', '').replace('\\', '/')
                     nodeid = nodeid.split(run.run_id + '/code/', 1)[-1]
                     result.append((nodeid, phase.get('when'), phase.get('exception_type', ''), json.dumps(crash, sort_keys=True)))
