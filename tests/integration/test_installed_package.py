@@ -23,7 +23,11 @@ def test_installed_wheel_can_run_probe_and_load_prompts_without_source_checkout(
     wheel = next(wheels.glob('*.whl'))
     tool = tmp_path / 'tool-env'
     command([sys.executable, '-m', 'venv', tool])
-    command([python_in(tool), '-m', 'pip', 'install', '--no-index', '--no-deps', wheel])
+    # The build leaves an egg-info under src; a PYTHONPATH inherited from the test
+    # process would let pip see the checkout as the same installed version and skip
+    # the wheel. Install into the isolated environment without that path.
+    env = dict(os.environ); env.pop('PYTHONPATH', None)
+    command([python_in(tool), '-m', 'pip', 'install', '--no-index', '--no-deps', wheel], env=env)
     target = target_python(checkout, tmp_path)
     repo = projects.plain(tmp_path / 'independent-repo')
     script = tmp_path / 'installed_run.py'
@@ -51,7 +55,6 @@ execution = asyncio.run(run())
 markdown = render_report({'package_kind':'diagnostic', 'verified':False, 'status':'BLOCKED', 'stop_reason':'missing pytest'})
 print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':execution.raw.exit_code, 'markdown':markdown, 'prompt':files('reproagent').joinpath('prompts/analyze_issue.md').read_text(encoding='utf-8'), 'module':__import__('reproagent').__file__}))
 ''', encoding='utf-8')
-    env = dict(os.environ); env.pop('PYTHONPATH', None)
     result = command([python_in(tool), script, repo, tmp_path / 'results', target], cwd=tmp_path, env=env)
     data = json.loads(result.stdout)
     assert data['complete'] and data['exit_code'] == 1
@@ -124,8 +127,8 @@ def test_wheel_includes_and_inlines_viewer_module(tmp_path):
         assert 'mountTraceViewer' in source
         assert 'reproagent/trace_view_model.py' in archive.namelist()
     tool=tmp_path/'viewer-env';command([sys.executable,'-m','venv',tool])
-    command([python_in(tool),'-m','pip','install','--no-index','--no-deps',wheel])
     env=dict(os.environ);env.pop('PYTHONPATH',None);env['PYTHONIOENCODING']='utf-8'
+    command([python_in(tool),'-m','pip','install','--no-index','--no-deps',wheel],env=env)
     result=command([python_in(tool),'-c',"from reproagent.trace_rendering import render_trace; print(render_trace({'schema_version':1,'spans':[],'summary':{}}))"],cwd=tmp_path,env=env)
     page=result.stdout.decode('utf-8')
     assert source in page and '<script type="module">' in page
