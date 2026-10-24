@@ -495,8 +495,8 @@ def _user(text):
 def measure_threshold(env):
     """Put the model's compression threshold just above the phase's first reasoning step.
 
-    Returns the first step's own input size, counted exactly the way the compression hook
-    counts it: the round's message in the context, plus the system prompt and tool schemas.
+    Returns the full first request size, including the ephemeral reproduction Skill,
+    round message, progress, system prompt and tool schemas.
     The candidate's own arguments are what pushes the *next* step over the threshold.
     """
     from agentscope.message import SystemMsg
@@ -506,8 +506,20 @@ def measure_threshold(env):
     env.runtime._agent.state.context.append(env.runtime._message(phase))
     env.runtime._agent.state.context.append(SystemMsg(name='exploration-progress', content=render_progress(
         step_budget_view(env.context.budget.limits.agent_steps, env.context.budget.steps_used), phase)))
+    async def first_input_size():
+        from reproagent.core.agent import reproduction_skill
+        prepared = await env.runtime._agent._prepare_model_input()
+        messages = list(prepared['messages'])
+        index = 0
+        while index < len(messages) and getattr(messages[index], 'role', '') == 'system':
+            index += 1
+        messages.insert(index, SystemMsg(name='reproduction-skill',
+            content='<reproduction_skill name="reproduce-bug">\n' + reproduction_skill()
+                    + '\n</reproduction_skill>'))
+        return await env.model.count_tokens(**{**prepared, 'messages': messages})
+
     try:
-        first = asyncio.run(env.runtime.middleware._estimated_tokens(env.runtime._agent))
+        first = asyncio.run(first_input_size())
     finally:
         env.runtime._agent.state.context.clear()
     env.model.context_size = math.ceil(first / 0.8) + 8

@@ -311,6 +311,19 @@ class AgentScopeRuntime:
         data = {"contract": context.contract, "feedback": context.feedback, "history": list(context.history),
                 "budget": {"steps_remaining_including_this_attempt": self._steps_remaining(),
                            "seconds_remaining": max(0, self.context.budget.deadline - self.context.budget.clock())}}
+        if context.environment is not None:
+            # Facts from the original environment probe, not a fixture inventory
+            # or information from the fixed-version validation environment.
+            environment = context.environment
+            data['environment'] = {
+                'environment_id': environment.environment_id,
+                'python': environment.python,
+                'pytest_version': environment.tool_version or None,
+                'candidate_parent': environment.candidate_parent,
+                'pytest_args': environment.pytest_args,
+                'limitations': environment.limitations,
+                'fixture_inventory_status': 'not_collected',
+            }
         if context.issue is not None:
             if bytes_hash(context.issue.text.encode('utf-8')) != context.issue.content_hash:
                 raise BudgetStopped('NEEDS_INFORMATION', 'original issue content hash mismatch')
@@ -356,7 +369,7 @@ class AgentScopeRuntime:
             text = canonical_bytes(data).decode("utf-8")
         if len(text.encode("utf-8")) > cap:
             raise BudgetStopped("NEEDS_INFORMATION",
-                                "the original issue and phase contract do not fit the configured context budget; "
+                                "the original issue, phase contract and environment facts do not fit the configured context budget; "
                                 "no original fact or source reference is dropped to make them fit")
         return UserMsg(name="user", content=text)
 

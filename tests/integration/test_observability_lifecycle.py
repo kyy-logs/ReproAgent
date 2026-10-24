@@ -156,7 +156,14 @@ def test_a_real_run_shows_which_checks_ran_and_the_process_health(tmp_path, proj
     # Every recorded check is one the program really declared...
     assert set(recorded) <= set(declared)
     # ...the candidate's own claims stay labelled as claims...
-    assert recorded['provider_semantic_claims'] == 'provider_claim'
+    semantic_sources = {entry['attributes']['check_source'] for entry in document['spans']
+                        if entry['attributes'].get('check') == 'provider_semantic_claims'}
+    assert semantic_sources == {'provider_claim', 'reused_provider_claim'}
+    reused = named(document, 'verification.semantic_reused')
+    assert len(reused) == 1
+    events, errors = controller.store.read_events()
+    audit = [event.payload for event in events if event.kind == 'verification.semantic_reused']
+    assert not errors and len(audit) == 1 and audit[0]['new_model_call'] is False
     assert recorded['binding_and_integrity_ok'] == 'program_check'
     # ...and the run reached the checks a reproducing candidate needs.
     assert recorded['candidate_reproduced'] == 'program_check'

@@ -28,7 +28,7 @@ def test_independent_scenarios_and_platform_rules_reach_all_model_roles(tmp_path
     fixed = projects.fixed(tmp_path / 'fixed-hidden')
     result = asyncio.run(controller.run(request, context, FixValidationRequest(fixed, sys.executable)))
     assert result.status.value == 'DONE'
-    assert calls == ['contract', 'exploration', 'verdict', 'verdict']
+    assert calls == ['contract', 'exploration', 'verdict']
     for payload in wire:
         system = '\n'.join(message['content'] for message in payload['messages']
                            if message['role'] == 'system')
@@ -44,7 +44,12 @@ def test_independent_scenarios_and_platform_rules_reach_all_model_roles(tmp_path
     assert context.budget.steps_used == 1
     reviews = [json.loads(message['content']) for payload in wire for message in payload['messages']
                if message['role'] == 'user' and '"assertion_sites"' in message.get('content', '')]
-    assert len(reviews) == 2
+    assert len(reviews) == 1
     for review in reviews:
         assert review['assertion_sites']
         assert 'assertion_reviews' in review['response_schema']['required']
+    events, errors = controller.store.read_events()
+    assert not errors
+    assert sum(event.kind == 'verification.semantic_reused' for event in events) == 1
+    assert sum(event.kind == 'run.completed' for event in events) == 3
+    assert len(list((request.output_dir / 'verdicts').glob('*.json'))) == 2

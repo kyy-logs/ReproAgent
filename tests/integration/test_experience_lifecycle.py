@@ -210,7 +210,7 @@ def test_learning_provider_failure_is_not_invalid_experience(tmp_path, projects,
 def test_summary_load_occurs_after_analysis_before_first_explore(tmp_path, projects, facts):
     _, controller, result, seen, main, learning = run_sdk_task(tmp_path, projects, facts, learn=False)
     assert result.status == TaskState.DONE and not learning
-    assert main == ["contract", "exploration", "exploration", "exploration", "verdict", "verdict"]
+    assert main == ["contract", "exploration", "exploration", "exploration", "verdict"]
     assert "HISTORICAL_HINT" not in json.dumps(seen[0])
     assert "experience_summaries" not in json.dumps(seen[1])
     assert "HISTORICAL_HINT" not in json.dumps(seen[2])
@@ -218,6 +218,10 @@ def test_summary_load_occurs_after_analysis_before_first_explore(tmp_path, proje
     verdicts = [p for p in seen if not p.get("tools") and "available_refs" in json.loads(p["messages"][-1]["content"])]
     assert all("HISTORICAL_HINT" not in json.dumps(p) for p in verdicts)
     assert controller.learning_result.code == "skipped_read_only"
+    events, errors = controller.store.read_events()
+    assert not errors and len(verdicts) == 1
+    assert sum(event.kind == 'verification.semantic_reused' for event in events) == 1
+    assert sum(event.kind == 'run.completed' for event in events) == 2
 
 
 @pytest.mark.parametrize("learning,code", [("invalid", "invalid_missing_fields"), ("empty", "empty"),

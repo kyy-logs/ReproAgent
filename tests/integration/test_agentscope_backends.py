@@ -78,7 +78,12 @@ def test_default_and_legacy_flags_select_same_sdk_infrastructure(tmp_path, proje
     # otherwise keep one client per purpose per finished task.
     assert controller.explorer.model_factory is None
     assert controller.gateway.gateway.factory._clients == []
-    assert calls == ['contract', 'exploration', 'verdict', 'verdict']
+    assert calls == ['contract', 'exploration', 'verdict']
+    stored, errors = controller.store.read_events()
+    assert not errors
+    assert sum(event.kind == 'run.completed' for event in stored) == 3
+    reused = [event.payload for event in stored if event.kind == 'verification.semantic_reused']
+    assert len(reused) == 1 and reused[0]['new_model_call'] is False
     assert toolkit == [list(TOOL_NAMES)]
     assert ctx.budget.steps_used == 1 and assert_hidden(script.messages, fixed) is None
     root = request.output_dir / 'artifacts/reproduction'
@@ -256,8 +261,8 @@ def test_the_whole_chain_runs_from_snapshot_search_to_exported_replay(tmp_path, 
     # object back.  The model was never asked for a third kind of decision, so there is no
     # run/submit choice for it to make, and the Controller's own steps are its business.
     structured = [payload for payload in seen if 'tools' not in payload]
-    assert script.kinds == ['contract', 'verdict', 'verdict']
-    assert len(structured) == len(script.kinds) == 3 and len(seen) == 4 + 3
+    assert script.kinds == ['contract', 'verdict']
+    assert len(structured) == len(script.kinds) == 2 and len(seen) == 4 + 2
     for payload in structured:
         assert payload['response_format'] == {'type': 'json_object'}
 
@@ -272,6 +277,10 @@ def test_the_whole_chain_runs_from_snapshot_search_to_exported_replay(tmp_path, 
     assert sorted(run.execution_role for run in runs) == ['fixed', 'original', 'original']
     assert len({run.candidate_id for run in runs}) == 1
     assert len(list((request.output_dir / 'verdicts').glob('*.json'))) == 2
+    reused = [event.payload for event in stored if event.kind == 'verification.semantic_reused']
+    assert len(reused) == 1 and reused[0]['new_model_call'] is False
+    original_ids = {run.run_id for run in runs if run.execution_role == 'original'}
+    assert original_ids == {reused[0]['first_run_id'], reused[0]['run_id']}
     # The hidden fixed version never reaches the model, under any request.
     assert_hidden(seen, fixed)
 

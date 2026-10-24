@@ -45,9 +45,16 @@ def test_first_timeout_provides_actionable_feedback_then_next_candidate_can_fini
     assert feedback['result_code'] == 'COMMAND_TIMEOUT'
     assert feedback['verdict']['execution_diagnostic']['last_test_stage'] == 'setup:passed'
     assert feedback['consecutive_command_timeouts'] == 1
-    # Both original executions are still verified; equivalent material reuses the
-    # first semantic approval instead of making a second provider request.
     assert model.kinds.count('verdict') == 1
+    stored, errors = controller.store.read_events()
+    assert not errors
+    reused = [event.payload for event in stored if event.kind == 'verification.semantic_reused']
+    assert len(reused) == 1 and reused[0]['candidate_id'] == result.accepted_candidate_id
+    runs = [controller.store.load_record('runs', path.parent.name)
+            for path in (request.output_dir / 'runs').glob('*/execution.json')]
+    accepted = [run for run in runs if run.candidate_id == result.accepted_candidate_id]
+    assert len(accepted) == 2 and all(run.raw.stop_reason == 'EXITED' for run in accepted)
+    assert {run.run_id for run in accepted} == {reused[0]['first_run_id'], reused[0]['run_id']}
     verdicts = [controller.store.load_record('verdicts', path.stem)
                 for path in (request.output_dir / 'verdicts').glob('*.json')]
     assert sum(v.classification is not None and v.classification.value == 'REPRODUCED'
