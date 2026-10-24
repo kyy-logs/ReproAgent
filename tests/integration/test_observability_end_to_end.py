@@ -50,10 +50,27 @@ def test_a_run_can_be_read_back_afterwards(tmp_path, projects, facts):
 
     # The contract call is structured and carries no tools by design; the exploration
     # call does, and that is the request shape worth confirming here.
-    bodies = [json.loads(record["text"]) for record in document["contents"]
-              if record["source"] == "wire_request"]
-    exploration = next(body for body in bodies if "tools" in body)
+    wire_records = [record for record in document['contents'] if record['source'] == 'wire_request']
+    bodies = [json.loads(record['text']) for record in wire_records
+              if record['availability'] == 'captured' and not record['truncated']]
+    for record in wire_records:
+        if record['truncated']:
+            assert record['excerpt_mode'] in {'head', 'head_tail'}
+            assert record['original_bytes'] > record['captured_bytes']
+            assert document['content_complete'] is False
+    exploration = next(body for body in seen if "tools" in body)
     assert exploration["messages"] and exploration["tools"]
+    from reproagent.observability_content import EXCERPT_MARKER, redact
+    original = json.dumps(redact(exploration), ensure_ascii=False, sort_keys=True)
+    matching_excerpt = False
+    for record in wire_records:
+        if not record['truncated']:
+            continue
+        head, marker, tail = record['text'].partition(EXCERPT_MARKER)
+        if marker and original.startswith(head) and original.endswith(tail):
+            assert record['original_bytes'] == len(original.encode('utf-8'))
+            matching_excerpt = True
+    assert exploration in bodies or matching_excerpt
 
     # A tool's arguments and its result are the same call, by key.
     permission = next(entry for entry in document["spans"] if entry["name"] == "permission")
@@ -63,7 +80,14 @@ def test_a_run_can_be_read_back_afterwards(tmp_path, projects, facts):
     # Why the run was accepted: the model's claim and the program's checks, kept apart.
     checks = {entry["attributes"]["check"]: entry["attributes"]["check_source"]
               for entry in document["spans"] if "check" in entry["attributes"]}
-    assert checks["provider_semantic_claims"] == "provider_claim"
+    semantic_sources = {entry['attributes']['check_source'] for entry in document['spans']
+                        if entry['attributes'].get('check') == 'provider_semantic_claims'}
+    assert semantic_sources == {'provider_claim', 'reused_provider_claim'}
+    reused = [entry for entry in document['spans'] if entry['name'] == 'verification.semantic_reused']
+    assert len(reused) == 1
+    events, errors = controller.store.read_events()
+    audit = [event.payload for event in events if event.kind == 'verification.semantic_reused']
+    assert not errors and len(audit) == 1 and audit[0]['new_model_call'] is False
     assert checks["candidate_reproduced"] == "program_check"
     assert checks["binding_and_integrity_ok"] == "program_check"
 
