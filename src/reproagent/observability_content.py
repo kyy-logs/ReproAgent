@@ -43,6 +43,7 @@ SENSITIVE_KEYS = frozenset({
 
 REDACTED = "<redacted>"
 EXCERPT_MARKER = "\n[... excerpt: content truncated; the head and tail are shown ...]\n"
+JSON_EXCERPT_MARKER = " [... excerpt: content truncated ...] "
 
 
 def redact(value: Any, secrets: Iterable[str] = ()) -> Any:
@@ -82,6 +83,31 @@ def _as_text(value: Any) -> str:
 
 def _serialized_size(record: dict) -> int:
     return len(json.dumps(record, ensure_ascii=False).encode("utf-8"))
+
+
+def _json_excerpt(text: str):
+    """Return the parsed JSON document when *text* is a JSON object or array."""
+    try:
+        value = json.loads(text)
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, (dict, list)) else None
+
+
+def _shrink_json(value, cap: int):
+    """Shorten string values without ever making the surrounding JSON invalid."""
+    if isinstance(value, str):
+        if len(value) <= cap:
+            return value
+        if cap <= 0:
+            return JSON_EXCERPT_MARKER
+        half = max(1, cap // 2)
+        return value[:half] + JSON_EXCERPT_MARKER + value[-half:]
+    if isinstance(value, dict):
+        return {key: _shrink_json(item, cap) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_shrink_json(item, cap) for item in value]
+    return value
 
 
 class ContentStore:
@@ -160,7 +186,24 @@ class ContentStore:
         status = record["availability"]
         original = record["text"]
         raw = original.encode("utf-8")
-        room = MAX_CONTENT_BYTES - _serialized_size({**record, "text": ""}) - len(EXCERPT_MARKER.encode("utf-8"))
+        # _store assigns a 16-character content id after this fit; reserve it here so the
+        # stored record, not just the pre-id candidate, stays under the ceiling.
+        content_id_bytes = 16
+        room = (MAX_CONTENT_BYTES - _serialized_size({**record, "text": ""})
+                - len(EXCERPT_MARKER.encode("utf-8")) - content_id_bytes)
+        parsed = _json_excerpt(original)
+        if parsed is not None:
+            cap = max(1, room)
+            while True:
+                text = json.dumps(_shrink_json(parsed, cap), ensure_ascii=False, sort_keys=True)
+                candidate = {**record, "availability": status, "text": text, "truncated": True,
+                             "excerpt_mode": "json"}
+                if _serialized_size(candidate) <= MAX_CONTENT_BYTES - content_id_bytes:
+                    self.complete = False
+                    return candidate
+                if cap == 0:
+                    break
+                cap = cap * 3 // 4
         half = max(1, room // 2)
         while True:
             head = raw[:half].decode("utf-8", "ignore")
@@ -168,7 +211,7 @@ class ContentStore:
             excerpt = head + EXCERPT_MARKER + tail
             candidate = {**record, "availability": status, "text": excerpt, "truncated": True,
                          "excerpt_mode": "head_tail" if tail else "head"}
-            if _serialized_size(candidate) <= MAX_CONTENT_BYTES or half <= 1:
+            if _serialized_size(candidate) <= MAX_CONTENT_BYTES - content_id_bytes or half <= 1:
                 self.complete = False
                 return candidate
             half = half * 3 // 4

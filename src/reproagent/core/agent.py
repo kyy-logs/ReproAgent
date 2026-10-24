@@ -45,6 +45,24 @@ def prompt(name):
     return files('reproagent').joinpath('prompts/' + name + '.md').read_text(encoding='utf-8')
 
 
+DECISION_CARD_START = '<!-- decision-card -->'
+DECISION_CARD_END = '<!-- /decision-card -->'
+
+
+def reproduction_skill_checklist():
+    """Load the compact rules that stay visible on every exploration request."""
+    source = files('reproagent').joinpath(
+        'resources/skills/reproduce-bug/SKILL.md').read_text(encoding='utf-8')
+    start = source.find(DECISION_CARD_START)
+    end = source.find(DECISION_CARD_END, start + len(DECISION_CARD_START)) if start >= 0 else -1
+    if start < 0 or end < 0:
+        raise ValueError('bundled reproduction skill has no decision card')
+    body = source[start + len(DECISION_CARD_START):end].strip()
+    if not body:
+        raise ValueError('bundled reproduction skill has an empty decision card')
+    return body
+
+
 def reproduction_skill():
     """Load the bundled method, independently of checkout paths and the caller's cwd."""
     source = files('reproagent').joinpath(

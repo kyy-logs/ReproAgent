@@ -34,6 +34,7 @@ from reproagent.adapters.agentscope.model_factory import AgentScopeModelFactory
 from reproagent.adapters.agentscope.runtime import AgentScopeRuntime, sdk_end_reason
 from reproagent.adapters.agentscope.snapshot_backend import SnapshotBackend
 from reproagent.adapters.agentscope.tools import TOOL_NAMES, build_toolkit
+from reproagent.core.agent import reproduction_skill_checklist
 from reproagent.core.budget import BudgetStopped
 from reproagent.core.candidate_service import CandidateService
 from reproagent.core.models import (
@@ -185,6 +186,14 @@ def test_budget_progress_refreshes_on_each_wire_request(tmp_path, projects, fact
         assert views[index]['budget']['remaining_steps'] == left
     assert all(bool(v['guidance']) == (i >= 15) for i, v in enumerate(views))
     assert not any(getattr(m, 'name', '') == 'exploration-progress' for m in env.runtime.messages)
+    # The compact decision card is repeated on every request but never accumulates: exactly
+    # one copy per request, and no such message in the conversation history the SDK keeps.
+    card = reproduction_skill_checklist()
+    assert card
+    assert not any(getattr(m, 'name', '') == 'reproduction-checklist' for m in env.runtime.messages)
+    system_texts = ['\n'.join(m['content'] for m in request['messages'] if m['role'] == 'system')
+                    for request in env.requests]
+    assert [text.count(card) for text in system_texts] == [1] * 20
     with pytest.raises(BudgetStopped):
         explore(env)
     assert len(env.requests) == 20
@@ -500,10 +509,13 @@ def measure_threshold(env):
     The candidate's own arguments are what pushes the *next* step over the threshold.
     """
     from agentscope.message import SystemMsg
+    from reproagent.core.agent import reproduction_skill
     from reproagent.core.exploration_progress import step_budget_view
     from reproagent.adapters.agentscope.progress import render_progress
     phase = agent_context(env)
     env.runtime._agent.state.context.append(env.runtime._message(phase))
+    env.runtime._agent.state.context.append(SystemMsg(name='reproduction-skill',
+        content='<reproduction_skill name="reproduce-bug">\n' + reproduction_skill() + '\n</reproduction_skill>'))
     env.runtime._agent.state.context.append(SystemMsg(name='exploration-progress', content=render_progress(
         step_budget_view(env.context.budget.limits.agent_steps, env.context.budget.steps_used), phase)))
     async def first_input_size():
