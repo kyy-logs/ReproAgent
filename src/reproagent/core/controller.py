@@ -601,7 +601,8 @@ class Controller:
                                                      "contract_version": contract.version}):
                         phase = await self.explorer.explore(AgentContext(contract, project, tuple(history[-4:]), feedback,
                             issue=IssueDescription(issue_text, issue_hash), experience_summaries=experience_summaries,
-                            experience_events=phase_events, experience_catalog=catalog_notice))
+                            experience_events=phase_events, experience_catalog=catalog_notice,
+                            environment=lifecycle.environment))
                 except BudgetStopped:
                     raise
                 except ModelProtocolError:

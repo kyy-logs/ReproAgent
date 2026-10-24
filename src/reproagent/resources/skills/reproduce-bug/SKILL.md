@@ -1,65 +1,75 @@
 ---
 name: reproduce-bug
-description: Guide Python and pytest reproduction candidates in ReproAgent when turning an issue into a test or correcting a rejected or non-reproducing candidate. Applies to reproduction, not source-code repair.
+description: Guide Python and pytest reproduction tests when locating an issue's trigger or correcting a rejected or non-reproducing candidate. Applies to reproduction, not source-code repair.
 ---
 
-# Reproduce a Bug from Evidence
+# Locate the Trigger and Reproduce the Bug
 
-Produce the smallest supported test that distinguishes the reported defect from correct behavior. Borrow systematic debugging's evidence, hypothesis and experiment loop; full root-cause diagnosis is not a prerequisite for publishing a reproduction candidate.
+Find a source-supported trigger and publish the smallest discriminating test. Borrow systematic debugging's backward tracing, working-example comparison and hypothesis testing. Full root-cause diagnosis is not required before publishing.
 
-This skill guides exploration. The task's registered tools, source protections, budgets and completion checks remain authoritative. It grants no additional capabilities.
+## Start from the Strongest Anchor
 
-## Establish the Testable Difference
+Choose an entry, not a mandatory sequence:
 
-Separate three questions:
-
-- **Trigger:** What input and conditions should exercise the reported behavior?
-- **Observation:** What did an actual execution show?
-- **Oracle:** What source-backed correct behavior should the test assert?
-
-Use the issue and displayed original documentation, signatures and existing tests to support the oracle. Buggy implementation behavior helps locate the trigger; it does not by itself define correct behavior. Keep guesses separate from observations. Missing exact output need not block a supported equivalence or invariant, but do not invent desired behavior merely to obtain a failing test.
-
-## Preflight Test Setup and Fixture Compatibility
-
-Before `write_candidate`, check the setup you intend to use with the registered `Read`, `Grep` and `Glob` tools. This is a focused source-based compatibility check, not an executed smoke test. Do not claim that imports, fixtures or builds passed without execution evidence, or invent a command/execution tool.
-
-- **Fixture and helper contract:** Read the relevant fixture definition, nearest `conftest.py`, helper implementation and a nearby working usage. Check required plugins, test roots, configuration and optional dependencies that this setup actually needs; a familiar fixture name does not establish compatibility.
-- **Caller/callee value types:** Follow the values passed between the candidate, fixture and helper, especially temporary paths. A `pathlib.Path` / `WindowsPath` cannot satisfy a legacy helper that calls `.makedirs()`. Check the actual accepted path type and working construction pattern instead of assuming all path objects or strings are interchangeable.
-- **Minimal lifecycle:** Establish how the fixture or constructor discovers inputs, when it initializes/builds, and where input and output files belong. Writing under `app.srcdir` does not by itself prove the application will consume those files or produce the target output. Resolve setup conflicts before adding target-behavior assertions.
-
-If a fixture has a known compatibility conflict, use an original-source-supported compatible setup or a smaller public entry point. For example, direct `Sphinx(...)` construction can avoid a broken test helper, but its signature, required configuration and path arguments still need checking. Keep setup changes within the permitted candidate area; do not patch protected helpers, install dependencies through unavailable tools, or fabricate the expected failure.
-
-`ENVIRONMENT_BLOCKED` is terminal in this workflow: setup can fail before assertions, document building or target observation, with no next exploration phase to repair it. Do not publish a known-incompatible fixture hoping to correct it after execution. If essential compatibility information remains unavailable through the registered tools, use `request_information` with that specific gap. Keep this check local to the intended setup and preserve the existing execution/correction budget; it is not a repository-wide environment audit.
-
-## Construct a Minimal Candidate
-
-Use the checked entry point, compatible fixture/helper and essential configuration. Stop broad reading once the setup, supported trigger and source-backed oracle are sufficient to publish.
-
-Keep independent scenarios in separate test nodes. Assert the target value, exception type or diagnostic body at the precision the evidence supports. Extra exact wording and internal-shape assertions need their own support; remove unsupported checks rather than weakening the whole test into a broad transcript search. Add a control only when it helps distinguish the mechanism.
-
-Publish through `write_candidate`, using its current schema and permitted candidate area. Do not change protected source, replace the target implementation or fabricate its error. Controller owns execution and Verifier owns acceptance; neither a red test nor model prose establishes reproduction.
-
-## Correct from the Actual Failure
-
-Read the specific failed checks and their evidence before choosing the next action. Treat semantic review as a claim to examine, not a measured execution fact.
-
-| Available evidence | Useful next investigation |
+| Available information | First useful investigation |
 | --- | --- |
-| Input absent from a recorded consumed-input list | Check fixture entry point, filename and configuration before changing the oracle. |
-| Test passed without the reported symptom | Recheck trigger preconditions. Passing alone does not prove the target branch was skipped. |
-| Setup or helper failed before the target, and Controller returned to exploration | Compare the helper's original API and working usage; repair candidate setup. A terminal `ENVIRONMENT_BLOCKED` does not permit another attempt. |
-| Timeout, killed process or incomplete probe | Inspect the reported last stage; narrow costly setup or test scope if supported. This is incomplete evidence, not a completed negative reproduction. |
-| Assertion rejected as unsupported | Locate original support or remove that independent assertion; do not relax it merely to satisfy review. |
-| Publication or citation refused | Correct the stated contract gap or exact displayed reference, using the registered tool schemas. |
+| Traceback | Read the relevant failure site and caller; follow actual argument values toward their origin. Distinguish setup from target failure. |
+| Exact warning/error text | Search for its producer; read the surrounding conditions and relevant caller/configuration. |
+| Named API and wrong result | Read its definition and a nearby original test; compare inputs and expectations. |
+| Vague description | Extract one observable symptom and likely public entry point; search relevant modules. |
+| Execution feedback | Start with the earliest evidenced blocker below. |
 
-Unavailable path or input instrumentation means **unknown**, not “not executed.” Do not claim branch coverage from a passing test, function call count or missing log line.
+Use registered `Grep`, `Glob` and `Read` on the frozen original snapshot. Search narrowly with identifiers, error fragments or known paths; read local context. A failed search does not prove absence: adjust the anchor/scope or use another registered reader.
 
-## Make the Next Attempt Informative
+Trace the relevant data and guards: what input reached this operation, who supplied it, and which conditions control it? Stop widening the search once you have enough evidence for a supported trigger and compatible setup; do not map the whole repository first.
 
-Choose a concrete hypothesis: “Given evidence X, condition Y may explain result Z; changing/checking Y would distinguish it.” Use the existing hypothesis/reason fields when appropriate; do not add a required reflection artifact or tool argument.
+## Compare with a Working Original Example
 
-Prefer one meaningful change per experiment so the result is interpretable. Correct coupled setup requirements together when necessary. Compare actual files, parameters and preconditions with the prior attempt; changing only the hypothesis text is not a changed experiment. Repeat unchanged execution only for an explicit purpose such as checking nondeterminism, within the existing budget.
+Use supplied environment facts, not remembered versions. Before introducing a fixture, check its definition and applicable plugin/conftest registration or a supported working use in this project. An uncollected inventory is unknown, not an empty list; a definition alone does not prove activation.
 
-Use `revise_contract` when newly displayed original evidence warrants changing the interpretation of the reproduction target. It is not a progress log or a way to clear execution failures. Do not revise the contract solely to record a timeout or avoid rejection. When an essential fact cannot be obtained through available tools, use `request_information` with the specific gap; do not invent a diagnostic tool or request an unavailable action as though it ran.
+Prefer an original test using the same API, fixture or builder. Preserve required markers, arguments, configuration, roots and initialization order; identify what the issue changes. Do not copy only the test body.
 
-Leave budget for execution feedback and correction. Do not require every investigation above on every attempt. Report an unresolved blocker at the existing limit rather than assume extra steps or time. Historical experience is advice, not current source evidence; hidden reference fixes and gold tests must not guide candidate construction.
+Before relying on a helper, inspect its actual signature and relevant initialization, not just a familiar usage. Follow candidate values into it: concrete types, required methods and defaults. A `pathlib.Path` cannot satisfy `.makedirs()`. Check applicable `conftest.py` and discovery/build timing as needed. Writing an input does not establish consumption; match output formats to their producer.
+
+Reuse displayed definitions. A missing nearby example need not block publication when original APIs, types and lifecycle establish compatibility. Resolve known conflicts with supported candidate setup or a smaller public entry point. Static inspection does not establish that imports or builds passed.
+
+## Separate Trigger, Observation and Oracle
+
+- **Trigger:** Executable input, configuration and lifecycle conditions.
+- **Observation:** What an actual execution showed; incomplete runs leave uncertainty.
+- **Oracle:** Source-supported correct behavior to assert.
+
+Use the issue and displayed original documentation, signatures and tests for the oracle. Buggy implementation helps locate a trigger but does not alone define correctness. A supported invariant/equivalence may suffice without exact output. Finding a warning producer does not establish that its warning should disappear.
+
+Keep independent scenarios in separate test nodes. Assert only supported precision; extra wording, unrelated outputs or internal-shape checks need their own basis. Add a control only when it distinguishes explanations.
+
+## Make One Informative Experiment
+
+In existing hypothesis/reason prose, connect **evidence → suspected condition → candidate change → predicted observation**, including what would weaken the explanation. No new tool fields or reflection artifact.
+
+For example: "The prior build consumed only the default input; a documented setting selects our file. Change that setting while retaining the assertion. Consumption without the symptom would weaken this trigger hypothesis; failure before discovery leaves it untested." Without consumption/coverage instrumentation, do not claim a path was skipped.
+
+Prefer one meaningful change; coupled setup requirements may change together. Preserve issue trigger conditions, including nesting, values and initialization/cache state. Check actual candidate content in history, feedback or proposed arguments, not just the hypothesis. Snapshot readers cannot read generated candidate files. Rewording the explanation is not a new experiment.
+
+Once trigger, compatible setup and oracle are supported, use `write_candidate`. Leave budget for feedback and correction. Controller executes and Verifier accepts; neither a red test nor persuasive prose establishes reproduction.
+
+## Correct the Earliest Evidenced Blocker
+
+Read failed checks and referenced evidence. Semantic review is a claim, not an execution measurement; its first listed issue need not be the earliest blocker. Continue only when Controller returns to exploration.
+
+| Evidence | Next investigation |
+| --- | --- |
+| Setup/import/helper failed before the target | Trace the original helper and caller values; fix candidate setup before target assertions. |
+| Input absent from recorded consumed inputs | Check filename, discovery and initialization, rather than rewording assertions. |
+| Completed test passed without the symptom | Recheck trigger conditions and the working example; passing alone does not prove branch non-execution. |
+| Timeout, killed process or incomplete probe | Inspect the last recorded stage; narrow costly setup/scope when supported. The hypothesis is not disproved. |
+| Unsupported assertion | Find original support or remove that independent check; do not substitute an unrelated failure or broad transcript search. |
+| Publication/citation refused | Address the stated contract gap or exact displayed reference. |
+
+If the same blocker recurs, compare actual inputs/setup with the prior attempt. Change investigation when the attempted adjustment did not address it. Do not stack guesses. Repeat unchanged execution only for an explicit purpose, such as checking nondeterminism, within budget. No fixed retry count or full investigation checklist is required.
+
+## Preserve Product Boundaries
+
+Use only registered tools and permitted candidate files. Do not invent shell/run/coverage tools, modify protected source/helpers, replace the target, install dependencies (including in candidate code), or fabricate its error. Unobserved stages and branch reachability remain unknown.
+
+A terminal `ENVIRONMENT_BLOCKED` grants no further attempt. Use `request_information` for an essential fact unavailable through allowed tools. Use `revise_contract` only when new original evidence changes the interpretation, not to log progress, clear timeouts or redefine correctness. Permissions, budgets and completion checks remain authoritative. Experience is advice, not current evidence; hidden reference fixes and gold tests must not guide construction.

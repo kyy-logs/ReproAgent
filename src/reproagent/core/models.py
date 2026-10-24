@@ -462,6 +462,7 @@ class AgentContext:
     experience_summaries: tuple[ExperienceSummary, ...] = ()
     experience_events: tuple[dict[str, Any], ...] = ()
     experience_catalog: ExperienceCatalogNotice | None = None
+    environment: EnvironmentSnapshot | None = None
 
 
 @dataclass(frozen=True, slots=True)
