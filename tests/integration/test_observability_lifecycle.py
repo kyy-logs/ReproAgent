@@ -155,8 +155,8 @@ def test_a_real_run_shows_which_checks_ran_and_the_process_health(tmp_path, proj
     assert 'execution_evidence_present' in declared
     # Every recorded check is one the program really declared...
     assert set(recorded) <= set(declared)
-    # ...the candidate's own claims stay labelled as claims...
-    assert recorded['provider_semantic_claims'] == 'provider_claim'
+    # ...the candidate's own claims stay labelled as claims, including a reused approval...
+    assert recorded['provider_semantic_claims'] == 'reused_provider_claim'
     assert recorded['binding_and_integrity_ok'] == 'program_check'
     # ...and the run reached the checks a reproducing candidate needs.
     assert recorded['candidate_reproduced'] == 'program_check'

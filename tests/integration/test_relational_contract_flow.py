@@ -31,7 +31,7 @@ def test_source_backed_equivalence_and_oracle_scope_policy_reach_all_real_reques
     controller = create_controller(request, _model_config(), transport=httpx.MockTransport(handle))
     result = asyncio.run(controller.run(request, context))
     assert result.status == TaskState.DONE
-    assert calls == ['contract', 'exploration', 'verdict', 'verdict']
+    assert calls == ['contract', 'exploration', 'verdict']
     for payload in wires:
         system = '\n'.join(m['content'] for m in payload['messages'] if m['role'] == 'system')
         assert 'source-backed equivalence' in system
@@ -86,7 +86,7 @@ def test_grounded_refusal_details_reach_wire_and_revision_rebinds_before_publica
     result = asyncio.run(controller.run(request, context))
     assert result.status == TaskState.DONE
     assert len(wires) == context.budget.steps_used == 4
-    assert domain_kinds == ['contract', 'contract', 'verdict', 'verdict']
+    assert domain_kinds == ['contract', 'contract', 'verdict']
     refusal = feedback[0]
     assert refusal['code'] == 'GROUNDED_CONTRACT_REQUIRED'
     assert refusal['missing'] == ['missing_information']

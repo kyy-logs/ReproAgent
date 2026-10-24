@@ -210,7 +210,7 @@ def test_learning_provider_failure_is_not_invalid_experience(tmp_path, projects,
 def test_summary_load_occurs_after_analysis_before_first_explore(tmp_path, projects, facts):
     _, controller, result, seen, main, learning = run_sdk_task(tmp_path, projects, facts, learn=False)
     assert result.status == TaskState.DONE and not learning
-    assert main == ["contract", "exploration", "exploration", "exploration", "verdict", "verdict"]
+    assert main == ["contract", "exploration", "exploration", "exploration", "verdict"]
     assert "HISTORICAL_HINT" not in json.dumps(seen[0])
     assert "experience_summaries" not in json.dumps(seen[1])
     assert "HISTORICAL_HINT" not in json.dumps(seen[2])

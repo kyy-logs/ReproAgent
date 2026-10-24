@@ -63,7 +63,7 @@ def test_a_run_can_be_read_back_afterwards(tmp_path, projects, facts):
     # Why the run was accepted: the model's claim and the program's checks, kept apart.
     checks = {entry["attributes"]["check"]: entry["attributes"]["check_source"]
               for entry in document["spans"] if "check" in entry["attributes"]}
-    assert checks["provider_semantic_claims"] == "provider_claim"
+    assert checks["provider_semantic_claims"] == "reused_provider_claim"
     assert checks["candidate_reproduced"] == "program_check"
     assert checks["binding_and_integrity_ok"] == "program_check"
 

@@ -45,7 +45,7 @@ def test_first_timeout_provides_actionable_feedback_then_next_candidate_can_fini
     assert feedback['result_code'] == 'COMMAND_TIMEOUT'
     assert feedback['verdict']['execution_diagnostic']['last_test_stage'] == 'setup:passed'
     assert feedback['consecutive_command_timeouts'] == 1
-    assert model.kinds.count('verdict') == 2
+    assert model.kinds.count('verdict') == 1
 
 
 def test_two_different_timeout_candidates_stop_before_third_execution(tmp_path, projects, facts):
