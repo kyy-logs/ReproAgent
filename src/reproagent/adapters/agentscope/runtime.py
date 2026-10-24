@@ -364,7 +364,9 @@ class AgentScopeRuntime:
         """The one hint a rejected response is answered with; the response itself is gone."""
         return UserMsg(name="user", content=(
             "<system-reminder>Your previous response was rejected before any of it ran: "
-            f"{failure.code}. Answer again with at most one tool call, its arguments a single complete "
+            f"{failure.code}. None of those tool calls executed. Choose only your next single action, "
+            "including when using Read, Grep or Glob; wait for its result before another call. "
+            "Answer again with at most one tool call, its arguments a single complete "
             f"JSON object, and its name one of: {', '.join(self.allowed_tools)}. "
             f"Diagnostic: {canonical_bytes(failure.details()).decode('utf-8')}</system-reminder>"))
 
