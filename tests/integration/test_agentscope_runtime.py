@@ -509,10 +509,13 @@ def measure_threshold(env):
     The candidate's own arguments are what pushes the *next* step over the threshold.
     """
     from agentscope.message import SystemMsg
+    from reproagent.core.agent import reproduction_skill
     from reproagent.core.exploration_progress import step_budget_view
     from reproagent.adapters.agentscope.progress import render_progress
     phase = agent_context(env)
     env.runtime._agent.state.context.append(env.runtime._message(phase))
+    env.runtime._agent.state.context.append(SystemMsg(name='reproduction-skill',
+        content='<reproduction_skill name="reproduce-bug">\n' + reproduction_skill() + '\n</reproduction_skill>'))
     env.runtime._agent.state.context.append(SystemMsg(name='exploration-progress', content=render_progress(
         step_budget_view(env.context.budget.limits.agent_steps, env.context.budget.steps_used), phase)))
     try:
