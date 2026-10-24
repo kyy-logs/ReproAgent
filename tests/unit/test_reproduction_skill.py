@@ -41,3 +41,33 @@ def test_skill_changes_invalidate_evaluation_source_receipt(tmp_path):
     path.write_text('skill version 2', encoding='utf-8')
     with pytest.raises(ToolSourceChanged):
         assert_tool_source(tmp_path, receipt)
+
+
+def test_decision_card_is_bundled_and_non_empty():
+    body = agent.reproduction_skill()
+    card = agent.reproduction_skill_checklist()
+    assert card
+    assert card in body
+    assert 'pathlib.Path' in card
+    assert 'makedirs' in card
+    assert 'pytest' in card or 'plugin' in card
+
+
+def test_missing_decision_card_is_rejected(tmp_path, monkeypatch):
+    path = tmp_path / RESOURCE
+    path.parent.mkdir(parents=True)
+    path.write_text('---\nname: reproduce-bug\n---\n# body without a card\n', encoding='utf-8')
+    monkeypatch.setattr(agent, 'files', lambda package: tmp_path)
+    with pytest.raises(ValueError, match='decision card'):
+        agent.reproduction_skill_checklist()
+
+
+def test_empty_decision_card_is_rejected(tmp_path, monkeypatch):
+    path = tmp_path / RESOURCE
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '---\nname: reproduce-bug\n---\n<!-- decision-card -->\n<!-- /decision-card -->\n',
+        encoding='utf-8')
+    monkeypatch.setattr(agent, 'files', lambda package: tmp_path)
+    with pytest.raises(ValueError, match='empty decision card'):
+        agent.reproduction_skill_checklist()

@@ -219,7 +219,8 @@ class ExplorationMiddleware(MiddlewareBase):
                 raise
             except Exception:
                 pass  # Optional advice cannot replace the original model input.
-        if not self._skill_injected:
+        inject_full_skill = not self._skill_injected
+        if inject_full_skill:
             # The method is a first-request view, never a persistent history entry.
             from ...core.agent import reproduction_skill
             body = reproduction_skill()
@@ -259,6 +260,11 @@ class ExplorationMiddleware(MiddlewareBase):
                 raise BudgetStopped('NEEDS_INFORMATION', 'exploration progress exceeds its bounded message') from exc
             input_kwargs = {**input_kwargs, 'messages': [*input_kwargs['messages'],
                 SystemMsg(name='exploration-progress', content=progress)]}
+            if not inject_full_skill:
+                from ...core.agent import reproduction_skill_checklist
+                input_kwargs = {**input_kwargs, 'messages': [*input_kwargs['messages'],
+                    SystemMsg(name='reproduction-checklist',
+                              content=reproduction_skill_checklist())]}
             await self._check_progress_capacity(agent, input_kwargs['messages'], input_kwargs['tools'])
         model = input_kwargs["current_model"]
         response = await model(
