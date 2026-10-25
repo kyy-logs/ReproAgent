@@ -74,13 +74,6 @@ macOS 目前通过命令行安装和接入；Windows 的一键安装器只适用
 | **宿主接入** | Claude Code 用 `/reproagent`，Codex 用 `$reproagent`，也可以直接走 CLI |
 | **可交接** | 报告、trace、哈希清单和独立 `replay.py` 一起导出；接收方不需要 ReproAgent 或模型接口就能重跑 |
 
-## 终端演示
-
-<p align="center">
-  <img src="docs/assets/demo.gif" alt="ReproAgent 终端复现演示：流式日志、报告画中画和脚本指针" width="100%">
-</p>
-<p align="center"><sub>终端日志、报告画中画和脚本指针，均为本地页面里的真实 DOM 动画。</sub></p>
-
 ## 使用
 
 ### 在 Claude Code 里使用
