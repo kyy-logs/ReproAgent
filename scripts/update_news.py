@@ -6,11 +6,14 @@ the ``<!-- news-auto: ... -->`` marker so existing history is not backfilled.
 Later runs turn each first-parent commit that is a user-visible change into one
 News entry.
 
-Only ``feat``, ``fix`` and ``perf`` commits are recorded. Prefixes such as
+Only ``feat``, ``fix`` and ``perf`` commits are recorded, plus ``codex:``
+commits: ``codex: feat: ...`` is treated as feat, ``codex: <text>`` as a
+generic ``CHANGE``, and ``codex: docs: ...`` is skipped. Other prefixes such as
 ``docs``, ``test``, ``chore``, ``ci``, ``build`` and ``refactor`` are skipped so
-News does not turn into a commit log. For a merge commit the highest-impact type
-in the merged branch wins (feat > fix > perf), and the newest commit of that
-type supplies the text, so a trailing ``docs:`` commit cannot hide a feature.
+News does not turn into a commit log. For a merge commit the highest-impact
+category in the merged branch wins (feat > fix > perf > change), and the newest
+commit of that category supplies the text, so a trailing ``docs:`` commit cannot
+hide a feature.
 Put a bilingual line in the merge or squash commit body (or the PR description,
 for squash merges) to fill the Chinese part:
 
@@ -35,7 +38,7 @@ COMMIT_URL = f"https://github.com/{REPO}/commit"
 MARKER_RE = re.compile(r"<!--\s*news-auto:\s*([0-9a-fA-F]{7,40})\s*-->")
 MONTH_RE = re.compile(r"^##\s+(\d{4}-\d{2})\s*$")
 PREFIX_RE = re.compile(
-    r"^(feat|fix|docs|test|refactor|perf|chore|build|ci|merge)(\([^)]*\))?!?:\s*",
+    r"^(feat|fix|docs|test|refactor|perf|chore|build|ci|merge|codex)(\([^)]*\))?!?:\s*",
     re.IGNORECASE,
 )
 CHINESE_RE = re.compile(r"^\s*(?:News-zh|中文)\s*[:：]\s*(.+?)\s*$", re.IGNORECASE)
@@ -55,9 +58,10 @@ CATEGORY = {
     "build": "BUILD",
     "ci": "CI",
     "merge": "MERGE",
+    "codex": "CHANGE",
 }
 ALLOWED_TYPES = ("feat", "fix", "perf")
-TYPE_PRIORITY = {"feat": 0, "fix": 1, "perf": 2}
+CATEGORY_PRIORITY = {"FEAT": 0, "FIX": 1, "PERF": 2, "CHANGE": 3}
 
 
 @dataclass
@@ -89,27 +93,43 @@ def sentence_case(text: str) -> str:
     return text
 
 
-def split_subject(subject: str) -> tuple[str, str]:
-    match = PREFIX_RE.match(subject)
-    if not match:
-        return "CHORE", sentence_case(subject.strip())
-    category = CATEGORY.get(match.group(1).lower(), "CHORE")
-    text = subject[match.end() :].strip()
-    return category, sentence_case(text or subject.strip())
+def parse_subject(subject: str) -> tuple[str, str] | None:
+    """Return (category, text) for a recorded commit, else None.
 
-
-def commit_type(subject: str) -> str | None:
+    ``codex:`` is a wrapper, not a change type: ``codex: feat: add X`` becomes
+    FEAT, ``codex: add X`` becomes CHANGE, and ``codex: docs: ...`` is skipped.
+    """
     match = PREFIX_RE.match(subject)
     if not match:
         return None
-    return match.group(1).lower()
+    kind = match.group(1).lower()
+    text = subject[match.end() :].strip()
+    if not text:
+        return None
+
+    if kind == "codex":
+        inner = PREFIX_RE.match(text)
+        if inner:
+            inner_kind = inner.group(1).lower()
+            if inner_kind in ALLOWED_TYPES:
+                inner_text = text[inner.end() :].strip()
+                if not inner_text:
+                    return None
+                return CATEGORY[inner_kind], sentence_case(inner_text)
+            if inner_kind in CATEGORY:
+                return None
+        return "CHANGE", sentence_case(text)
+
+    if kind in ALLOWED_TYPES:
+        return CATEGORY[kind], sentence_case(text)
+    return None
 
 
 def collect_merge_candidates(
     first_parent: str, parents: list[str], cwd: Path
-) -> list[tuple[str, str, str]]:
-    """Return (type, subject, message) for user-visible commits on a merged branch."""
-    candidates: list[tuple[str, str, str]] = []
+) -> list[tuple[str, str, str, str]]:
+    """Return (category, text, subject, message) for recorded commits."""
+    candidates: list[tuple[str, str, str, str]] = []
     seen: set[str] = set()
     for parent in parents:
         try:
@@ -127,9 +147,12 @@ def collect_merge_candidates(
             )
             candidate_lines = candidate_message.splitlines()
             candidate_subject = candidate_lines[0].strip() if candidate_lines else ""
-            kind = commit_type(candidate_subject)
-            if kind in ALLOWED_TYPES:
-                candidates.append((kind, candidate_subject, candidate_message))
+            parsed = parse_subject(candidate_subject)
+            if parsed is not None:
+                category, text = parsed
+                candidates.append(
+                    (category, text, candidate_subject, candidate_message)
+                )
     return candidates
 
 
@@ -143,21 +166,22 @@ def read_entry(sha: str, cwd: Path) -> Entry | None:
         return None
 
     parents = run_git("rev-list", "--parents", "-n", "1", sha, cwd=cwd).split()[1:]
-    candidates: list[tuple[str, str, str]] = []
+    candidates: list[tuple[str, str, str, str]] = []
     if len(parents) > 1:
         candidates = collect_merge_candidates(parents[0], parents[1:], cwd)
         if not candidates:
             return None
-        best_priority = min(TYPE_PRIORITY[kind] for kind, _, _ in candidates)
-        _, source, source_message = [
+        best_priority = min(CATEGORY_PRIORITY[c[0]] for c in candidates)
+        category, text, source, source_message = [
             candidate
             for candidate in candidates
-            if TYPE_PRIORITY[candidate[0]] == best_priority
+            if CATEGORY_PRIORITY[candidate[0]] == best_priority
         ][-1]
     else:
-        kind = commit_type(subject)
-        if kind not in ALLOWED_TYPES:
+        parsed = parse_subject(subject)
+        if parsed is None:
             return None
+        category, text = parsed
         source = subject
         source_message = message
 
@@ -166,7 +190,6 @@ def read_entry(sha: str, cwd: Path) -> Entry | None:
     if source.lower().startswith(SKIP_SUBJECT_PREFIXES):
         return None
 
-    category, text = split_subject(source)
     if not text:
         return None
 
