@@ -10,9 +10,7 @@
   <a href="README_zh.md"><b>中文</b></a> |
   <a href="https://kyy-logs.github.io/ReproAgent/"><b>Product page</b></a> |
   <a href="#quickstart"><b>Quickstart</b></a> |
-  <a href="#usage"><b>Usage</b></a> |
-  <a href="ROADMAP.md"><b>Roadmap</b></a> |
-  <a href="docs/README.md"><b>Docs</b></a>
+  <a href="ROADMAP.md"><b>Roadmap</b></a>
 </p>
 
 <p align="center">
