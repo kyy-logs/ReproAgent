@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReproAgent — 把 Bug 描述变成可复查的复现报告</title>
+  <meta name="description" content="ReproAgent 在本地探索 Python 代码、生成 pytest 回归，运行问题版、独立重跑和修复版三段对照，并导出可复查的证据包。">
+  <meta property="og:title" content="ReproAgent — 把 Bug 描述变成可复查的复现报告">
+  <meta property="og:description" content="问题版失败，独立重跑失败，修复版通过。你得到的是报告和证据，不是一段聊天记录。">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="brand-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="aider-style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到正文</a>
+
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="#top" aria-label="ReproAgent 首页"><img class="brand-mark" src="brand-mark.svg" alt="" width="24" height="24"><span>reproagent</span></a>
+      <nav class="nav-links" aria-label="主导航">
+        <a href="#what">它做什么</a>
+        <a href="#evidence">证据</a>
+        <a href="#install">怎么用</a>
+        <a href="#mac">macOS</a>
+        <a href="#boundaries">边界</a>
+        <a href="https://github.com/kyy-logs/ReproAgent">GitHub</a>
+      </nav>
+      <a class="btn btn-small" href="#install">安装</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="hero-context">面向 Python 和 pytest 的本地复现工具</p>
+          <h1>把 Bug 描述，<br>变成一份可复查的<br>复现报告。</h1>
+          <p class="hero-lead">ReproAgent 读原始 Issue，写候选 pytest 测试，先证明它在问题版失败，再独立重跑一次，最后用修复版对照。你得到的不是一段聊天记录，而是一份可以打开、重放和检查的报告。</p>
+          <div class="actions">
+            <a class="btn btn-primary" href="#install">Windows 安装</a>
+            <a class="btn btn-quiet" href="#mac">macOS 安装</a>
+            <a class="btn btn-quiet" href="#evidence">看看证据长什么样</a>
+          </div>
+          <p class="hero-note">安装和检查不调用模型。第一次真实复现才会使用你的模型配置和凭据。</p>
+        </div>
+
+        <div class="hero-terminal" aria-label="macOS 终端里的 ReproAgent 使用演示">
+          <div class="demo-switcher" role="group" aria-label="选择演示方式">
+            <button class="demo-mode is-active" type="button" data-mac-mode="claude-code" aria-pressed="true">Claude Code</button>
+            <button class="demo-mode" type="button" data-mac-mode="codex" aria-pressed="false">Codex</button>
+            <button class="demo-mode" type="button" data-mac-mode="cli" aria-pressed="false">CLI</button>
+          </div>
+          <div class="demo-frame" data-mac-frame>
+          <div class="mac-window" data-mac-demo>
+            <div class="mac-bar">
+              <span class="mac-lights" aria-hidden="true"><span class="mac-light red"></span><span class="mac-light yellow"></span><span class="mac-light green"></span></span>
+              <span class="mac-title">~/work/my-project — zsh</span>
+              <button class="replay-btn" type="button" data-mac-replay>重播</button>
+            </div>
+            <div class="mac-body">
+              <div class="mac-line">
+                <span class="mac-prompt">~ %</span>
+                <span class="mac-command" data-mac-command="claude">claude</span>
+                <span class="term-caret" aria-hidden="true"></span>
+              </div>
+              <div class="mac-claude" data-mac-claude>
+                <span class="mac-prompt mac-claude-prompt">&gt;</span>
+                <span class="mac-command" data-mac-skill="/reproagent 帮我复现当前项目里的这个 Bug">/reproagent 帮我复现当前项目里的这个 Bug</span>
+              </div>
+              <div class="mac-log" data-mac-log>
+                <div class="log-line done"><span class="log-marker"></span><span>reading issue and repository facts</span></div>
+                <div class="log-line done"><span class="log-marker"></span><span>exploring code and building the contract</span></div>
+                <div class="log-line done"><span class="log-marker"></span><span>writing the candidate pytest</span></div>
+                <div class="log-line log-diff"><span class="log-marker"></span><span>+ testing/test_repro_default_log_format.py</span></div>
+                <div class="log-line log-diff"><span class="log-marker"></span><span>+ assert "%(name)s" in DEFAULT_LOG_FORMAT</span></div>
+                <div class="log-line done"><span class="log-marker"></span><span>running on the buggy version</span></div>
+                <div class="log-line log-fail"><span class="log-marker"></span><span>FAILED testing/test_repro_default_log_format.py::test_format_has_name_field</span></div>
+                <div class="log-line log-fail"><span class="log-marker"></span><span>3 failed, 1 passed in 0.41s</span></div>
+                <div class="log-line done"><span class="log-marker"></span><span>rerunning in a fresh copy</span></div>
+                <div class="log-line log-fail"><span class="log-marker"></span><span>3 failed, 1 passed in 0.47s</span></div>
+                <div class="log-line done"><span class="log-marker"></span><span>validating the fixed version</span></div>
+                <div class="log-line log-pass"><span class="log-marker"></span><span>4 passed in 0.12s</span></div>
+                <div class="log-line done"><span class="log-marker"></span><span>sealing the evidence package</span></div>
+              </div>
+              <div class="mac-verdict" data-mac-verdict>
+                <span class="mac-verdict-label">DIFFERENTIAL_VALIDATED</span>
+                <span>原版失败，同一候选独立重跑仍失败，修复版通过。</span>
+              </div>
+              <div class="mac-files" data-mac-files><span>report.md</span><span>trace.json</span><span>manifest.json</span><span>replay.py</span></div>
+            </div>
+          </div>
+          <div class="pip-float" data-mac-pip-float>
+          <div class="pip-report" data-mac-pip>
+            <div class="pip-bar">
+              <span class="mac-lights" aria-hidden="true"><span class="mac-light red"></span><span class="mac-light yellow"></span><span class="mac-light green"></span></span>
+              <span class="pip-title">report.md</span>
+            </div>
+            <div class="pip-body">
+              <span class="pip-verdict">DIFFERENTIAL_VALIDATED</span>
+              <p>原版失败，独立重跑失败，修复版通过。</p>
+              <div class="pip-runs">
+                <span>问题版 <b class="fail">FAIL</b></span>
+                <span>独立重跑 <b class="fail">FAIL</b></span>
+                <span>修复版 <b class="pass">PASS</b></span>
+              </div>
+              <div class="pip-files"><span>report.md</span><span>trace.json</span><span>manifest.json</span></div>
+            </div>
+          </div>
+          </div>
+          <div class="demo-cursor" data-mac-cursor aria-hidden="true">
+            <svg viewBox="0 0 20 24" focusable="false"><path d="M2 2 L16.5 13.2 L9.9 14.2 L7.2 21.2 Z" fill="#ffffff" stroke="#17212b" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </div>
+          </div>
+          <p class="terminal-caption">macOS 终端里的一次 Claude Code 调用</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="package">
+      <div class="container section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">01</span>
+          <span class="rail-label">output</span>
+        </aside>
+        <div class="section-main">
+          <div class="package-grid">
+            <div class="package-copy">
+              <h2>跑完只是开始，<br>证据包才是结果。</h2>
+              <p class="section-lead">每次复现都留下同一组文件。报告说结论，trace 说过程，manifest 固定内容，replay 让你在全新副本里再跑一次。</p>
+              <p class="package-note">文件都在本地；哈希记录在 manifest.json 里。</p>
+            </div>
+            <div class="package-viewer sheet" aria-label="证据包文件结构">
+              <div class="viewer-bar">
+                <span class="viewer-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span class="viewer-path">repro-results/pytest-dev__pytest-5227/</span>
+                <span class="viewer-badge">sealed</span>
+              </div>
+              <ul class="file-tree">
+                <li class="tree-root"><span class="tree-line">▾</span><code>package/</code><span>一次复现的全部记录</span></li>
+                <li><span class="tree-line">├─</span><code>report.md</code><span>结论、三次运行、失败摘要</span></li>
+                <li><span class="tree-line">├─</span><code>trace.json</code><span>模型调用、工具步骤、耗时</span></li>
+                <li><span class="tree-line">├─</span><code>manifest.json</code><span>文件哈希与证据清单</span></li>
+                <li><span class="tree-line">└─</span><code>replay.py</code><span>在全新副本里重跑候选</span></li>
+              </ul>
+              <div class="viewer-foot"><code>manifest.json</code><span>hash recorded</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="what">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">02</span>
+          <span class="rail-label">proof</span>
+        </aside>
+        <div class="section-main">
+          <div class="section-head">
+            <h2>不是生成一个测试，<br>而是证明它复现了问题。</h2>
+            <p class="section-lead">生成测试很容易。难的是确认它真的调用到目标代码、断言打到目标行为，并且在问题版和修复版上给出相反结果。</p>
+          </div>
+          <div class="run-compare sheet" aria-label="同一份候选测试在问题版、独立重跑和修复版上的结果">
+            <div class="run-compare-head">
+              <span class="run-compare-title">同一份候选测试</span>
+              <code>testing/test_repro_default_log_format.py</code>
+            </div>
+            <div class="run-columns">
+              <div class="run-col fail">
+                <span class="run-label">问题版</span>
+                <strong>FAIL</strong>
+                <code>exit 1</code>
+                <span class="run-summary">3 failed, 1 passed</span>
+              </div>
+              <div class="run-col fail">
+                <span class="run-label">独立重跑</span>
+                <strong>FAIL</strong>
+                <code>exit 1</code>
+                <span class="run-summary">3 failed, 1 passed</span>
+              </div>
+              <div class="run-col pass">
+                <span class="run-label">修复版</span>
+                <strong>PASS</strong>
+                <code>exit 0</code>
+                <span class="run-summary">4 passed</span>
+              </div>
+            </div>
+            <div class="run-verdict">
+              <span class="verdict-stamp">DIFFERENTIAL_VALIDATED</span>
+              <p>结果相反，才说明候选测试复现的是这个 Bug，而不是别的东西。</p>
+            </div>
+          </div>
+          <div class="ledger">
+            <div class="ledger-row">
+              <span class="ledger-code">verify</span>
+              <div><h3>差分验证</h3><p>原版失败，独立重跑失败，修复版通过。缺一段就停在更低的证据等级。</p></div>
+            </div>
+            <div class="ledger-row">
+              <span class="ledger-code">execute</span>
+              <div><h3>候选测试真实执行</h3><p>记录目标模块调用、断言结果、pytest 退出码和 probe 是否完整，不用字符串自比较充数。</p></div>
+            </div>
+            <div class="ledger-row">
+              <span class="ledger-code">local</span>
+              <div><h3>本地执行</h3><p>目标代码和测试在你的机器上跑；使用你的 Python、pytest 和模型配置。</p></div>
+            </div>
+            <div class="ledger-row">
+              <span class="ledger-code">hosts</span>
+              <div><h3>Claude Code 和 Codex</h3><p>Windows 一条安装命令写好两个用户级入口，之后用 /reproagent 或 $reproagent 调用。</p></div>
+            </div>
+            <div class="ledger-row">
+              <span class="ledger-code">preflight</span>
+              <div><h3>目标项目检查</h3><p>检查目标 Python、pytest、测试目录和模块；需要时再用 -CollectOnly 跑一次真实收集。</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="how">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">03</span>
+          <span class="rail-label">pipeline</span>
+        </aside>
+        <div class="section-main">
+          <div class="section-head">
+            <h2>从一个 Issue 到一份封存报告。</h2>
+            <p class="section-lead">这是一条有顺序的流水线：先理解，再执行，最后封存。每一步都留下可检查的记录。</p>
+          </div>
+          <div class="pipeline-board sheet">
+            <ol class="pipeline">
+              <li><span class="stage-num">01</span><span class="node">issue</span><p>读描述与代码事实</p><span class="stage-out">issue facts</span></li>
+              <li><span class="stage-num">02</span><span class="node">contract</span><p>建立触发与观察点</p><span class="stage-out">contract</span></li>
+              <li><span class="stage-num">03</span><span class="node">candidate</span><p>写候选 pytest 测试</p><span class="stage-out">test_*.py</span></li>
+              <li><span class="stage-num">04</span><span class="node">buggy</span><p>在问题版上执行</p><span class="stage-out is-fail">exit 1</span></li>
+              <li><span class="stage-num">05</span><span class="node">rerun</span><p>用新副本独立重跑</p><span class="stage-out is-fail">exit 1</span></li>
+              <li><span class="stage-num">06</span><span class="node">fixed</span><p>用修复版对照</p><span class="stage-out is-pass">exit 0</span></li>
+              <li><span class="stage-num">07</span><span class="node">sealed</span><p>导出报告和证据包</p><span class="stage-out is-signal">manifest</span></li>
+            </ol>
+            <div class="pipeline-foot">
+              <span>报告等级由最后三段决定。</span>
+              <code>buggy → rerun → fixed</code>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="evidence">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">04</span>
+          <span class="rail-label">levels</span>
+        </aside>
+        <div class="section-main">
+          <div class="section-head">
+            <h2>DONE 不是差分验证。</h2>
+            <p class="section-lead">“跑完了”只说明流程结束。报告会把证据等级写清楚，避免用一句成功掩盖不确定性。</p>
+          </div>
+          <div class="evidence-grid">
+            <div class="ladder-panel sheet">
+              <div class="ladder-meter" aria-hidden="true"><span></span><span></span><span></span><span class="on"></span></div>
+              <ol class="status-ladder">
+                <li><span class="level-num">01</span><div><code>DONE</code><span>流程结束，不证明复现</span></div></li>
+                <li><span class="level-num">02</span><div><code>SINGLE_OBSERVATION</code><span>只发生了一次原版运行</span></div></li>
+                <li><span class="level-num">03</span><div><code>REPEATED_OBSERVATION</code><span>同一候选独立重跑过</span></div></li>
+                <li class="active"><span class="level-num">04</span><div><code>DIFFERENTIAL_VALIDATED</code><span>原版失败、独立重跑失败、修复版通过</span></div><span class="ladder-mark">最高等级</span></li>
+              </ol>
+              <p class="note">如果缺少修复版，或者只发生了一次失败，报告会停在更低的等级，不会写成 DIFFERENTIAL_VALIDATED。</p>
+            </div>
+
+            <div class="specimen sheet">
+              <div class="specimen-tabs">
+                <span class="specimen-tab is-active">test_repro_default_log_format.py</span>
+                <span class="specimen-file">testing/</span>
+                <span class="specimen-meta">pytest</span>
+              </div>
+              <pre class="specimen-code"><code><span class="code-line"><span class="tok-key">import</span> logging</span>
+<span class="code-line"><span class="tok-key">from</span> _pytest.logging <span class="tok-key">import</span> DEFAULT_LOG_FORMAT</span>
+<span class="code-line"> </span>
+<span class="code-line"><span class="tok-key">def</span> _render(name, filename, lineno, message):</span>
+<span class="code-line">    record = logging.LogRecord(</span>
+<span class="code-line">        name, logging.DEBUG, filename, lineno, message, (), None</span>
+<span class="code-line">    )</span>
+<span class="code-line">    <span class="tok-key">return</span> logging.Formatter(DEFAULT_LOG_FORMAT).format(record)</span>
+<span class="code-line"> </span>
+<span class="code-line"><span class="tok-key">def</span> test_format_has_name_field():</span>
+<span class="code-line is-check">    <span class="tok-key">assert</span> <span class="tok-str">"%(name)s"</span> <span class="tok-key">in</span> DEFAULT_LOG_FORMAT</span>
+<span class="code-line"> </span>
+<span class="code-line"><span class="tok-key">def</span> test_renders_django_name():</span>
+<span class="code-line">    <span class="tok-key">assert</span> <span class="tok-str">"django.db.backends"</span> <span class="tok-key">in</span> _render(</span>
+<span class="code-line">        <span class="tok-str">"django.db.backends"</span>, <span class="tok-str">"utils.py"</span>, 114, <span class="tok-str">"SELECT"</span></span>
+<span class="code-line">    )</span>
+<span class="code-line"> </span>
+<span class="code-line"><span class="tok-com"># buggy: AssertionError</span></span>
+<span class="code-line"><span class="tok-com"># fixed: 4 passed</span></span></code></pre>
+              <div class="specimen-foot">
+                <span><b class="fail">buggy</b> AssertionError</span>
+                <span><b class="pass">fixed</b> 4 passed</span>
+                <span class="specimen-hash">manifest.json · hash recorded</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="install">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">05</span>
+          <span class="rail-label">install</span>
+        </aside>
+        <div class="section-main">
+          <div class="section-head">
+            <h2>装好，给它一个 Bug。</h2>
+            <p class="section-lead">Windows 一键安装，macOS 命令行接入。两个平台都接好 Claude Code 和 Codex 入口，安装不调用模型。</p>
+          </div>
+          <div class="quickstart sheet">
+            <div class="platform-tabs" role="tablist" aria-label="安装平台">
+              <button class="platform-tab is-active" type="button" role="tab" id="tab-windows" aria-selected="true" aria-controls="install-windows" data-install-platform="windows">Windows</button>
+              <button class="platform-tab" type="button" role="tab" id="tab-macos" aria-selected="false" aria-controls="install-macos" data-install-platform="macos">macOS</button>
+            </div>
+            <div class="quickstart-panel" id="install-windows" role="tabpanel" aria-labelledby="tab-windows" data-install-panel="windows">
+              <div class="quickstart-copy">
+                <span class="quickstart-label">Windows / PowerShell</span>
+                <h3>一条命令完成安装</h3>
+                <p>安装器准备私有工具环境，复用现有 Python；找不到时再尝试自动安装。之后写入 Claude Code 和 Codex 的用户级入口。</p>
+                <ul class="install-facts">
+                  <li><span>01</span>准备工具环境</li>
+                  <li><span>02</span>检测 Python 和 pytest</li>
+                  <li><span>03</span>写入 Claude Code / Codex 入口</li>
+                  <li><span>04</span>运行 setup --check</li>
+                </ul>
+              </div>
+              <div class="quickstart-terminal inline-copy">
+                <div class="qs-bar">
+                  <span class="mac-lights" aria-hidden="true"><span class="mac-light red"></span><span class="mac-light yellow"></span><span class="mac-light green"></span></span>
+                  <span>PowerShell</span>
+                </div>
+                <pre><code><span class="qs-line">git clone https://github.com/kyy-logs/ReproAgent.git</span>
+<span class="qs-line">cd ReproAgent</span>
+<span class="qs-line">.\install.cmd -Force</span></code></pre>
+                <p class="qs-status">setup --check: ready<br>Claude Code / Codex 入口已写入</p>
+                <div class="qs-foot">
+                  <span>安装不调用模型</span>
+                  <button class="copy-btn copy-dark" type="button" data-copy>复制命令</button>
+                </div>
+              </div>
+            </div>
+            <div class="quickstart-panel is-macos" id="install-macos" role="tabpanel" aria-labelledby="tab-macos" data-install-panel="macos" hidden>
+              <div class="quickstart-copy">
+                <span class="quickstart-label">macOS / Terminal</span>
+                <h3>命令行安装</h3>
+                <p>创建虚拟环境，安装 ReproAgent，再写入 Claude Code 和 Codex 的用户级入口。</p>
+                <ul class="install-facts">
+                  <li><span>01</span>克隆仓库</li>
+                  <li><span>02</span>创建 .venv</li>
+                  <li><span>03</span>安装并运行 setup</li>
+                  <li><span>04</span>重启 Claude Code / Codex</li>
+                </ul>
+              </div>
+              <div class="quickstart-terminal inline-copy">
+                <div class="qs-bar">
+                  <span class="mac-lights" aria-hidden="true"><span class="mac-light red"></span><span class="mac-light yellow"></span><span class="mac-light green"></span></span>
+                  <span>Terminal — bash</span>
+                </div>
+                <pre><code><span class="qs-line">git clone https://github.com/kyy-logs/ReproAgent.git</span>
+<span class="qs-line">cd ReproAgent</span>
+<span class="qs-line">python3 -m venv .venv</span>
+<span class="qs-line">.venv/bin/python -m pip install -e .</span>
+<span class="qs-line">.venv/bin/reproagent setup</span></code></pre>
+                <p class="qs-status">setup: ready<br>Claude Code / Codex 入口已写入</p>
+                <div class="qs-foot">
+                  <span>需要 Python 3.11+</span>
+                  <button class="copy-btn copy-dark" type="button" data-copy>复制命令</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="usage-head"><h3>装好之后</h3><span>在目标项目里</span></div>
+          <div class="usage-grid">
+            <div class="usage-item">
+              <span class="usage-label">Claude Code</span>
+              <p>重启会话，直接给 Bug 描述或 task 配置。</p>
+              <div class="code-block dark">
+                <button class="copy-btn copy-dark" type="button" data-copy>复制</button>
+                <pre><code>/reproagent 帮我复现当前项目里的这个 Bug</code></pre>
+              </div>
+            </div>
+            <div class="usage-item">
+              <span class="usage-label">Codex</span>
+              <p>同一套入口和模型配置，使用 $reproagent。</p>
+              <div class="code-block dark">
+                <button class="copy-btn copy-dark" type="button" data-copy>复制</button>
+                <pre><code>$reproagent 帮我复现当前项目里的这个 Bug</code></pre>
+              </div>
+            </div>
+            <div class="usage-item">
+              <span class="usage-label">先检查目标项目</span>
+              <p>只读检查 Python、pytest、测试目录和模块；-CollectOnly 再跑一次收集。</p>
+              <div class="code-block dark">
+                <button class="copy-btn copy-dark" type="button" data-copy>复制</button>
+                <pre><code>.\install.cmd -Project E:\your-project -CollectOnly</code></pre>
+              </div>
+            </div>
+          </div>
+          <p class="docs-link">完整参数和退出码在 <a href="https://github.com/kyy-logs/ReproAgent/blob/main/docs/windows-install.md">docs/windows-install.md</a>。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="mac">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">06</span>
+          <span class="rail-label">macOS</span>
+        </aside>
+        <div class="section-main">
+          <div class="section-head">
+            <h2>macOS 安装</h2>
+            <p class="section-lead">macOS 通过命令行安装和接入。<br>Windows 一键安装器只支持 Windows。</p>
+          </div>
+          <div class="mac-grid">
+            <div class="mac-copy">
+              <div class="host-paths sheet" aria-label="安装后写入的用户级入口">
+                <div><span class="host-label">Claude Code</span><code>~/.claude/skills/reproagent</code></div>
+                <div><span class="host-label">Codex</span><code>~/.agents/skills/reproagent</code></div>
+              </div>
+              <p class="note">需要 Python 3.11+。安装后在目标项目里启动 <code>claude</code>，输入 <code>/reproagent ...</code>。</p>
+              <p class="note">页面顶部的终端演示从这一步开始。完整接入说明见 <a href="https://github.com/kyy-logs/ReproAgent/blob/main/docs/ai-tool-integration.md">docs/ai-tool-integration.md</a>。</p>
+            </div>
+            <div class="mac-command-panel">
+              <div class="mac-command-bar">
+                <span class="mac-lights" aria-hidden="true"><span class="mac-light red"></span><span class="mac-light yellow"></span><span class="mac-light green"></span></span>
+                <span>Terminal — bash</span>
+              </div>
+              <pre class="mac-install"><code><span class="qs-line">git clone https://github.com/kyy-logs/ReproAgent.git</span>
+<span class="qs-line">cd ReproAgent</span>
+<span class="qs-line">python3 -m venv .venv</span>
+<span class="qs-line">.venv/bin/python -m pip install -e .</span>
+<span class="qs-line">.venv/bin/reproagent setup</span>
+<span class="qs-out-line">setup: ready</span></code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="boundaries">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">07</span>
+          <span class="rail-label">limits</span>
+        </aside>
+        <div class="section-main">
+          <div class="section-head">
+            <h2>它适合什么，不适合什么。</h2>
+            <p class="section-lead">边界写清楚，比把所有东西都说得像万能工具更可信。</p>
+          </div>
+          <div class="boundary-panel sheet">
+            <div class="boundary-col">
+              <div class="boundary-head"><span class="boundary-mark" aria-hidden="true">✓</span><h3>适合</h3><span class="boundary-count">4</span></div>
+              <ul>
+                <li>Python 和 pytest 项目，需要一个能复查的回归测试。</li>
+                <li>维护者、QA、AI coding agent 用户，想确认真实复现而不是看聊天结论。</li>
+                <li>需要把“问题版失败、修复版通过”固化成证据的团队。</li>
+                <li>希望本地执行、自己控制模型 provider 和凭据的团队。</li>
+              </ul>
+            </div>
+            <div class="boundary-col unfit">
+              <div class="boundary-head"><span class="boundary-mark" aria-hidden="true">—</span><h3>不适合</h3><span class="boundary-count">4</span></div>
+              <ul>
+                <li>非 Python、非 pytest 项目。</li>
+                <li>期待工具自动修改业务代码、直接给出最终修复。</li>
+                <li>期待保证所有 Bug 都能复现，或把单次成功当成整体复现率。</li>
+                <li>需要托管式云端执行、完全不用本地环境的产品。</li>
+              </ul>
+            </div>
+          </div>
+          <div class="boundary-quote">
+            <p><strong>ReproAgent 不替代人的审查。</strong>它把事实、执行和证据摆出来；最终是否相信这个复现，仍然由你判断。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section container" id="faq">
+      <div class="section-shell">
+        <aside class="section-rail" aria-hidden="true">
+          <span class="rail-index">08</span>
+          <span class="rail-label">questions</span>
+        </aside>
+        <div class="section-main">
+          <div class="faq-grid">
+            <div class="faq-intro">
+              <h2>几个常见问题。</h2>
+              <p class="section-lead">安装、调用、证据等级和目标项目边界。</p>
+              <p class="note">还有问题？看 <a href="https://github.com/kyy-logs/ReproAgent/blob/main/docs/ai-tool-integration.md">接入说明</a> 和 <a href="https://github.com/kyy-logs/ReproAgent/blob/main/docs/windows-install.md">Windows 安装文档</a>。</p>
+            </div>
+            <div class="faq sheet">
+              <details><summary>安装会调用模型吗？</summary><p>不会。安装、setup --check、启动器检查和目标项目检测都不调用模型。第一次真实复现才会使用你配置的模型和凭据。</p></details>
+              <details><summary>它会自动修 Bug 吗？</summary><p>不会。它生成并验证回归测试；修复版由你提供，ReproAgent 负责做问题版、独立重跑和修复版的差分验证。</p></details>
+              <details><summary>为什么强调 DONE 和 DIFFERENTIAL_VALIDATED？</summary><p>DONE 只代表任务流程结束；DIFFERENTIAL_VALIDATED 才代表原版失败、独立重跑失败、修复版通过这三段对照成立。</p></details>
+              <details><summary>Windows 需要先装 Python 吗？</summary><p>安装器会先找现有 Python（包括项目 .venv），找不到再尝试 winget 或官方安装包。可以用 -NoPythonInstall 关闭自动安装。</p></details>
+              <details><summary>支持 Claude Code 和 Codex 吗？</summary><p>支持。安装器会写入两个用户级入口；重启会话后分别使用 /reproagent 和 $reproagent。</p></details>
+              <details><summary>目标项目的依赖会自动安装吗？</summary><p>不会。目标项目的 Python、pytest 和业务依赖仍由目标项目提供；-Project 只做只读检查，不会安装或修改目标环境。</p></details>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="final">
+      <div class="container">
+        <div class="final-panel">
+          <div class="final-copy">
+            <h2>先用一个 Bug 试试。</h2>
+            <p class="section-lead">不用先跑整个数据集。<br>装好，给它一个 issue，看看它能不能把证据链摆出来。</p>
+            <div class="actions">
+              <a class="btn btn-primary" href="#install">Windows 安装</a>
+              <a class="btn btn-quiet" href="https://github.com/kyy-logs/ReproAgent">打开 GitHub</a>
+            </div>
+          </div>
+          <div class="final-terminal inline-copy">
+            <div class="final-bar"><span>Windows / PowerShell</span><span>no model calls</span></div>
+            <pre><code><span class="qs-line">.\install.cmd -Force</span></code></pre>
+            <div class="final-foot">
+              <span>安装不调用模型。旧入口会先备份。</span>
+              <button class="copy-btn copy-dark" type="button" data-copy>复制</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner">
+      <div class="footer-brand"><img class="brand-mark small" src="brand-mark.svg" alt="" width="20" height="20"><strong>reproagent</strong><span>Evidence-first bug reproduction.</span></div>
+      <nav class="footer-links" aria-label="页脚导航">
+        <a href="https://github.com/kyy-logs/ReproAgent">GitHub</a>
+        <a href="https://github.com/kyy-logs/ReproAgent/blob/main/docs/windows-install.md">安装文档</a>
+        <a href="https://github.com/kyy-logs/ReproAgent/blob/main/docs/ai-tool-integration.md">接入说明</a>
+        <a href="https://github.com/kyy-logs/ReproAgent/blob/main/README.md">README</a>
+      </nav>
+    </div>
+    <div class="container footer-fine">
+      <span>DONE 不是差分验证。</span>
+      <span>本地 Python / pytest。安装不调用模型。单次成功不代表整体复现率。</span>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

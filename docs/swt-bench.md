@@ -4,8 +4,8 @@
 
 ## 本机已准备的资料
 
-- 最新真实评测见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方 harness 已在本机对新样本轮 unit_test 判分：RESOLVED 1/10（即该例），6 例未解决、3 例无报告，整轮仍记待判分。
-- 上一轮真实评测见 [2026-10-06 评测报告](evaluations/2026-10-06-swt-development.md)：第三轮 20 例中 8 例调用模型、12 例环境阻塞，有效差分交付 0；参考测试可区分版本的 5 例中为 0/5。官方判分未运行。
+- 最新真实评测见 [2026-10-07 修复后评测报告](archive/evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方 harness 已在本机对新样本轮 unit_test 判分：RESOLVED 1/10（即该例），6 例未解决、3 例无报告，整轮仍记待判分。
+- 上一轮真实评测见 [2026-10-06 评测报告](archive/evaluations/2026-10-06-swt-development.md)：第三轮 20 例中 8 例调用模型、12 例环境阻塞，有效差分交付 0；参考测试可区分版本的 5 例中为 0/5。官方判分未运行。
 - 固定快照与来源：`.local/swt-bench/data/snapshot.json`、`source.json`、`excluded.txt`。
 - 原始 test split 300 条；按官方 24 条排除项得到 276 条。过滤文件是排除项，不是白名单。
 - 生成资料 catalog：`.local/swt-bench/data/catalog.json`，不含 patch、test_patch、hints_text 内容。
@@ -167,7 +167,7 @@ python -m evals.swt_bench official-run \
 
 旧项目 20 个历史案例仍用于开发回归。正式评测需另冻结未参与本项目调试的样本，并检查历史重叠；公开数据也可能被模型训练见过。
 
-冻结实现版本后的修复轮：原 dev20 复跑 20 例，8 例准备可用并执行，本地重复确认 4、本地差分确认 0，121 次 HTTP 尝试、953215 token，费用 unknown；计划命名的已知定点 Sphinx-8801 未达到，原因已定位（失败签名稳定器未覆盖 run 根之外的逐次状态、候选级环境不兼容），记录未修复。同一冻结配置下用 `select_holdout` 冻结 10 例未调试新样本，3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED，导出包在全新原版/修复版副本独立重跑 1/0；47 次 HTTP 尝试、385455 token。两轮来源状态均为 verified，可用于版本对比；新样本轮官方 harness 判分 RESOLVED 1/10（`sphinx-doc__sphinx-11445`），另 6 例未解决、3 例无报告，整轮仍为待判分；小样本不代表一般复现率。完整报告见 [2026-10-07 修复后评测报告](evaluations/2026-10-07-swt-repaired.md)。
+冻结实现版本后的修复轮：原 dev20 复跑 20 例，8 例准备可用并执行，本地重复确认 4、本地差分确认 0，121 次 HTTP 尝试、953215 token，费用 unknown；计划命名的已知定点 Sphinx-8801 未达到，原因已定位（失败签名稳定器未覆盖 run 根之外的逐次状态、候选级环境不兼容），记录未修复。同一冻结配置下用 `select_holdout` 冻结 10 例未调试新样本，3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED，导出包在全新原版/修复版副本独立重跑 1/0；47 次 HTTP 尝试、385455 token。两轮来源状态均为 verified，可用于版本对比；新样本轮官方 harness 判分 RESOLVED 1/10（`sphinx-doc__sphinx-11445`），另 6 例未解决、3 例无报告，整轮仍为待判分；小样本不代表一般复现率。完整报告见 [2026-10-07 修复后评测报告](archive/evaluations/2026-10-07-swt-repaired.md)。
 
 ## 冻结保留集
 
@@ -189,7 +189,7 @@ manifest 哈希 `d2f91341d5b718eaffa88ca1d1401acd798af3937c389c18d6fdd0798525b4d
 manifest 哈希 `6781580c27d38867f64c88b3de3ba77fa1afff1d58b07f1ff86df972ee53c113`，样本为 4×pytest-dev、
 3×sphinx、3×sympy），迁移前的轮次与迁移后的轮次用的是同一份，因此它是本轮架构对比的基线。
 两份保留集不可混用：上表那份尚未执行，下面这份已执行。执行与官方判分结果见
-[架构验收记录](evaluations/2026-10-08-agentscope-acceptance.md)。
+[架构验收记录](archive/evaluations/2026-10-08-agentscope-acceptance.md)。
 
 重新生成汇总不调用模型：
 
@@ -199,4 +199,4 @@ manifest 哈希 `6781580c27d38867f64c88b3de3ba77fa1afff1d58b07f1ff86df972ee53c11
 
 汇总把来源状态与各类计数分开列出，互不代偿：选定样本、准备可用、实际执行（运行器真正启动的案例）、本地重复确认、本地差分确认、独立交付确认/重跑未通过/待重跑、修复版对照（通过/未通过/受阻/未提供），以及官方判分。官方判分只认有来源回执的 verified 报告：全部案例齐了才记为已判分（最终）并给出 `official_rate`；只要还有一例未核验就记为 `待判分`，`official_rate` 为 null，不写成 0，也不把本地比例当作官方成绩。`official_total_rate` 仍保留“暂定下界”的旧口径，供需要分母的读者对照。没有这些字段的旧轮次照旧读取：来源读作 not_recorded，修复版读作 not_provided。
 
-实施记录和最新完整测试见 [实现记录](implementation-status.md)，具体接口见 [设计](superpowers/specs/2026-10-06-reproagent-swt-bench-design.md)。
+实施记录和最新完整测试见 [实现记录](archive/legacy-guides/implementation-status.md)，具体接口见 [设计](archive/specs/2026-10-06-reproagent-swt-bench-design.md)。
