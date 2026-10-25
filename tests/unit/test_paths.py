@@ -18,15 +18,25 @@ WINDOWS_ONLY = pytest.mark.skipif(os.name != "nt", reason="the long-path form is
 
 
 def at_length(base: Path, length: int) -> Path:
-    """A path of exactly ``length`` characters below ``base`` (never created)."""
+    """An uncreated path of exactly ``length`` characters, extending ``base``."""
     path = base
     while len(str(path)) < length:
         step = min(length - len(str(path)) - 1, 100)
         if step <= 0:
+            # A new child needs a separator and a name; grow the last component
+            # when exactly one character remains instead of stopping short.
+            path = path.with_name(path.name + 'x')
             break
         path = path / ("x" * step)
     assert len(str(path)) == length, (len(str(path)), length)
     return path
+
+
+@pytest.mark.parametrize('extra_length', [1, 2, 100, 101, 102, 202, 203])
+def test_exact_length_fixture_handles_component_boundaries(tmp_path, extra_length):
+    base = tmp_path / 'base'
+    expected_length = len(str(base)) + extra_length
+    assert len(str(at_length(base, expected_length))) == expected_length
 
 
 def test_ordinary_paths_keep_their_form(tmp_path):

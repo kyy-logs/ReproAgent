@@ -29,11 +29,13 @@
 自动安装优先使用 winget：
 
 ```text
-winget install --id Python.Python.3.12 -e --source winget --silent
+winget install --id Python.Python.3.13 -e --source winget --silent
 ```
 
-winget 不可用或失败时，下载 python.org 的 3.12 per-user 安装包，校验
+winget 不可用或失败时，下载 python.org 的 3.13.17 per-user 安装包，校验
 Authenticode 签名（签名主体必须包含 `Python Software Foundation`）后静默安装。
+版本、下载地址、winget 包和安装目录统一记录在 `scripts/python-runtime.json`；
+CI 使用同一地址发送 HEAD 请求，检查安装包仍可访问，不下载或运行安装程序。
 安装器不修改 PATH，后续使用绝对路径；可能弹 UAC，企业策略或网络限制会导致失败。
 失败时不会写入 Claude/Codex 入口。
 

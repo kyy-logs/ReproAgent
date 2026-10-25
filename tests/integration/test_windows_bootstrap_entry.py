@@ -19,6 +19,7 @@ def _fixture(tmp_path):
     scripts.mkdir(parents=True)
     shutil.copyfile(ROOT / 'install.cmd', root / 'install.cmd')
     shutil.copyfile(ROOT / 'scripts/install-windows.ps1', scripts / 'install-windows.ps1')
+    shutil.copyfile(ROOT / 'scripts/python-runtime.json', scripts / 'python-runtime.json')
     (scripts / 'install.py').write_text(
         'import json,os,pathlib,sys\n'
         'pathlib.Path(os.environ["ENTRY_RECEIPT"]).write_text(json.dumps({\n'

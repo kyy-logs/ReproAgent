@@ -7,13 +7,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest]
+        include:
+          - os: windows-latest
+            python: '3.11'
+          - os: ubuntu-latest
+            python: '3.11'
+          - os: windows-latest
+            python: '3.13'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
       - name: Install tool environment
         shell: bash
         run: |
@@ -21,6 +27,20 @@ jobs:
           if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
           echo "REPRO_TOOL_PYTHON=$PY" >> "$GITHUB_ENV"
           "$PY" -m pip install -e ".[dev]"
+      - name: Validate official Python installer URL
+        if: runner.os == 'Windows' && matrix.python == '3.13'
+        shell: pwsh
+        run: |
+          $runtime = Get-Content -Raw -LiteralPath scripts/python-runtime.json | ConvertFrom-Json
+          $uri = [uri]$runtime.installer_url
+          if ($uri.Scheme -ne 'https' -or $uri.Host -ne 'www.python.org') {
+            throw 'The Python fallback must use the official HTTPS download host.'
+          }
+          $response = Invoke-WebRequest -Method Head -Uri $uri.AbsoluteUri -TimeoutSec 30
+          if ($response.StatusCode -ne 200) {
+            throw "Python installer is unavailable: $($response.StatusCode)"
+          }
+          Write-Host "Verified Python $($runtime.version) installer: $uri"
       - name: Run integration setup tests
         shell: bash
         run: |
@@ -34,6 +54,11 @@ jobs:
             tests/integration/test_integration_launchers.py \
             tests/integration/test_integration_setup_cli.py \
             tests/integration/test_integration_package.py \
+            tests/unit/test_windows_bootstrap.py \
+            tests/unit/test_windows_project_check.py \
+            tests/integration/test_windows_bootstrap_entry.py \
+            tests/integration/test_windows_bootstrap_offline.py \
+            tests/integration/test_windows_python_fallback.py \
             -q
         env:
           PYTHONDONTWRITEBYTECODE: '1'

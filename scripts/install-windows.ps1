@@ -21,8 +21,11 @@ try {
     Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
     Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue
 
-    $pythonVersion = '3.12.14'
-    $pythonInstallerUrl = "https://www.python.org/ftp/python/$pythonVersion/python-$pythonVersion-amd64.exe"
+    $pythonRuntime = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'python-runtime.json') | ConvertFrom-Json
+    $pythonVersion = $pythonRuntime.version
+    $pythonInstallerUrl = $pythonRuntime.installer_url
+    $pythonWingetId = $pythonRuntime.winget_id
+    $pythonDirectory = $pythonRuntime.install_directory
 
     function Test-PythonCandidate([string]$exe, [string[]]$prefixArgs = @()) {
         $probe = 'import json,sys; sys.exit(1) if sys.version_info < (3,11) else print(json.dumps(sys.executable,ensure_ascii=True))'
@@ -49,13 +52,13 @@ try {
     function Find-InstalledPython {
         $roots = @()
         if ($env:LOCALAPPDATA) {
-            $roots += Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'
+            $roots += Join-Path $env:LOCALAPPDATA ("Programs\Python\$pythonDirectory\python.exe")
         }
         if ($env:ProgramFiles) {
-            $roots += Join-Path $env:ProgramFiles 'Python312\python.exe'
+            $roots += Join-Path $env:ProgramFiles ("$pythonDirectory\python.exe")
         }
         if (${env:ProgramFiles(x86)}) {
-            $roots += Join-Path ${env:ProgramFiles(x86)} 'Python312\python.exe'
+            $roots += Join-Path ${env:ProgramFiles(x86)} ("$pythonDirectory\python.exe")
         }
         foreach ($path in $roots) {
             if (Test-Path -LiteralPath $path -PathType Leaf) {
@@ -76,7 +79,7 @@ try {
             $winget = $command.Source
         }
         try {
-            & $winget install --id Python.Python.3.12 -e --source winget --silent `
+            & $winget install --id $pythonWingetId -e --source winget --silent `
                 --disable-interactivity --accept-package-agreements --accept-source-agreements
             return ($LASTEXITCODE -eq 0)
         } catch {
