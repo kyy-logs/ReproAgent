@@ -3,12 +3,16 @@
 
 Run from the repository root. The first run only records the current HEAD in
 the ``<!-- news-auto: ... -->`` marker so existing history is not backfilled.
-Later runs turn each first-parent commit into one News entry.
+Later runs turn each first-parent commit that is a user-visible change into one
+News entry.
 
-Entry text comes from the commit subject. For merge commits the subject of the
-merged branch tip is used instead, so entries read like the feature rather than
-"Merge pull request #12 ...". Put a bilingual line in the merge or squash
-commit body (or the PR description, for squash merges) to fill the Chinese part:
+Only ``feat``, ``fix`` and ``perf`` commits are recorded. Prefixes such as
+``docs``, ``test``, ``chore``, ``ci``, ``build`` and ``refactor`` are skipped so
+News does not turn into a commit log. For a merge commit the highest-impact type
+in the merged branch wins (feat > fix > perf), and the newest commit of that
+type supplies the text, so a trailing ``docs:`` commit cannot hide a feature.
+Put a bilingual line in the merge or squash commit body (or the PR description,
+for squash merges) to fill the Chinese part:
 
     News-zh: Windows 一键安装接入 Claude Code / Codex
 
@@ -52,6 +56,8 @@ CATEGORY = {
     "ci": "CI",
     "merge": "MERGE",
 }
+ALLOWED_TYPES = ("feat", "fix", "perf")
+TYPE_PRIORITY = {"feat": 0, "fix": 1, "perf": 2}
 
 
 @dataclass
@@ -92,6 +98,41 @@ def split_subject(subject: str) -> tuple[str, str]:
     return category, sentence_case(text or subject.strip())
 
 
+def commit_type(subject: str) -> str | None:
+    match = PREFIX_RE.match(subject)
+    if not match:
+        return None
+    return match.group(1).lower()
+
+
+def collect_merge_candidates(
+    first_parent: str, parents: list[str], cwd: Path
+) -> list[tuple[str, str, str]]:
+    """Return (type, subject, message) for user-visible commits on a merged branch."""
+    candidates: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for parent in parents:
+        try:
+            shas = run_git(
+                "rev-list", "--no-merges", "--reverse", f"{first_parent}..{parent}", cwd=cwd
+            ).splitlines()
+        except RuntimeError:
+            continue
+        for candidate_sha in shas:
+            if candidate_sha in seen:
+                continue
+            seen.add(candidate_sha)
+            candidate_message = run_git(
+                "log", "-1", "--format=%B", candidate_sha, cwd=cwd
+            )
+            candidate_lines = candidate_message.splitlines()
+            candidate_subject = candidate_lines[0].strip() if candidate_lines else ""
+            kind = commit_type(candidate_subject)
+            if kind in ALLOWED_TYPES:
+                candidates.append((kind, candidate_subject, candidate_message))
+    return candidates
+
+
 def read_entry(sha: str, cwd: Path) -> Entry | None:
     message = run_git("log", "-1", "--format=%B", sha, cwd=cwd)
     lines = message.splitlines()
@@ -102,25 +143,24 @@ def read_entry(sha: str, cwd: Path) -> Entry | None:
         return None
 
     parents = run_git("rev-list", "--parents", "-n", "1", sha, cwd=cwd).split()[1:]
-    source_message = message
-    source = subject
+    candidates: list[tuple[str, str, str]] = []
     if len(parents) > 1:
-        try:
-            source = (
-                run_git(
-                    "log", "--no-merges", "-1", "--format=%s", f"{sha}^2", cwd=cwd
-                )
-                or subject
-            )
-            source_message = (
-                run_git(
-                    "log", "--no-merges", "-1", "--format=%B", f"{sha}^2", cwd=cwd
-                )
-                or message
-            )
-        except RuntimeError:
-            source = subject
-            source_message = message
+        candidates = collect_merge_candidates(parents[0], parents[1:], cwd)
+        if not candidates:
+            return None
+        best_priority = min(TYPE_PRIORITY[kind] for kind, _, _ in candidates)
+        _, source, source_message = [
+            candidate
+            for candidate in candidates
+            if TYPE_PRIORITY[candidate[0]] == best_priority
+        ][-1]
+    else:
+        kind = commit_type(subject)
+        if kind not in ALLOWED_TYPES:
+            return None
+        source = subject
+        source_message = message
+
     if "[skip news]" in source_message.lower():
         return None
     if source.lower().startswith(SKIP_SUBJECT_PREFIXES):
@@ -131,8 +171,8 @@ def read_entry(sha: str, cwd: Path) -> Entry | None:
         return None
 
     chinese = None
-    for candidate in (message, source_message):
-        for line in candidate.splitlines():
+    for candidate_message in (message, source_message, *[c[2] for c in candidates]):
+        for line in candidate_message.splitlines():
             match = CHINESE_RE.match(line)
             if match:
                 chinese = match.group(1)
