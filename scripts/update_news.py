@@ -23,6 +23,11 @@ for squash merges) to fill the Chinese part:
 
     News-zh: Windows 一键安装接入 Claude Code / Codex
 
+After updating NEWS.md, the newest five entries are copied into the
+``<!-- BEGIN NEWS -->`` / ``<!-- END NEWS -->`` block in README.md (English) and
+README_zh.md (Chinese, falling back to English). Links are rewritten from the
+docs/ directory to the repository root so they still work in the READMEs.
+
 The marker is an HTML comment at the end of NEWS.md and is updated on every
 run. Bot commits contain ``[skip news]`` so the workflow does not loop.
 """
@@ -31,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -67,6 +73,14 @@ CATEGORY = {
 }
 ALLOWED_TYPES = ("feat", "fix", "perf")
 CATEGORY_PRIORITY = {"FEAT": 0, "FIX": 1, "PERF": 2, "CHANGE": 3}
+README_BEGIN = "<!-- BEGIN NEWS -->"
+README_END = "<!-- END NEWS -->"
+README_NEWS_ITEMS = 5
+NEWS_ITEM_RE = re.compile(
+    r"^- \*\*(\d{4}-\d{2}-\d{2}) · `([^`]+)`\*\* — (.*)$"
+)
+CHINESE_ITEM_RE = re.compile(r"^\s+\*\*中文\*\*：(.+?)\s*$")
+MARKDOWN_LINK_RE = re.compile(r"\]\(([^)\s]+)(\s+\"[^\"]*\")?\)")
 
 
 @dataclass
@@ -75,6 +89,14 @@ class Entry:
     date: str
     category: str
     text: str
+    chinese: str | None = None
+
+
+@dataclass
+class NewsItem:
+    date: str
+    category: str
+    english: str
     chinese: str | None = None
 
 
@@ -285,6 +307,99 @@ def set_marker(text: str, sha: str) -> str:
     return text.rstrip() + f"\n\n{marker}\n"
 
 
+def rewrite_links(text: str) -> str:
+    """Make a docs/NEWS.md link work from the repository root."""
+
+    def replace(match: re.Match[str]) -> str:
+        target = match.group(1)
+        title = match.group(2) or ""
+        if target.startswith(("http://", "https://", "#", "/", "mailto:")):
+            return match.group(0)
+        path, separator, fragment = target.partition("#")
+        if path.startswith("docs/"):
+            rewritten = path
+        else:
+            rewritten = posixpath.normpath(posixpath.join("docs", path))
+        if separator:
+            rewritten += "#" + fragment
+        return f"]({rewritten}{title})"
+
+    return MARKDOWN_LINK_RE.sub(replace, text)
+
+
+def parse_news_items(text: str, limit: int = README_NEWS_ITEMS) -> list[NewsItem]:
+    lines = text.splitlines()
+    items: list[NewsItem] = []
+    index = 0
+    while index < len(lines) and len(items) < limit:
+        match = NEWS_ITEM_RE.match(lines[index])
+        if not match:
+            index += 1
+            continue
+        date, category, english = match.groups()
+        chinese = None
+        lookahead = index + 1
+        while lookahead < len(lines):
+            chinese_match = CHINESE_ITEM_RE.match(lines[lookahead])
+            if chinese_match:
+                chinese = chinese_match.group(1)
+                break
+            if lines[lookahead].startswith("- **"):
+                break
+            lookahead += 1
+        items.append(
+            NewsItem(
+                date=date,
+                category=category,
+                english=rewrite_links(english.rstrip()),
+                chinese=rewrite_links(chinese) if chinese else None,
+            )
+        )
+        index += 1
+    return items
+
+
+def format_readme_item(item: NewsItem, language: str) -> str:
+    if language == "zh":
+        text = item.chinese or item.english
+        return f"- **[{item.date}] `{item.category}`:** {text}"
+    return f"- **{item.date} · `{item.category}`** — {item.english}"
+
+
+def sync_readme(
+    readme_path: Path, items: list[NewsItem], language: str
+) -> bool:
+    if not items or not readme_path.exists():
+        return False
+    text = readme_path.read_text(encoding="utf-8")
+    begin = text.find(README_BEGIN)
+    end = text.find(README_END)
+    if begin == -1 or end == -1 or begin >= end:
+        print(
+            f"::warning::update_news: NEWS markers not found in {readme_path.name}",
+            file=sys.stderr,
+        )
+        return False
+    body = "\n".join(format_readme_item(item, language) for item in items)
+    result = text[: begin + len(README_BEGIN)] + "\n" + body + "\n" + text[end:]
+    if result == text:
+        return False
+    readme_path.write_text(result, encoding="utf-8", newline="\n")
+    print(f"update_news: synced {len(items)} items to {readme_path.name}")
+    return True
+
+
+def sync_readmes(root: Path, news_text: str) -> bool:
+    items = parse_news_items(news_text)
+    if not items:
+        return False
+    changed = False
+    for language, name in (("en", "README.md"), ("zh", "README_zh.md")):
+        if sync_readme(root / name, items, language):
+            changed = True
+    return changed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -315,6 +430,7 @@ def main() -> int:
             print(f"update_news: would initialize marker at {head[:7]}")
             return 0
         news_path.write_text(result, encoding="utf-8", newline="\n")
+        sync_readmes(root, result)
         print(f"update_news: initialized marker at {head[:7]}; no entries added")
         return 0
 
@@ -327,11 +443,16 @@ def main() -> int:
             file=sys.stderr,
         )
         if not args.dry_run:
-            news_path.write_text(set_marker(text, head), encoding="utf-8", newline="\n")
+            result = set_marker(text, head)
+            news_path.write_text(result, encoding="utf-8", newline="\n")
+            sync_readmes(root, result)
         return 0
 
     if marker_sha == head:
-        print("update_news: up to date")
+        if sync_readmes(root, text):
+            print("update_news: README news sections updated")
+        else:
+            print("update_news: up to date")
         return 0
 
     shas = run_git(
@@ -354,12 +475,20 @@ def main() -> int:
     if args.dry_run:
         print(result)
         return 0
-    if result == text:
+
+    news_changed = result != text
+    if news_changed:
+        news_path.write_text(result, encoding="utf-8", newline="\n")
+
+    readme_changed = sync_readmes(root, result)
+
+    if not news_changed and not readme_changed:
         print("update_news: no changes")
         return 0
-
-    news_path.write_text(result, encoding="utf-8", newline="\n")
-    print(f"update_news: added {added} entr{'y' if added == 1 else 'ies'}")
+    if news_changed:
+        print(f"update_news: added {added} entr{'y' if added == 1 else 'ies'}")
+    if readme_changed:
+        print("update_news: README news sections updated")
     return 0
 
 
