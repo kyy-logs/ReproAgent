@@ -1,110 +1,260 @@
-# ReproAgent
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="ReproAgent" width="280">
+</p>
 
-把 Bug 描述转成 Python/pytest 回归测试，实际运行、核验并独立重放，最后导出测试与证据。
-当前安装位置为 `E:\ReproAgent`，迁移说明见 [迁移记录](docs/migration-to-e.md)。
+<p align="center"><b>把 Bug 描述变成可复查的 Python/pytest 复现证据。</b></p>
 
-当前为本地 CLI MVP，只有一套基础设施：AgentScope。最新完整离线测试为 554 passed、5 skipped，包含真实 AgentScope SDK 整链路和 SWT 数据/评测链路；原始 Issue 与 Windows 导出/replay 边界的独立审查修复见 [修复记录](docs/reviews/2026-10-08-reviewed-boundary-repairs.md)。SDK 接入阶段曾验证无 SDK 环境为 176 passed、4 skipped。扩展问题修复后，同一批 7 个仓库、20 个历史 Bug 的最终整轮有 20/20 完成重复复现、修复版验证及导出包独立重跑，见 [修复复测报告](docs/expanded-case-repairs.md)。原始累计 11/20 和第一修复轮 18/20 均保留。这些提前准备环境的诊断样本不能推算一般复现率，独立人类评审待进行；本次基础设施迁移没有重跑该批历史案例，也没有真实模型轮次，见 [迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
+<p align="center">
+  <a href="#快速开始"><b>快速开始</b></a> |
+  <a href="#使用"><b>使用</b></a> |
+  <a href="#文档"><b>文档</b></a>
+</p>
 
-## 安装与输入
+<p align="center">
+  <img src="https://img.shields.io/badge/python-3.11%2B-2447d8" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/Windows-one--click-2447d8" alt="Windows one-click">
+  <img src="https://img.shields.io/badge/macOS-CLI-2447d8" alt="macOS CLI">
+  <img src="https://img.shields.io/badge/local--first-no%20cloud-0d7a4f" alt="Local-first">
+  <a href="https://github.com/kyy-logs/ReproAgent/actions/workflows/test.yml"><img src="https://github.com/kyy-logs/ReproAgent/actions/workflows/test.yml/badge.svg" alt="Offline tests"></a>
+</p>
 
-工具解释器需要 Python 3.11+：
+## ReproAgent 是什么？
+
+ReproAgent 在本地读原始 Issue，写候选 pytest 测试，先证明它在问题版失败，再独立重跑一次，最后用修复版对照。只有三段结果相反，报告才会写 `DIFFERENTIAL_VALIDATED`。你得到的是 `report.md`、`trace.json`、`manifest.json` 和 `replay.py`，不是一段聊天记录。
+
+生成测试很容易。难的是确认它真的调用到目标代码、断言打到目标行为，并且在问题版和修复版上给出相反结果。
+
+<p align="center">
+  <img src="docs/assets/landing.png" alt="ReproAgent 产品页：Mac 终端中的复现演示和证据报告" width="100%">
+</p>
+
+## 快速开始
+
+### 安装
+
+> 需要 Python 3.11+。安装、`setup --check`、启动器检查和目标项目检测都不调用模型。
+
+#### Windows
+
+在已有源码目录双击 `install.cmd`，或在 PowerShell 里：
+
+```powershell
+git clone https://github.com/kyy-logs/ReproAgent.git
+cd ReproAgent
+.\install.cmd -Force
+```
+
+安装器会查找 Python 3.11+（包括仓库 `.venv`），创建私有工具环境，安装依赖，写入 Claude Code / Codex 用户级入口，然后运行 `setup --check`。已有入口会先备份。完整参数见 [Windows 一键安装](docs/windows-install.md)。
+
+#### macOS
+
+```bash
+git clone https://github.com/kyy-logs/ReproAgent.git
+cd ReproAgent
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/reproagent setup
+```
+
+macOS 目前通过命令行安装和接入；Windows 的一键安装器只适用于 Windows。页面里的安装卡片也提供 Windows / macOS 切换。
+
+## 它能做什么
+
+| 能力 | 内容 |
+| --- | --- |
+| **差分验证** | 问题版失败、同一候选在全新副本里独立重跑仍失败、兼容修复版通过；缺一段就停在更低的证据等级 |
+| **真实执行** | 记录目标模块调用、断言结果、pytest 退出码和 Probe，不用字符串自比较或模型自报成功充数 |
+| **本地优先** | 目标代码和测试在你的机器上运行；使用你的 Python、pytest、模型配置和凭据 |
+| **宿主接入** | Claude Code 用 `/reproagent`，Codex 用 `$reproagent`，也可以直接走 CLI |
+| **可交接** | 报告、trace、哈希清单和独立 `replay.py` 一起导出；接收方不需要 ReproAgent 或模型接口就能重跑 |
+
+## 使用
+
+### 在 Claude Code 里使用
+
+安装器或 `reproagent setup` 会写入用户级 Skill。重启 Claude Code 会话后，在目标项目里：
+
+```text
+/reproagent check
+/reproagent 帮我复现当前项目里的这个 Bug
+/reproagent inspect repro-results/task-001
+```
+
+- `check` 检查工具解释器、CLI 和凭据来源，不调用模型。
+- 复现命令可以接 Bug 描述，也可以接 task.json 路径。
+- `inspect` 只读结果目录，不继续执行任务。
+
+完整说明见 [Claude Code 使用说明](docs/claude-code.md)。
+
+### 在 Codex 里使用
+
+Codex 使用同一套入口和模型配置：
+
+```text
+$reproagent 帮我复现当前项目里的这个 Bug
+```
+
+接入方式、路径和旧版 layout 见 [AI 工具接入](docs/ai-tool-integration.md)。
+
+### 用 CLI
+
+```powershell
+$env:DEEPSEEK_API_KEY = "your-key"
+.\.venv\Scripts\reproagent.exe run --config examples/task.json --model-config examples/model.deepseek.json
+.\.venv\Scripts\reproagent.exe inspect repro-results/task-001
+```
+
+`run` 会调用付费模型；安装、`setup --check`、启动器检查和 `inspect` 不调用模型。不要把密钥写进配置文件，用环境变量提供。macOS 把 `.\.venv\Scripts\reproagent.exe` 换成 `.venv/bin/reproagent`，其余参数相同。
+
+可选差分对照：
+
+```powershell
+.\.venv\Scripts\reproagent.exe run --config examples/task.json `
+  --model-config examples/model.deepseek.json `
+  --fixed-repo C:\path\to\fixed-copy `
+  --fixed-python C:\path\to\fixed-copy\.venv\Scripts\python.exe
+```
+
+修复版只在候选冻结后用于对照；修复源码、测试和补丁不进入探索上下文。
+
+退出码：`DONE=0`；`BLOCKED`、`NEEDS_INFORMATION`、`EXHAUSTED=1`；配置错误 `2`；`FAILED=3`；`CANCELLED=130`。
+
+## 一次运行会留下什么
+
+| 文件 | 内容 |
+| --- | --- |
+| `report.md` | 结论、三次运行、失败摘要和审查入口；先读这个 |
+| `trace.json` | 模型调用、工具步骤、输入输出和耗时 |
+| `manifest.json` | 文件哈希与证据清单 |
+| `replay.py` | 在全新副本里重跑同一候选，不依赖 ReproAgent |
+
+成功包在 `artifacts/reproduction/`，trace 在 `observability/trace.json`；未确认任务输出到 `artifacts/diagnostic/`。
+
+### 证据等级
+
+| 等级 | 含义 |
+| --- | --- |
+| `DONE` | 流程结束，不证明复现 |
+| `SINGLE_OBSERVATION` | 只发生了一次原版运行 |
+| `REPEATED_OBSERVATION` | 同一候选在独立副本里重跑过 |
+| `DIFFERENTIAL_VALIDATED` | 原版失败、独立重跑失败、兼容修复版通过 |
+
+`DONE` 不是差分验证。模型打印 “reproduced”、pytest 退出码 1、捕获一个预期错误或 xfail，都不能单独建立成功。完整字段和报告模板见 [技术亮点与输出](docs/technical-highlights-and-output.md)。
+
+成功包可以复制到任意目录，在另一份相同 Bug 版本的副本里重跑：
+
+```powershell
+python path/to/reproduction/replay.py `
+  --repo path/to/fresh-buggy-copy `
+  --python path/to/project-python `
+  --output path/to/new-replay-output `
+  --install
+```
+
+回归测试在 Bug 版本失败，因此复跑退出 1 是预期现象；核对新 Probe 的实际失败。
+
+## 它怎么工作
+
+```text
+Issue → contract → candidate pytest → buggy → rerun → fixed → sealed
+```
+
+1. 读原始描述和代码事实。
+2. 建立触发条件和观察点。
+3. 写候选 pytest 测试。
+4. 在问题版上执行。
+5. 用全新副本独立重跑。
+6. 用兼容修复版对照。
+7. 导出报告、trace、manifest 和 replay。
+
+每一步都留下可检查的记录；报告等级由最后三段决定。
+
+## 适合 / 不适合
+
+**适合**
+
+- Python 和 pytest 项目，需要一个能复查的回归测试。
+- 维护者、QA、AI coding agent 用户，想确认真实复现而不是看聊天结论。
+- 需要把“问题版失败、修复版通过”固化成证据的团队。
+- 希望本地执行、自己控制模型 provider 和凭据的团队。
+
+**不适合**
+
+- 非 Python、非 pytest 项目。
+- 期待工具自动修改业务代码、直接给出最终修复。
+- 期待保证所有 Bug 都能复现，或把单次成功当成整体复现率。
+- 需要托管式云端执行、完全不用本地环境的产品。
+
+目标项目的 Python、pytest 和业务依赖由目标项目提供。ReproAgent 不会给目标环境安装包、修改业务代码或启动缺失服务。
+
+## 配置
+
+复制 `examples/task.json`，按目标项目改：
+
+| 字段 | 说明 |
+| --- | --- |
+| `repo` / `issue_file` / `output_dir` | 相对 task 配置文件所在目录解析；每次使用新的输出目录 |
+| `language.python` | 目标项目解释器的绝对路径 |
+| `language.target_modules` | 实际待观察模块，例如 `package.parser` |
+| `language.source_roots` | 项目源码根，相对项目目录，例如 `["src", "."]` |
+| `language.candidate_parent` | 能继承相关 conftest 的测试目录，例如 `tests/unit` |
+| `language.pytest_args` | 支持 `-q/-v/-vv/-s/--disable-warnings/--tb=*`；不允许 Agent 覆盖 |
+| `baseline_tests` | 可选，先观察已有测试；断言失败会记录，不直接判定环境不可用 |
+
+模型配置使用兼容 Chat Completions 的 JSON 文本接口，填写 `base_url`、`model` 和 API key 的环境变量名。示例：
+
+- `examples/model.deepseek.json`
+- `examples/model.deepseek.non-thinking.json`
+- `examples/model.json`
+
+供应商不支持 `max_completion_tokens` 时，把 `output_limit_field` 改成 `max_tokens`。
+
+## 文档
+
+| 想了解什么 | 文档 |
+| --- | --- |
+| 安装、任务配置和 CLI | 本 README / [示例配置](examples/) |
+| Windows 安装与目标项目检查 | [docs/windows-install.md](docs/windows-install.md) |
+| Claude Code / Codex 接入 | [docs/ai-tool-integration.md](docs/ai-tool-integration.md) |
+| Claude Code 调用方式 | [docs/claude-code.md](docs/claude-code.md) |
+| report.md、证据等级和 replay | [docs/technical-highlights-and-output.md](docs/technical-highlights-and-output.md) |
+| trace、工具调用和诊断 | [docs/observability.md](docs/observability.md) |
+| 经验库 | [docs/experience.md](docs/experience.md) |
+| SWT-Bench 数据与官方评测 | [docs/swt-bench.md](docs/swt-bench.md) |
+| 文档总导航 | [docs/](docs/) |
+
+## 项目状态
+
+当前是本地 CLI MVP，只有一套基础设施：AgentScope。模型调用、受限文件工具、阶段内执行和消息历史由 SDK 提供；复现策略、业务编排、证据核验和独立交付仍由 ReproAgent 负责。
+
+评测是小样本，不代表一般复现率：
+
+- 官方 SWT-Bench harness 在 10 例未参与调试的新样本上判定 **RESOLVED 1/10**（`sphinx-doc__sphinx-11445`）；其中 3 例没有 verified 报告，整轮仍记为待判分。
+- 历史修复环境样本的 20 例复测是单独的**非官方**记录，不能与官方 harness 分数混用。
+- CI 离线矩阵覆盖 Windows / Ubuntu × 目标 Python 3.10–3.12 × pytest 7.4–9，当前 18/18 通过。
+
+完整记录：[SWT-Bench](docs/swt-bench.md) · [历史评测记录](docs/evaluations/) · [问题与挑战记录](docs/reports/reproagent-问题与挑战记录.md)。单次成功不代表整体复现率，独立人类评审仍待进行。
+
+## 开发
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
-```
-
-目标项目使用用户提供的解释器，提前准备依赖和 pytest。ReproAgent 不会给目标环境安装包、修业务代码或启动缺失服务。
-复制 `examples/task.json` 和 `examples/model.json` 后编辑：
-
-- `repo`、`issue_file`、`output_dir` 相对于 task 配置文件所在目录解析。每次运行使用新的输出目录。
-- `language.python` 填目标环境解释器的绝对路径；`target_modules` 指明实际待观察模块，例如 `package.parser`。
-- `source_roots` 是项目中的源码根，相对项目目录，例如 `["src", "."]`；省略时根据 src 目录推断。
-- `candidate_parent` 选能继承相关 conftest 的测试目录，例如 `tests/unit`。
-- `baseline_tests` 可选，先观察已有测试；断言失败会被记录，不会直接判定环境不可用。
-- `pytest_args` 支持 `-q/-v/-vv/-s/--disable-warnings/--tb=short/--tb=long/--tb=no`。不支持 Agent 覆盖执行参数。
-- 模型接口采用兼容 Chat Completions 的 JSON 文本接口。配置 base_url、模型 ID、API key 的环境变量名称。
-不在配置文件写密钥。供应商若不支持 `max_completion_tokens`，将 `output_limit_field` 改为 `max_tokens`。
-  DeepSeek 示例为 `examples/model.deepseek.json`，显式关闭思维链且输出上限 4096 的版本为
-  `examples/model.deepseek.non-thinking.json`；凭据环境变量为 `DEEPSEEK_API_KEY`；模型可用性以账户实际接口为准。
-
-## 运行与查看
-
-ReproAgent 只有一套基础设施：AgentScope。模型调用、受限文件工具、阶段内执行和消息历史都由 SDK 提供，
-复现策略、业务编排、证据核验与独立交付仍属于 ReproAgent，没有第二个运行时可以切换。`--model-backend`
-/ `--agent-backend`（启动器的 `-ModelBackend` / `-AgentBackend`）是迁移前的旧参数，现已弃用且不再选择
-运行时。安装和结构见 [AgentScope 基础设施说明](docs/agentscope.md)。
-
-Claude Code 接入提供项目级 `/reproagent` Skill，本机也已安装当前用户全局入口，可在任意目标项目使用。在本项目目录启动 `claude`，输入 `/reproagent check` 检查，输入 `/reproagent <Bug 描述或 task.json 路径>` 开始复现，或 `/reproagent inspect <结果目录>` 查看证据。详见 [Claude Code 使用说明](docs/claude-code.md)。
-
-```powershell
-$env:REPROAGENT_API_KEY = "your-key"
-.\.venv\Scripts\reproagent.exe run --config examples/task.json --model-config examples/model.json
-.\.venv\Scripts\reproagent.exe inspect repro-results/task-001
-```
-
-run 会调用付费模型；当前离线测试不会调用模型服务。inspect 只读取记录，不继续执行任务。
-可选 `--fixed-repo <修复版目录> --fixed-python <解释器>`：同一冻结测试在独立修复副本执行；修复材料不进入 Agent 上下文。
-
-成功顺序为生成候选 → 原始版本失败 → 证据核对 → 新副本重放同一失败 → 导出 → DONE。
-一次观察为 SINGLE_OBSERVATION，两次确认升级 REPEATED_OBSERVATION，修复版通过才升级 DIFFERENTIAL_VALIDATED。
-修复版不兼容会保留重复观察并记录限制；已申请验证但预算耗尽会返回 EXHAUSTED。
-
-退出码：DONE=0；BLOCKED、NEEDS_INFORMATION、EXHAUSTED=1；配置错误=2；FAILED=3；CANCELLED=130。
-确认目标依赖缺失会产生 BLOCKED 及诊断包；候选自己的导入拼写错误属于无效候选。预期来源不足时 Agent 可读取项目文档或已有测试，引用工具返回的证据申请契约修订；新版本会使旧候选成功判定失效。仍需用户补充时返回 NEEDS_INFORMATION。清理失败优先标记 FAILED。
-模型打印“reproduced”、pytest 退出码 1、捕获预期的错误或 xfail 都不能单独建立成功。
-契约、动作与语义验收结构错误最多纠正两次；动作纠正仍计步；契约仍无效返回 FAILED / MODEL_PROTOCOL_ERROR，验收仍无效保留未确认结论。纠正共用原任务期限、取消和用量记录；明确否定的验收检查不会被重试提升为成功。预期修订只接受工具返回的原始项目引用。
-
-## 导出与复跑
-
-输出目录包含 request/task、不可变契约/候选/快照、每次执行与 Probe、事件日志，以及 `artifacts/reproduction` 或 `artifacts/diagnostic`。
-成功包提供 candidate 文件、原安装路径、fixture 哈希、完整源码清单哈希、预期来源文本、语义判定、已接受运行 ID、环境、命令、证据映射、manifest 和独立 replay.py。
-用户首先阅读包内自动生成的 `report.md`，再通过链接审查测试和日志。成功包与诊断包均按 [固定模板](src/reproagent/resources/report.md.template) 填入保存的证据，不增加模型调用。模板说明见 [输出说明](docs/technical-highlights-and-output.md)。测试保持原安装路径，报告不再复制测试；原始 Bug 描述独立保留。
-将成功包复制到任意目录，在另一份相同 Bug 版本副本中：
-
-```powershell
-python path/to/reproduction/replay.py --repo path/to/fresh-buggy-copy --python path/to/project-python --output path/to/new-replay-output --install
-```
-
-安装器拒绝覆盖现有文件。回归测试在 Bug 版本失败，故复跑退出 1 是预期现象；核对新 Probe 的实际失败。
-诊断包明确标为未验证，不含已接受复现说明。清单不递归哈希自己；脱敏日志同时记录原始和导出哈希。
-
-## 预算
-
-`limits` 可配置，默认最多 20 个 Agent 动作，单命令 60 秒，主任务 900 秒，清理 10 秒，本地收尾 5 秒；
-单次工具响应 32 KiB，单次运行 stdout/stderr/Probe 合计 32 MiB，Probe 读取另有 32 MiB 安全上限。错误动作仍计步，分析和验证共用期限与模型用量记录；收尾分块操作检查期限，发布前再次检查。文件系统调用采用协作式期限检查。
-缺 usage 或计价时费用为 unknown；配置费率可报告估算。每次 HTTP 尝试单独记账；超时重试无法确认此前计费时，总费用仍是 unknown，同时保留已知小计。此适配器没有可靠费用上界，拒绝 `model_cost_limit` 硬限制。
-
-## Automatic experience library
-
-The CLI enables a shared experience library by default. The agent can browse a category's compact catalog and load one applicable lesson; post-task learning writes a validated record for later tasks. Explicit `experience_file: null` disables it. See [experience setup and frozen evaluation](docs/experience.md) and [task example](examples/task.experience.json). Real-model A/B benefit has not been measured.
-
-Every run writes an AgentScope/OpenTelemetry-backed local activity trace: what the model was sent and returned, what each tool was given and gave back, the program's checks behind an acceptance, and where the time, HTTP attempts and tokens went. It is **on by default** — `--no-trace` turns it off for one run — and never leaves the machine. See [observability](docs/observability.md).
-
-## Known limitations
-
-- 文件副本隔离不是安全沙箱。目标代码、pytest 插件与生成的测试拥有当前用户的系统与网络权限；只在可信项目和可丢弃环境使用。
-- 冻结源码及候选哈希能检测文件变化，无法证明测试没有外部副作用。进程树清理针对受控 Job Object/进程组。
-- 原始日志仅保存在本地任务目录，可能含敏感值；模型片段及导出副本只脱敏已知 API key。发布前检查其他凭据。
-- xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索暂未支持。
-- 带不可重置外部前置资源的候选不能升级重复复现；运行不起来时报告环境阻塞，缩小运行范围属于后续优化。
-- 语义核对依赖模型，证据引用与硬性检查降低误报，不能替代人的审查。
-- 原始 Issue 和契约共同计入探索输入容量；整体放不下时明确停止，不静默删掉原始事实。模型仍可能误解事实，最终依赖证据核验。
-- Windows 的导出与独立 replay 支持目录保留长度窗口；子进程 cwd 超过系统可启动长度时明确拒绝。目标 pytest 或依赖自身的长路径限制仍可能阻止测试启动。
-- 当前实际验证为 Windows + 工具/目标 Python 3.12.14 + pytest 9.1.1；CI 矩阵（Windows/Ubuntu × 目标 Python 3.10–3.12 × pytest 7.4–9）18/18 通过，含 AgentScope SDK 模块与 SWT 链路。其他组合见 `docs/compatibility.md`，首次执行的失败与修复记录见 `docs/implementation-status.md`。
-
-## 开发与评估
-
-```powershell
 .\.venv\Scripts\python.exe -m pytest tests/unit tests/integration -q
 .\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 ```
 
-测试覆盖真实 pytest、进程清理、源码来源、独立导出与 wheel 安装；独立目标环境只装 pytest。
-首次打包测试会创建开发测试环境并安装 pytest，不修改用户的目标环境。
-`evals/README.md` 说明历史样本审查、修复信息隔离及分母统计。20 个历史案例的原始累计记录见 `evals/cases/cumulative-historical-results.json`，最终修复整轮见 `evals/cases/expanded-final-results.json` 与 `docs/expanded-case-repairs.md`；原始扩展失败保留于 `docs/expanded-case-validation.md`。原始三例 0/3 基线保留于 `docs/historical-case-validation.md`；代表性大样本、独立人类审查与能力比较尚未完成。合成案例首次冒烟结果见 `docs/deepseek-smoke.md`。
-SWT-Bench Lite 的固定数据导入、20 个开发样本、独立环境预检、批量运行、标准预测和官方报告导入已接通，见 [评测使用说明](docs/swt-bench.md)。未参与本项目调试的新清单由 `select_holdout` 按固定 seed、只读生成侧公开元数据冻结，再用同一批命令运行；汇总把来源状态与实际执行、原版重复、差分、独立交付、官方判分分开计数，官方报告缺失时显示待判分而不是 0。官方 Docker 判分已在本机 WSL2 + Docker 对新样本轮执行：官方判定 RESOLVED 1/10（`sphinx-doc__sphinx-11445`），整轮因仍有 3 例无 verified 报告而保持待判分；开发首轮结果和准备阻塞均保留，不作为全量基准成绩。
-最新 [真实 Bug 评测报告](docs/evaluations/2026-10-07-swt-repaired.md)：冻结实现版本后，原 dev20 复跑 8 例调用模型、本地差分确认 0，计划命名的 Sphinx-8801 定点仍未达到（原因已定位）；同一冻结配置下 10 例未调试新样本中 3 例执行，`sphinx-doc__sphinx-11445` 达到 DIFFERENTIAL_VALIDATED 且导出包在全新副本独立重跑 1/0。官方 harness 已在该轮判分，官方判定 RESOLVED 1/10（正是该例），另有 6 例未解决、3 例无报告，整轮仍记待判分。这是小样本，不代表一般复现率。上一轮见 [2026-10-06 评测报告](docs/evaluations/2026-10-06-swt-development.md)：固定20例中8例调用模型、12例环境阻塞，有效差分交付0。
-最新 [架构验收记录](docs/evaluations/2026-10-08-agentscope-acceptance.md)：AgentScope 单运行时架构的真实模型与官方 Docker harness 验收已经执行。dev20 重跑（20 例中 8 例执行、本地差分 0、修复版对照 0 通过 / 2 未通过）和冻结保留集（10 例中 3 例执行、本地差分 1、修复版对照 1 通过）与迁移前的同名轮次使用同一 catalog、manifest、绑定环境与预算，可直接对照：**两套架构各自差分成功 1 例，且不是同一例**——这个样本量下不可区分，既不能说提升也不能说下降。定点 Sphinx-8801 未达成，原因定位在候选断言与官方修复无关，不在基础设施。代价在 token 与步数：单次调用约翻倍，每例几乎烧完整个 20 步预算。上一轮只跑离线门槛、真实模型一步未执行的记录保留在 [2026-10-07 迁移评测](docs/evaluations/2026-10-07-agentscope-infrastructure.md)。
-设计、架构与实现计划位于 `docs/superpowers`。
+测试覆盖真实 pytest、进程清理、源码来源、独立导出和 wheel 安装；独立目标环境只装 pytest。首次打包测试会创建开发测试环境并安装 pytest，不修改用户目标环境。
+
+架构说明见 [docs/agentscope.md](docs/agentscope.md)，评测样本说明见 [evals/README.md](evals/README.md)，当前设计与计划见 [docs/superpowers/](docs/superpowers/)。
+
+## 安全与限制
+
+- 文件副本隔离不是安全沙箱。目标代码、pytest 插件和生成的测试拥有当前用户的系统与网络权限；只在可信项目和可丢弃环境使用。
+- 原始日志可能包含敏感值；模型片段和导出副本只脱敏已知 API key。发布前检查其他凭据。
+- 暂不支持 xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索。
+- 语义核对依赖模型；证据引用和硬性检查降低误报，但不能替代人的审查。
+- Windows 导出和独立 replay 有目录长度限制；目标 pytest 或依赖自身的长路径限制仍可能阻止启动。
+
+维护者：设计与计划 [docs/superpowers/](docs/superpowers/) · 历史评测 [docs/evaluations/](docs/evaluations/)。
