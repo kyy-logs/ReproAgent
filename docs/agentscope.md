@@ -52,6 +52,17 @@ inspect 和 replay 不调用模型。
   超过输入容量时明确停止，不能删去原始事实后继续。修订契约不改变这份原文。
 - **业务推进**：阶段结果交回 Controller。候选随即在原版执行、被语义核验，并在复现时独立重复一次；
   给出 `--fixed-repo` 时再在固定版执行同一候选。没有"是否执行"或"是否提交"的模型决策。
+- **重放确认**：两次 original 执行都必须绑定同一候选与契约、保护完整、probe 完整，并比较测试集、
+  前置条件和失败签名。已有完整 `assertion_comparison` 时仍按真实 operator/left/right 比较；只有
+  布尔断言缺少比较操作数时，probe 才从 pytest 重写的 `@py_assert*` 临时值记录有界整数身份证据。
+  该 `assertion_display` 必须来自失败帧上没有自定义消息的 `assert Assert`，只含
+  `provenance=pytest_rewrite` 和最多 64 个正整数 ID，且这些 ID 必须真的出现在失败展示里；不保存
+  locals、不调用 repr/属性/迭代器。没有或畸形的证据保持旧的严格比较，因此历史记录不会因缺失字段被
+  放宽。实际字符串值、operator、异常类型、失败位置、测试集或保护结果不同仍拒绝。
+  `replay.compared` 事件记录 candidate/两次 run、confirmed 和受控原因
+  （CONFIRMED、VERDICT_MISMATCH、BINDING_OR_INTEGRITY_MISMATCH、PRECONDITIONS_UNSUPPORTED、
+  TEST_SET_MISMATCH、NO_FAILURE_SIGNATURE、FAILURE_SIGNATURE_MISMATCH）；不一致时只记录
+  nodeid/when 与差异字段名，不复制失败正文。事件或 trace 写失败不改变 bool 决策。
 - **交付**：导出与 replay 不依赖 SDK，也不需要 AgentScope。
 
 ## 阶段工具面
@@ -108,9 +119,9 @@ Grep 需要主机上的 ripgrep（`shutil.which("rg")`）。没有 ripgrep 时�
 （边界、预算、证据、装配），**不是模型能力**，也不能用来宣称复现率提升。
 
 真实模型的定点、开发子集重跑与冻结保留集轮次，以及保留集的官方判分，见
-[架构验收记录](evaluations/2026-10-08-agentscope-acceptance.md)；更早那一轮只跑了离线门槛、
-真实模型一步未执行的记录，保留在 [基础设施迁移评测](evaluations/2026-10-07-agentscope-infrastructure.md)。
-历史验证记录见 [实现记录](implementation-status.md)。
+[架构验收记录](archive/evaluations/2026-10-08-agentscope-acceptance.md)；更早那一轮只跑了离线门槛、
+真实模型一步未执行的记录，保留在 [基础设施迁移评测](archive/evaluations/2026-10-07-agentscope-infrastructure.md)。
+历史验证记录见 [实现记录](archive/legacy-guides/implementation-status.md)。
 
 ## Optional experience infrastructure
 

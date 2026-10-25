@@ -49,6 +49,9 @@ pass green accent and warm pastel frame.
 - **Newsreader** for Latin display type, paired with a subsetted **Noto Serif
   SC** for Chinese section headlines and the boundary quote. Both are local
   WOFF2 files with OFL licenses in `fonts/`.
+- The brand mark is a Newsreader serif **R** with a small cobalt evidence dot,
+  paired with the IBM Plex Mono `reproagent` wordmark. The page uses the same
+  mark for the nav, footer and favicon.
 - One display scale (h1 max 3.5rem, h2 max 3rem), body 16px/1.75, line lengths
   under 80 characters. No all-caps eyebrows, no middle-dot meta strings, no
   arrows on every link.

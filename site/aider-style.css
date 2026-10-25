@@ -150,19 +150,13 @@ section[id] { scroll-margin-top: 84px; }
 }
 .brand:hover { color: var(--ink); }
 .brand-mark {
-  display: inline-grid;
-  place-items: center;
+  display: block;
+  flex: 0 0 auto;
   width: 24px;
   height: 24px;
-  border-radius: 2px;
-  background: var(--ink);
-  color: var(--paper);
-  font-family: var(--mono);
-  font-size: 0.76rem;
-  font-weight: 600;
-  line-height: 1;
+  object-fit: contain;
 }
-.brand-mark.small { width: 20px; height: 20px; font-size: 0.66rem; }
+.brand-mark.small { width: 20px; height: 20px; }
 .nav-links { display: flex; align-items: center; gap: 22px; margin-left: auto; color: var(--muted); font-size: 0.84rem; }
 .nav-links a { text-decoration: none; }
 .nav-links a:hover { color: var(--ink); text-decoration: underline; text-decoration-color: var(--signal); }

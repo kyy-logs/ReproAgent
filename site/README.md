@@ -22,6 +22,7 @@ Files:
 
 - `index.html` — current evidence-desk page: cool paper, cobalt section rails, ruled evidence blocks, Newsreader + Noto Serif SC headlines, framed Mac-terminal hero with streaming log, report picture-in-picture with pointer-driven tilt, parallax and a scripted macOS cursor drag, Windows/macOS install tabs, macOS install section
 - `aider-style.html` — legacy redirect to `index.html`
+- `brand-mark.svg` — serif R monogram used by the nav, footer and favicon
 - `aider-style.css` — page styles
 - `fonts/` — local IBM Plex Sans/Mono, Newsreader and subsetted Noto Serif SC WOFF2 files, with OFL licenses
 - `DESIGN.md` — design plan and decisions

@@ -4,13 +4,15 @@
   </a>
 </p>
 
-<p align="center"><b>把 Bug 描述变成可复查的 Python/pytest 复现证据。</b></p>
+<p align="center"><b>Evidence-first reproduction for Python/pytest bugs.</b></p>
 
 <p align="center">
-  <a href="https://kyy-logs.github.io/ReproAgent/"><b>产品页</b></a> |
-  <a href="#快速开始"><b>快速开始</b></a> |
-  <a href="#使用"><b>使用</b></a> |
-  <a href="#文档"><b>文档</b></a>
+  <a href="README_zh.md"><b>中文</b></a> |
+  <a href="https://kyy-logs.github.io/ReproAgent/"><b>Product page</b></a> |
+  <a href="#quickstart"><b>Quickstart</b></a> |
+  <a href="#usage"><b>Usage</b></a> |
+  <a href="ROADMAP.md"><b>Roadmap</b></a> |
+  <a href="docs/README.md"><b>Docs</b></a>
 </p>
 
 <p align="center">
@@ -21,38 +23,38 @@
   <a href="https://github.com/kyy-logs/ReproAgent/actions/workflows/test.yml"><img src="https://github.com/kyy-logs/ReproAgent/actions/workflows/test.yml/badge.svg" alt="Offline tests"></a>
 </p>
 
-## ReproAgent 是什么？
+## What is ReproAgent?
 
-ReproAgent 在本地读原始 Issue，写候选 pytest 测试，先证明它在问题版失败，再独立重跑一次，最后用修复版对照。只有三段结果相反，报告才会写 `DIFFERENTIAL_VALIDATED`。你得到的是 `report.md`、`trace.json`、`manifest.json` 和 `replay.py`，不是一段聊天记录。
+ReproAgent reads the original issue, writes a candidate pytest test, proves it fails on the buggy version, reruns the same candidate in a fresh copy, and finally checks it against a compatible fixed version. Only when those three runs disagree in the expected direction does the report say `DIFFERENTIAL_VALIDATED`. You get `report.md`, `trace.json`, `manifest.json` and `replay.py`, not a chat transcript.
 
-生成测试很容易。难的是确认它真的调用到目标代码、断言打到目标行为，并且在问题版和修复版上给出相反结果。
+Generating a test is easy. Proving that it calls the target code, asserts the target behavior, and produces opposite results on the buggy and fixed versions is the hard part.
 
 <p align="center">
   <a href="https://kyy-logs.github.io/ReproAgent/">
-    <img src="docs/assets/tour.gif" alt="ReproAgent 浏览器窗口中的整页动态预览：hero、证据、安装、边界和最终 CTA" width="100%">
+    <img src="docs/assets/tour.gif" alt="ReproAgent whole-page preview in a browser window" width="100%">
   </a>
 </p>
-<p align="center"><sub>浏览器窗口中的整页动态预览：hero、证据、流水线、安装、边界和最终 CTA。</sub></p>
+<p align="center"><sub>Whole-page preview in a browser window: hero, evidence, pipeline, install, boundaries and the final CTA.</sub></p>
 
 ## News
 
-- **[2026-10-25] `FEAT`:** Windows 一键安装接入 Claude Code / Codex：自动查找或安装 Python 3.11+、创建私有环境、写入用户级入口、运行 setup 检查，并可只读检查目标项目。[安装说明](docs/windows-install.md)
-- **[2026-10-25] `DOCS`:** 新增产品页和面向用户的 README；产品页源码在 [site/index.html](site/index.html)。
-- **[2026-10-15] `FEAT`:** 验证反馈现在携带引用证据原文和结构化证据缺口，失败原因更容易定位。[输出说明](docs/technical-highlights-and-output.md)
-- **[2026-10-13] `FEAT`:** 经验库支持按任务浏览目录、按需加载经验，并在后续任务复用。[经验库](docs/experience.md)
-- **[2026-10-10] `FEAT`:** 本地 trace 查看器提供步骤树、时间线和工具调用检查，不上传网络。[可观测性](docs/observability.md)
+- **2026-10-25 · `FEAT`** — Windows one-click setup for Claude Code / Codex: finds or installs Python 3.11+, creates a private tool environment, writes user-level entries, runs setup checks, and adds a read-only target-project check. [Install guide](docs/windows-install.md)
+- **2026-10-25 · `DOCS`** — New product page and user-facing READMEs (English / 中文). Product page source: [site/index.html](site/index.html).
+- **2026-10-15 · `FEAT`** — Verifier feedback now carries the cited evidence text and structured evidence gaps, making failures easier to locate. [Output notes](docs/technical-highlights-and-output.md)
+- **2026-10-13 · `FEAT`** — The experience library supports task-scoped catalog browsing and on-demand loading. [Experience library](docs/experience.md)
+- **2026-10-10 · `FEAT`** — Local trace viewer with a step tree, timeline and tool-call inspection; nothing is uploaded. [Observability](docs/observability.md)
 
-[更多更新 →](https://github.com/kyy-logs/ReproAgent/commits/main)
+[Full changelog →](docs/NEWS.md)
 
-## 快速开始
+## Quickstart
 
-### 安装
+### Install
 
-> 需要 Python 3.11+。安装、`setup --check`、启动器检查和目标项目检测都不调用模型。
+> Requires Python 3.11+. Install, `setup --check`, launcher checks and target-project checks do not call a model.
 
 #### Windows
 
-在已有源码目录双击 `install.cmd`，或在 PowerShell 里：
+Run `install.cmd` from the source directory, or use PowerShell:
 
 ```powershell
 git clone https://github.com/kyy-logs/ReproAgent.git
@@ -60,7 +62,7 @@ cd ReproAgent
 .\install.cmd -Force
 ```
 
-安装器会查找 Python 3.11+（包括仓库 `.venv`），创建私有工具环境，安装依赖，写入 Claude Code / Codex 用户级入口，然后运行 `setup --check`。已有入口会先备份。完整参数见 [Windows 一键安装](docs/windows-install.md)。
+The installer looks for Python 3.11+ (including the repository `.venv`), creates a private tool environment, installs dependencies, writes Claude Code / Codex user-level entries, and runs `setup --check`. Existing entries are backed up first. See [Windows installer](docs/windows-install.md).
 
 #### macOS
 
@@ -72,47 +74,47 @@ python3 -m venv .venv
 .venv/bin/reproagent setup
 ```
 
-macOS 目前通过命令行安装和接入；Windows 的一键安装器只适用于 Windows。页面里的安装卡片也提供 Windows / macOS 切换。
+macOS currently uses the command-line installation path. The Windows one-click installer is Windows-only.
 
-## 它能做什么
+## What it proves
 
-| 能力 | 内容 |
+| Capability | What you get |
 | --- | --- |
-| **差分验证** | 问题版失败、同一候选在全新副本里独立重跑仍失败、兼容修复版通过；缺一段就停在更低的证据等级 |
-| **真实执行** | 记录目标模块调用、断言结果、pytest 退出码和 Probe，不用字符串自比较或模型自报成功充数 |
-| **本地优先** | 目标代码和测试在你的机器上运行；使用你的 Python、pytest、模型配置和凭据 |
-| **宿主接入** | Claude Code 用 `/reproagent`，Codex 用 `$reproagent`，也可以直接走 CLI |
-| **可交接** | 报告、trace、哈希清单和独立 `replay.py` 一起导出；接收方不需要 ReproAgent 或模型接口就能重跑 |
+| **Differential validation** | Buggy version fails, the same candidate fails again in a fresh copy, and a compatible fixed version passes; missing a run lowers the evidence level |
+| **Real execution** | Target-module calls, assertion results, pytest exit codes and Probe records; no string self-comparison or model self-report |
+| **Local-first** | Target code and tests run on your machine with your Python, pytest, model configuration and credentials |
+| **Host integration** | Claude Code uses `/reproagent`, Codex uses `$reproagent`; the CLI is also available directly |
+| **Handoff** | `report.md`, trace, hash manifest and standalone `replay.py`; the receiver does not need ReproAgent or a model endpoint to rerun |
 
-## 使用
+## Usage
 
-### 在 Claude Code 里使用
+### Claude Code
 
-安装器或 `reproagent setup` 会写入用户级 Skill。重启 Claude Code 会话后，在目标项目里：
+The installer or `reproagent setup` writes a user-level Skill. Restart the Claude Code session, then use it from the target project:
 
 ```text
 /reproagent check
-/reproagent 帮我复现当前项目里的这个 Bug
+/reproagent reproduce the bug in this project
 /reproagent inspect repro-results/task-001
 ```
 
-- `check` 检查工具解释器、CLI 和凭据来源，不调用模型。
-- 复现命令可以接 Bug 描述，也可以接 task.json 路径。
-- `inspect` 只读结果目录，不继续执行任务。
+- `check` verifies the tool interpreter, CLI and credential source without calling a model.
+- The reproduction command accepts a bug description or a task.json path.
+- `inspect` only reads a result directory and does not continue the task.
 
-完整说明见 [Claude Code 使用说明](docs/claude-code.md)。
+See [Claude Code guide](docs/claude-code.md).
 
-### 在 Codex 里使用
+### Codex
 
-Codex 使用同一套入口和模型配置：
+Codex uses the same entries and model configuration:
 
 ```text
-$reproagent 帮我复现当前项目里的这个 Bug
+$reproagent reproduce the bug in this project
 ```
 
-接入方式、路径和旧版 layout 见 [AI 工具接入](docs/ai-tool-integration.md)。
+See [AI tool integration](docs/ai-tool-integration.md) for paths and the legacy layout option.
 
-### 用 CLI
+### CLI
 
 ```powershell
 $env:DEEPSEEK_API_KEY = "your-key"
@@ -120,9 +122,9 @@ $env:DEEPSEEK_API_KEY = "your-key"
 .\.venv\Scripts\reproagent.exe inspect repro-results/task-001
 ```
 
-`run` 会调用付费模型；安装、`setup --check`、启动器检查和 `inspect` 不调用模型。不要把密钥写进配置文件，用环境变量提供。macOS 把 `.\.venv\Scripts\reproagent.exe` 换成 `.venv/bin/reproagent`，其余参数相同。
+`run` calls the paid model. Install, `setup --check`, launcher checks and `inspect` do not. Do not put keys in a config file; use an environment variable. On macOS, replace `.\.venv\Scripts\reproagent.exe` with `.venv/bin/reproagent`.
 
-可选差分对照：
+Optional fixed-version comparison:
 
 ```powershell
 .\.venv\Scripts\reproagent.exe run --config examples/task.json `
@@ -131,33 +133,33 @@ $env:DEEPSEEK_API_KEY = "your-key"
   --fixed-python C:\path\to\fixed-copy\.venv\Scripts\python.exe
 ```
 
-修复版只在候选冻结后用于对照；修复源码、测试和补丁不进入探索上下文。
+The fixed source is only used after the candidate is frozen; fixed code, tests and patches do not enter the exploration context.
 
-退出码：`DONE=0`；`BLOCKED`、`NEEDS_INFORMATION`、`EXHAUSTED=1`；配置错误 `2`；`FAILED=3`；`CANCELLED=130`。
+Exit codes: `DONE=0`; `BLOCKED`, `NEEDS_INFORMATION` and `EXHAUSTED=1`; configuration error `2`; `FAILED=3`; `CANCELLED=130`.
 
-## 一次运行会留下什么
+## What you get
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `report.md` | 结论、三次运行、失败摘要和审查入口；先读这个 |
-| `trace.json` | 模型调用、工具步骤、输入输出和耗时 |
-| `manifest.json` | 文件哈希与证据清单 |
-| `replay.py` | 在全新副本里重跑同一候选，不依赖 ReproAgent |
+| `report.md` | Conclusion, the three runs, failure summary and review entry points; read this first |
+| `trace.json` | Model calls, tool steps, inputs/outputs and timing |
+| `manifest.json` | File hashes and evidence inventory |
+| `replay.py` | Reruns the same candidate in a fresh copy without ReproAgent |
 
-成功包在 `artifacts/reproduction/`，trace 在 `observability/trace.json`；未确认任务输出到 `artifacts/diagnostic/`。
+Successful packages live under `artifacts/reproduction/`; trace is written to `observability/trace.json`. Unconfirmed runs go to `artifacts/diagnostic/`.
 
-### 证据等级
+### Evidence levels
 
-| 等级 | 含义 |
+| Level | Meaning |
 | --- | --- |
-| `DONE` | 流程结束，不证明复现 |
-| `SINGLE_OBSERVATION` | 只发生了一次原版运行 |
-| `REPEATED_OBSERVATION` | 同一候选在独立副本里重跑过 |
-| `DIFFERENTIAL_VALIDATED` | 原版失败、独立重跑失败、兼容修复版通过 |
+| `DONE` | The flow finished; it does not prove reproduction |
+| `SINGLE_OBSERVATION` | One original-version run happened |
+| `REPEATED_OBSERVATION` | The same candidate was rerun in an independent copy |
+| `DIFFERENTIAL_VALIDATED` | Original fails, independent rerun fails, and a compatible fixed version passes |
 
-`DONE` 不是差分验证。模型打印 “reproduced”、pytest 退出码 1、捕获一个预期错误或 xfail，都不能单独建立成功。完整字段和报告模板见 [技术亮点与输出](docs/technical-highlights-and-output.md)。
+`DONE` is not differential validation. A model saying “reproduced”, pytest exit code 1, a captured expected error or an xfail cannot establish success on its own. See [technical highlights and output](docs/technical-highlights-and-output.md).
 
-成功包可以复制到任意目录，在另一份相同 Bug 版本的副本里重跑：
+A successful package can be copied anywhere and replayed in another copy of the same buggy version:
 
 ```powershell
 python path/to/reproduction/replay.py `
@@ -167,95 +169,97 @@ python path/to/reproduction/replay.py `
   --install
 ```
 
-回归测试在 Bug 版本失败，因此复跑退出 1 是预期现象；核对新 Probe 的实际失败。
+The regression test is expected to fail on the buggy version, so exit code 1 is normal; verify the actual failure in the new Probe.
 
-## 它怎么工作
+## How it works
 
 ```text
 Issue → contract → candidate pytest → buggy → rerun → fixed → sealed
 ```
 
-1. 读原始描述和代码事实。
-2. 建立触发条件和观察点。
-3. 写候选 pytest 测试。
-4. 在问题版上执行。
-5. 用全新副本独立重跑。
-6. 用兼容修复版对照。
-7. 导出报告、trace、manifest 和 replay。
+1. Read the original description and repository facts.
+2. Build the trigger conditions and observable checks.
+3. Write the candidate pytest test.
+4. Run it against the buggy version.
+5. Rerun it in a fresh copy.
+6. Compare it against a compatible fixed version.
+7. Export the report, trace, manifest and replay tool.
 
-每一步都留下可检查的记录；报告等级由最后三段决定。
+Every step leaves inspectable records; the evidence level is decided by the last three runs.
 
-## 适合 / 不适合
+## Fit / not a fit
 
-**适合**
+**Fits**
 
-- Python 和 pytest 项目，需要一个能复查的回归测试。
-- 维护者、QA、AI coding agent 用户，想确认真实复现而不是看聊天结论。
-- 需要把“问题版失败、修复版通过”固化成证据的团队。
-- 希望本地执行、自己控制模型 provider 和凭据的团队。
+- Python and pytest projects that need a reviewable regression test.
+- Maintainers, QA and AI coding-agent users who want real reproduction evidence instead of a chat conclusion.
+- Teams that need to turn “buggy fails, fixed passes” into evidence.
+- Teams that want local execution and control over model providers and credentials.
 
-**不适合**
+**Not a fit**
 
-- 非 Python、非 pytest 项目。
-- 期待工具自动修改业务代码、直接给出最终修复。
-- 期待保证所有 Bug 都能复现，或把单次成功当成整体复现率。
-- 需要托管式云端执行、完全不用本地环境的产品。
+- Non-Python or non-pytest projects.
+- Automatic business-code fixes or a final patch.
+- A guarantee that every bug reproduces, or treating one success as an overall reproduction rate.
+- Hosted cloud execution with no local environment.
 
-目标项目的 Python、pytest 和业务依赖由目标项目提供。ReproAgent 不会给目标环境安装包、修改业务代码或启动缺失服务。
+The target project supplies its own Python, pytest and business dependencies. ReproAgent does not install packages into the target environment, modify business code or start missing services.
 
-## 配置
+## Configuration
 
-复制 `examples/task.json`，按目标项目改：
+Copy `examples/task.json` and adjust it for the target project:
 
-| 字段 | 说明 |
+| Field | Meaning |
 | --- | --- |
-| `repo` / `issue_file` / `output_dir` | 相对 task 配置文件所在目录解析；每次使用新的输出目录 |
-| `language.python` | 目标项目解释器的绝对路径 |
-| `language.target_modules` | 实际待观察模块，例如 `package.parser` |
-| `language.source_roots` | 项目源码根，相对项目目录，例如 `["src", "."]` |
-| `language.candidate_parent` | 能继承相关 conftest 的测试目录，例如 `tests/unit` |
-| `language.pytest_args` | 支持 `-q/-v/-vv/-s/--disable-warnings/--tb=*`；不允许 Agent 覆盖 |
-| `baseline_tests` | 可选，先观察已有测试；断言失败会记录，不直接判定环境不可用 |
+| `repo`, `issue_file`, `output_dir` | Resolved relative to the task config; use a fresh output directory each time |
+| `language.python` | Absolute path to the target project interpreter |
+| `language.target_modules` | Modules to observe, e.g. `package.parser` |
+| `language.source_roots` | Source roots relative to the project, e.g. `["src", "."]` |
+| `language.candidate_parent` | Test directory that inherits the relevant conftest, e.g. `tests/unit` |
+| `language.pytest_args` | Supports `-q/-v/-vv/-s/--disable-warnings/--tb=*`; the Agent cannot override them |
+| `baseline_tests` | Optional existing tests; assertion failures are recorded, not treated as an unusable environment |
 
-模型配置使用兼容 Chat Completions 的 JSON 文本接口，填写 `base_url`、`model` 和 API key 的环境变量名。示例：
+Model configs use a Chat-Completions-compatible JSON text endpoint with `base_url`, `model` and an API-key environment variable. Examples:
 
 - `examples/model.deepseek.json`
 - `examples/model.deepseek.non-thinking.json`
 - `examples/model.json`
 
-供应商不支持 `max_completion_tokens` 时，把 `output_limit_field` 改成 `max_tokens`。
+If a provider does not support `max_completion_tokens`, set `output_limit_field` to `max_tokens`.
 
-## 文档
+## Docs
 
-| 想了解什么 | 文档 |
+Documentation is currently Chinese-first. The CLI, installer and product page are usable without reading it.
+
+| Topic | Document |
 | --- | --- |
-| 在线页面 | [GitHub Pages](https://kyy-logs.github.io/ReproAgent/) |
-| 产品页源码 | [site/index.html](site/index.html) |
-| 安装、任务配置和 CLI | 本 README / [示例配置](examples/) |
-| Windows 安装与目标项目检查 | [docs/windows-install.md](docs/windows-install.md) |
-| Claude Code / Codex 接入 | [docs/ai-tool-integration.md](docs/ai-tool-integration.md) |
-| Claude Code 调用方式 | [docs/claude-code.md](docs/claude-code.md) |
-| report.md、证据等级和 replay | [docs/technical-highlights-and-output.md](docs/technical-highlights-and-output.md) |
-| trace、工具调用和诊断 | [docs/observability.md](docs/observability.md) |
-| 经验库 | [docs/experience.md](docs/experience.md) |
-| SWT-Bench 数据与官方评测 | [docs/swt-bench.md](docs/swt-bench.md) |
-| 文档总导航 | [docs/](docs/) |
+| Product page (Chinese) | [kyy-logs.github.io/ReproAgent](https://kyy-logs.github.io/ReproAgent/) |
+| Product page source | [site/index.html](site/index.html) |
+| Install, task config and CLI | This README / [examples](examples/) |
+| Windows install and target check | [docs/windows-install.md](docs/windows-install.md) |
+| Claude Code / Codex integration | [docs/ai-tool-integration.md](docs/ai-tool-integration.md) |
+| Claude Code usage | [docs/claude-code.md](docs/claude-code.md) |
+| report.md, evidence levels and replay | [docs/technical-highlights-and-output.md](docs/technical-highlights-and-output.md) |
+| Trace, tool calls and diagnostics | [docs/observability.md](docs/observability.md) |
+| Experience library | [docs/experience.md](docs/experience.md) |
+| SWT-Bench data and official evaluation | [docs/swt-bench.md](docs/swt-bench.md) |
+| Documentation index | [docs/](docs/) |
 
-产品页源码在 `site/index.html`。本地预览：`start site\index.html`（Windows），或 `python -m http.server --directory site 8000`（macOS / Linux）。
+The Chinese homepage is [README_zh.md](README_zh.md). The roadmap is [ROADMAP.md](ROADMAP.md).
 
-## 项目状态
+## Project status
 
-当前是本地 CLI MVP，只有一套基础设施：AgentScope。模型调用、受限文件工具、阶段内执行和消息历史由 SDK 提供；复现策略、业务编排、证据核验和独立交付仍由 ReproAgent 负责。
+This is a local CLI MVP with a single runtime: AgentScope. The SDK provides model calls, restricted file tools, in-stage execution and message history; ReproAgent owns the reproduction strategy, orchestration, evidence verification and handoff.
 
-评测是小样本，不代表一般复现率：
+Evaluation is small-sample and does not represent a general reproduction rate:
 
-- 官方 SWT-Bench harness 在 10 例未参与调试的新样本上判定 **RESOLVED 1/10**（`sphinx-doc__sphinx-11445`）；其中 3 例没有 verified 报告，整轮仍记为待判分。
-- 历史修复环境样本的 20 例复测是单独的**非官方**记录，不能与官方 harness 分数混用。
-- CI 离线矩阵覆盖 Windows / Ubuntu × 目标 Python 3.10–3.12 × pytest 7.4–9，当前 18/18 通过。
+- The official SWT-Bench harness judged **RESOLVED 1/10** on ten previously unseen holdout cases (`sphinx-doc__sphinx-11445`). Three cases had no verified report, so the round remains pending.
+- The historical 20-case repaired-environment rerun is a separate **non-official** record and must not be mixed with official harness scores.
+- The offline CI matrix covers Windows / Ubuntu × target Python 3.10–3.12 × pytest 7.4–9; it is currently 18/18.
 
-完整记录：[SWT-Bench](docs/swt-bench.md) · [历史评测记录](docs/evaluations/) · [问题与挑战记录](docs/reports/reproagent-问题与挑战记录.md)。单次成功不代表整体复现率，独立人类评审仍待进行。
+Full records: [SWT-Bench](docs/swt-bench.md) · [historical evaluations](docs/archive/evaluations/) · [issues and fixes](docs/reports/问题与修复索引.md). One success is not an overall reproduction rate, and independent human review is still pending.
 
-## 开发
+## Development
 
 ```powershell
 python -m venv .venv
@@ -265,16 +269,16 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip wheel . --no-deps --no-build-isolation --wheel-dir dist
 ```
 
-测试覆盖真实 pytest、进程清理、源码来源、独立导出和 wheel 安装；独立目标环境只装 pytest。首次打包测试会创建开发测试环境并安装 pytest，不修改用户目标环境。
+Tests cover real pytest, process cleanup, source provenance, standalone export and wheel installation; the independent target environment only installs pytest. The first packaging test creates a development test environment and installs pytest without modifying the user's target environment.
 
-架构说明见 [docs/agentscope.md](docs/agentscope.md)，评测样本说明见 [evals/README.md](evals/README.md)，当前设计与计划见 [docs/superpowers/](docs/superpowers/)。
+See [AgentScope infrastructure](docs/agentscope.md), [evaluation notes](evals/README.md) and the [current designs and plans](docs/superpowers/README.md).
 
-## 安全与限制
+## Security and limitations
 
-- 文件副本隔离不是安全沙箱。目标代码、pytest 插件和生成的测试拥有当前用户的系统与网络权限；只在可信项目和可丢弃环境使用。
-- 原始日志可能包含敏感值；模型片段和导出副本只脱敏已知 API key。发布前检查其他凭据。
-- 暂不支持 xdist、浏览器、自动依赖修复、数据库重置、外部服务自动启动、resume 和多候选并行搜索。
-- 语义核对依赖模型；证据引用和硬性检查降低误报，但不能替代人的审查。
-- Windows 导出和独立 replay 有目录长度限制；目标 pytest 或依赖自身的长路径限制仍可能阻止启动。
+- A copied working directory is not a security sandbox. Target code, pytest plugins and generated tests run with the current user's system and network permissions; use trusted projects and disposable environments only.
+- Raw logs may contain secrets. Model snippets and exported copies redact known API keys only; inspect other credentials before publishing.
+- The current MVP does not support xdist, browsers, automatic dependency repair, database reset, external-service startup, resume or parallel candidate search.
+- Semantic review uses a model. Evidence citations and hard checks reduce false positives but do not replace human review.
+- Windows export and standalone replay have directory-length limits; target pytest or dependency path limits can still prevent startup.
 
-维护者：设计与计划 [docs/superpowers/](docs/superpowers/) · 历史评测 [docs/evaluations/](docs/evaluations/)。
+Maintainers: [current designs and plans](docs/superpowers/README.md) · [historical archive](docs/archive/README.md).
