@@ -68,7 +68,7 @@ print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':e
     assert str(checkout / 'src') not in json.dumps(spec)
     with zipfile.ZipFile(wheel) as archive:
         metadata = archive.read(next(n for n in archive.namelist() if n.endswith('/METADATA'))).decode()
-    assert 'Known limitations' in metadata
+    assert 'Security and limitations' in metadata
 
 
 def target_python(checkout, tmp_path):

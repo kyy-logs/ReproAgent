@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -73,8 +74,10 @@ def test_executable_on_path_is_a_detection_source(tmp_path):
     home = tmp_path / 'home'
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
-    executable = bin_dir / ('codex.exe' if __import__('os').name == 'nt' else 'codex')
+    executable = bin_dir / ('codex.exe' if os.name == 'nt' else 'codex')
     executable.write_text('fake', encoding='utf-8')
+    if os.name != 'nt':
+        executable.chmod(0o755)
 
     codex = _by_host(resolve_hosts('codex', home=home,
                                    environ={'PATH': str(bin_dir)}))['codex']
