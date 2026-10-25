@@ -1,0 +1,39 @@
+name: AI tool integration
+
+on: [push, pull_request, workflow_dispatch]
+
+jobs:
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install tool environment
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ -x .venv/bin/python ]; then PY=.venv/bin/python; else PY=.venv/Scripts/python.exe; fi
+          echo "REPRO_TOOL_PYTHON=$PY" >> "$GITHUB_ENV"
+          "$PY" -m pip install -e ".[dev]"
+      - name: Run integration setup tests
+        shell: bash
+        run: |
+          "$REPRO_TOOL_PYTHON" -m pytest \
+            tests/unit/test_integration_hosts.py \
+            tests/unit/test_integration_render.py \
+            tests/unit/test_integration_credentials.py \
+            tests/unit/test_integration_manifest.py \
+            tests/unit/test_integration_launcher.py \
+            tests/unit/test_integration_setup.py \
+            tests/integration/test_integration_launchers.py \
+            tests/integration/test_integration_setup_cli.py \
+            tests/integration/test_integration_package.py \
+            -q
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'

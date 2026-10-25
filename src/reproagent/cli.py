@@ -109,12 +109,26 @@ def main(argv=None):
     # The trace viewer takes the task directory and nothing else: the two files it may
     # touch are fixed, so it cannot be pointed at the sealed package or anywhere else.
     trace = sub.add_parser('trace'); trace.add_argument('task_dir')
+    setup = sub.add_parser('setup')
+    setup.add_argument('--host', choices=('all', 'claude-code', 'codex'), default='all')
+    setup.add_argument('--codex-layout', choices=('standard', 'legacy'), default='standard')
+    setup.add_argument('--check', action='store_true')
+    setup.add_argument('--dry-run', action='store_true')
+    setup.add_argument('--uninstall', action='store_true')
+    setup.add_argument('--force', action='store_true')
+    setup.add_argument('--tool-python')
+    setup.add_argument('--model-config')
+    setup.add_argument('--repro-root')
+    setup.add_argument('--env-file')
     experience = sub.add_parser('experience')
     experience_sub = experience.add_subparsers(dest='experience_command', required=True)
     migrate = experience_sub.add_parser('migrate')
     migrate.add_argument('source', type=Path); migrate.add_argument('target', type=Path)
     try:
         args = parser.parse_args(argv)
+        if args.command == 'setup':
+            from .integration.setup import run_setup
+            return run_setup(args)
         if args.command == 'experience':
             from .experience_storage import migrate_experience_library
             result = migrate_experience_library(args.source, args.target)

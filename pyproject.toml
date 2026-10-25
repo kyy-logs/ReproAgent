@@ -24,7 +24,9 @@ reproagent = "reproagent.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-reproagent = ["prompts/*.md", "adapters/languages/python_pytest/probe/*.py", "resources/*.py", "resources/*.template", "resources/*.mjs", "resources/skills/*/SKILL.md"]
+reproagent = ["prompts/*.md", "adapters/languages/python_pytest/probe/*.py", "resources/*.py", "resources/*.template", "resources/*.mjs", "resources/skills/*/SKILL.md",
+              "resources/integration/*.template", "resources/integration/claude/*.template",
+              "resources/integration/codex/*.template", "resources/integration/codex/agents/*.template"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

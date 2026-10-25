@@ -1,0 +1,34 @@
+#!/bin/sh
+set -eu
+
+REPROAGENT_BINDING_B64=@@BINDING_B64@@
+repro_pinned_python=@@TOOL_PYTHON_SH@@
+repro_python=${REPROAGENT_TOOL_PYTHON:-$repro_pinned_python}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --tool-python)
+            if [ "$#" -lt 2 ]; then
+                printf '%s\n' '--tool-python requires a path' >&2
+                exit 2
+            fi
+            repro_python=$2
+            shift 2
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+if [ "$#" -lt 1 ]; then
+    printf '%s\n' 'usage: reproagent.sh check|inspect|run <target> [options]' >&2
+    exit 2
+fi
+
+if [ ! -f "$repro_python" ]; then
+    printf '%s\n' 'ReproAgent tool Python is missing: re-run reproagent setup or pass --tool-python.' >&2
+    exit 2
+fi
+
+exec "$repro_python" -m reproagent.integration.launcher --binding-b64 "$REPROAGENT_BINDING_B64" "$@"

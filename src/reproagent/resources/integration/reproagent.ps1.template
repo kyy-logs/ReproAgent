@@ -1,0 +1,45 @@
+[CmdletBinding(DefaultParameterSetName = 'Run')]
+param(
+    [Parameter(Mandatory = $true, ParameterSetName = 'Run')]
+    [string]$TaskConfig,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Inspect')]
+    [string]$Inspect,
+    [Parameter(Mandatory = $true, ParameterSetName = 'Check')]
+    [switch]$Check,
+    [string]$ModelConfig,
+    [string]$ToolPython,
+    [string]$ReproRoot,
+    [string]$EnvFile,
+    [Parameter(ParameterSetName = 'Run')]
+    [string]$FixedRepo,
+    [Parameter(ParameterSetName = 'Run')]
+    [string]$FixedPython
+)
+
+$ErrorActionPreference = 'Stop'
+$reproBinding = @@BINDING_B64@@
+$reproPinnedPython = @@TOOL_PYTHON_PS@@
+$reproPython = $reproPinnedPython
+if ($ToolPython) { $reproPython = $ToolPython }
+elseif ($env:REPROAGENT_TOOL_PYTHON) { $reproPython = $env:REPROAGENT_TOOL_PYTHON }
+if (-not (Test-Path -LiteralPath $reproPython -PathType Leaf)) {
+    [Console]::Error.WriteLine('ReproAgent tool Python is missing: re-run reproagent setup or pass -ToolPython.')
+    exit 2
+}
+
+$reproArgs = @('-m', 'reproagent.integration.launcher', '--binding-b64', $reproBinding)
+if ($Check) {
+    $reproArgs += @('check')
+} elseif ($Inspect) {
+    $reproArgs += @('inspect', $Inspect)
+} else {
+    $reproArgs += @('run', $TaskConfig)
+}
+if ($ModelConfig) { $reproArgs += @('--model-config', $ModelConfig) }
+if ($ReproRoot) { $reproArgs += @('--repro-root', $ReproRoot) }
+if ($EnvFile) { $reproArgs += @('--env-file', $EnvFile) }
+if ($FixedRepo) { $reproArgs += @('--fixed-repo', $FixedRepo) }
+if ($FixedPython) { $reproArgs += @('--fixed-python', $FixedPython) }
+
+& $reproPython @reproArgs
+exit $LASTEXITCODE
