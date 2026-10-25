@@ -25,8 +25,9 @@ ReproAgent 在本地读原始 Issue，写候选 pytest 测试，先证明它在�
 生成测试很容易。难的是确认它真的调用到目标代码、断言打到目标行为，并且在问题版和修复版上给出相反结果。
 
 <p align="center">
-  <img src="docs/assets/landing.png" alt="ReproAgent 产品页：Mac 终端中的复现演示和证据报告" width="100%">
+  <img src="docs/assets/demo.gif" alt="ReproAgent 终端复现演示：流式日志、报告画中画和脚本指针" width="100%">
 </p>
+<p align="center"><sub>终端日志、报告画中画和脚本指针，均为本地页面里的真实 DOM 动画。</sub></p>
 
 ## 快速开始
 
