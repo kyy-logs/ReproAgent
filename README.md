@@ -1,10 +1,13 @@
 <p align="center">
-  <img src="docs/assets/logo.svg" alt="ReproAgent" width="280">
+  <a href="https://kyy-logs.github.io/ReproAgent/">
+    <img src="docs/assets/logo.svg" alt="ReproAgent" width="280">
+  </a>
 </p>
 
 <p align="center"><b>把 Bug 描述变成可复查的 Python/pytest 复现证据。</b></p>
 
 <p align="center">
+  <a href="https://kyy-logs.github.io/ReproAgent/"><b>产品页</b></a> |
   <a href="#快速开始"><b>快速开始</b></a> |
   <a href="#使用"><b>使用</b></a> |
   <a href="#文档"><b>文档</b></a>
@@ -25,9 +28,11 @@ ReproAgent 在本地读原始 Issue，写候选 pytest 测试，先证明它在�
 生成测试很容易。难的是确认它真的调用到目标代码、断言打到目标行为，并且在问题版和修复版上给出相反结果。
 
 <p align="center">
-  <img src="docs/assets/tour.gif" alt="ReproAgent 整页动态预览：hero、证据、安装、边界和最终 CTA" width="100%">
+  <a href="https://kyy-logs.github.io/ReproAgent/">
+    <img src="docs/assets/tour.gif" alt="ReproAgent 浏览器窗口中的整页动态预览：hero、证据、安装、边界和最终 CTA" width="100%">
+  </a>
 </p>
-<p align="center"><sub>整页动态预览：hero、证据、流水线、安装、边界和最终 CTA。</sub></p>
+<p align="center"><sub>浏览器窗口中的整页动态预览：hero、证据、流水线、安装、边界和最终 CTA。</sub></p>
 
 ## 快速开始
 
@@ -221,6 +226,8 @@ Issue → contract → candidate pytest → buggy → rerun → fixed → sealed
 
 | 想了解什么 | 文档 |
 | --- | --- |
+| 在线页面 | [GitHub Pages](https://kyy-logs.github.io/ReproAgent/) |
+| 产品页源码 | [site/index.html](site/index.html) |
 | 安装、任务配置和 CLI | 本 README / [示例配置](examples/) |
 | Windows 安装与目标项目检查 | [docs/windows-install.md](docs/windows-install.md) |
 | Claude Code / Codex 接入 | [docs/ai-tool-integration.md](docs/ai-tool-integration.md) |
@@ -230,6 +237,8 @@ Issue → contract → candidate pytest → buggy → rerun → fixed → sealed
 | 经验库 | [docs/experience.md](docs/experience.md) |
 | SWT-Bench 数据与官方评测 | [docs/swt-bench.md](docs/swt-bench.md) |
 | 文档总导航 | [docs/](docs/) |
+
+产品页源码在 `site/index.html`。本地预览：`start site\index.html`（Windows），或 `python -m http.server --directory site 8000`（macOS / Linux）。
 
 ## 项目状态
 
