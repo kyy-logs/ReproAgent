@@ -17,4 +17,4 @@ Product updates. For commit-level history, see [main commits](https://github.com
 - **2026-10-10 · `FEAT`** — Local trace viewer with a step tree, timeline and tool-call inspection; nothing is uploaded. [Observability](observability.md)  
   **中文**：本地 trace 查看器提供步骤树、时间线和工具调用检查，不上传网络。[可观测性](observability.md)
 
-<!-- news-auto: da8f966dfac35ad20464ce5404e66becc54d3620 -->
+<!-- news-auto: 0c7480ae7f5c93e6f6ad782cda64e3f8c3e62299 -->
