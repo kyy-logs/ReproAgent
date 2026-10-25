@@ -25,9 +25,9 @@ ReproAgent 在本地读原始 Issue，写候选 pytest 测试，先证明它在�
 生成测试很容易。难的是确认它真的调用到目标代码、断言打到目标行为，并且在问题版和修复版上给出相反结果。
 
 <p align="center">
-  <img src="docs/assets/demo.gif" alt="ReproAgent 终端复现演示：流式日志、报告画中画和脚本指针" width="100%">
+  <img src="docs/assets/tour.gif" alt="ReproAgent 整页动态预览：hero、证据、安装、边界和最终 CTA" width="100%">
 </p>
-<p align="center"><sub>终端日志、报告画中画和脚本指针，均为本地页面里的真实 DOM 动画。</sub></p>
+<p align="center"><sub>整页动态预览：hero、证据、流水线、安装、边界和最终 CTA。</sub></p>
 
 ## 快速开始
 
@@ -68,6 +68,13 @@ macOS 目前通过命令行安装和接入；Windows 的一键安装器只适用
 | **本地优先** | 目标代码和测试在你的机器上运行；使用你的 Python、pytest、模型配置和凭据 |
 | **宿主接入** | Claude Code 用 `/reproagent`，Codex 用 `$reproagent`，也可以直接走 CLI |
 | **可交接** | 报告、trace、哈希清单和独立 `replay.py` 一起导出；接收方不需要 ReproAgent 或模型接口就能重跑 |
+
+## 终端演示
+
+<p align="center">
+  <img src="docs/assets/demo.gif" alt="ReproAgent 终端复现演示：流式日志、报告画中画和脚本指针" width="100%">
+</p>
+<p align="center"><sub>终端日志、报告画中画和脚本指针，均为本地页面里的真实 DOM 动画。</sub></p>
 
 ## 使用
 
