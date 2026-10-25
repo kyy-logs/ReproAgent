@@ -34,6 +34,16 @@ ReproAgent 在本地读原始 Issue，写候选 pytest 测试，先证明它在�
 </p>
 <p align="center"><sub>浏览器窗口中的整页动态预览：hero、证据、流水线、安装、边界和最终 CTA。</sub></p>
 
+## News
+
+- **[2026-10-25] `FEAT`:** Windows 一键安装接入 Claude Code / Codex：自动查找或安装 Python 3.11+、创建私有环境、写入用户级入口、运行 setup 检查，并可只读检查目标项目。[安装说明](docs/windows-install.md)
+- **[2026-10-25] `DOCS`:** 新增产品页和面向用户的 README；产品页源码在 [site/index.html](site/index.html)。
+- **[2026-10-15] `FEAT`:** 验证反馈现在携带引用证据原文和结构化证据缺口，失败原因更容易定位。[输出说明](docs/technical-highlights-and-output.md)
+- **[2026-10-13] `FEAT`:** 经验库支持按任务浏览目录、按需加载经验，并在后续任务复用。[经验库](docs/experience.md)
+- **[2026-10-10] `FEAT`:** 本地 trace 查看器提供步骤树、时间线和工具调用检查，不上传网络。[可观测性](docs/observability.md)
+
+[更多更新 →](https://github.com/kyy-logs/ReproAgent/commits/main)
+
 ## 快速开始
 
 ### 安装
