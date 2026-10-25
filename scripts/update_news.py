@@ -14,6 +14,10 @@ News does not turn into a commit log. For a merge commit the highest-impact
 category in the merged branch wins (feat > fix > perf > change), and the newest
 commit of that category supplies the text, so a trailing ``docs:`` commit cannot
 hide a feature.
+
+Merges from a ``codex/...`` branch are always recorded. If the branch has no
+feat/fix/perf commit, its newest commit is recorded as a generic ``CHANGE``,
+even when the branch only contains docs or tests.
 Put a bilingual line in the merge or squash commit body (or the PR description,
 for squash merges) to fill the Chinese part:
 
@@ -42,6 +46,7 @@ PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 CHINESE_RE = re.compile(r"^\s*(?:News-zh|中文)\s*[:：]\s*(.+?)\s*$", re.IGNORECASE)
+CODEX_BRANCH_RE = re.compile(r"(?:^|[\s/'\"(])codex/[^\s'\"()]+", re.IGNORECASE)
 SKIP_SUBJECT_PREFIXES = (
     "docs: update news",
     "merge branch 'main' into",
@@ -125,11 +130,27 @@ def parse_subject(subject: str) -> tuple[str, str] | None:
     return None
 
 
-def collect_merge_candidates(
+def strip_prefix(subject: str) -> str:
+    match = PREFIX_RE.match(subject)
+    if not match:
+        return subject.strip()
+    return subject[match.end() :].strip()
+
+
+def find_chinese(messages: list[str]) -> str | None:
+    for message in messages:
+        for line in message.splitlines():
+            match = CHINESE_RE.match(line)
+            if match:
+                return match.group(1)
+    return None
+
+
+def collect_branch_commits(
     first_parent: str, parents: list[str], cwd: Path
-) -> list[tuple[str, str, str, str]]:
-    """Return (category, text, subject, message) for recorded commits."""
-    candidates: list[tuple[str, str, str, str]] = []
+) -> list[tuple[str, str]]:
+    """Return (subject, message) for non-merge commits on merged branches."""
+    commits: list[tuple[str, str]] = []
     seen: set[str] = set()
     for parent in parents:
         try:
@@ -147,13 +168,9 @@ def collect_merge_candidates(
             )
             candidate_lines = candidate_message.splitlines()
             candidate_subject = candidate_lines[0].strip() if candidate_lines else ""
-            parsed = parse_subject(candidate_subject)
-            if parsed is not None:
-                category, text = parsed
-                candidates.append(
-                    (category, text, candidate_subject, candidate_message)
-                )
-    return candidates
+            if candidate_subject:
+                commits.append((candidate_subject, candidate_message))
+    return commits
 
 
 def read_entry(sha: str, cwd: Path) -> Entry | None:
@@ -166,17 +183,31 @@ def read_entry(sha: str, cwd: Path) -> Entry | None:
         return None
 
     parents = run_git("rev-list", "--parents", "-n", "1", sha, cwd=cwd).split()[1:]
+    branch_commits: list[tuple[str, str]] = []
     candidates: list[tuple[str, str, str, str]] = []
     if len(parents) > 1:
-        candidates = collect_merge_candidates(parents[0], parents[1:], cwd)
-        if not candidates:
+        branch_commits = collect_branch_commits(parents[0], parents[1:], cwd)
+        for candidate_subject, candidate_message in branch_commits:
+            parsed = parse_subject(candidate_subject)
+            if parsed is not None:
+                category, text = parsed
+                candidates.append(
+                    (category, text, candidate_subject, candidate_message)
+                )
+
+        if candidates:
+            best_priority = min(CATEGORY_PRIORITY[c[0]] for c in candidates)
+            category, text, source, source_message = [
+                candidate
+                for candidate in candidates
+                if CATEGORY_PRIORITY[candidate[0]] == best_priority
+            ][-1]
+        elif CODEX_BRANCH_RE.search(message) and branch_commits:
+            source, source_message = branch_commits[-1]
+            category = "CHANGE"
+            text = sentence_case(strip_prefix(source) or source)
+        else:
             return None
-        best_priority = min(CATEGORY_PRIORITY[c[0]] for c in candidates)
-        category, text, source, source_message = [
-            candidate
-            for candidate in candidates
-            if CATEGORY_PRIORITY[candidate[0]] == best_priority
-        ][-1]
     else:
         parsed = parse_subject(subject)
         if parsed is None:
@@ -193,15 +224,9 @@ def read_entry(sha: str, cwd: Path) -> Entry | None:
     if not text:
         return None
 
-    chinese = None
-    for candidate_message in (message, source_message, *[c[2] for c in candidates]):
-        for line in candidate_message.splitlines():
-            match = CHINESE_RE.match(line)
-            if match:
-                chinese = match.group(1)
-                break
-        if chinese:
-            break
+    chinese = find_chinese(
+        [message, source_message, *[candidate[1] for candidate in branch_commits]]
+    )
 
     date = run_git("log", "-1", "--format=%cd", "--date=short", sha, cwd=cwd)
     return Entry(sha=sha, date=date, category=category, text=text, chinese=chinese)
