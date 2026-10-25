@@ -1,0 +1,51 @@
+---
+name: reproagent
+description: Use when the user explicitly requests ReproAgent to reproduce a Python bug, generate and verify a pytest regression, or inspect a recorded reproduction. Do not invoke implicitly for unrelated coding tasks.
+---
+
+# ReproAgent
+
+Invoke this Skill explicitly with `$reproagent` or through `/skills`. Only an explicit
+user request may start a paid ReproAgent run.
+
+ReproAgent turns a Python bug description into a pytest regression, runs it on the
+buggy version, verifies the evidence, repeats the failure independently and exports a
+replayable package. It uses its own configured model; this Skill only invokes the
+installed entry point and explains the recorded evidence.
+
+## Commands
+
+```text
+@@COMMAND_BLOCK@@
+```
+
+Optional run arguments: @@OPTIONAL_RUN_ARGUMENTS@@
+
+## Workflow
+
+1. `check` reports installation readiness and the credential source. It does not
+   authenticate or call a model.
+2. With an existing task JSON, read that file and immediately run the entry point.
+   Do not pre-read the target source or run extra environment probes; ReproAgent
+   performs its own preflight.
+3. For a natural-language bug, prepare an issue file and task JSON under a fresh
+   ignored directory. Inspect the target project only enough to identify its
+   interpreter, target modules, source roots and test parent. Ask for genuinely
+   missing expected behavior or environment; do not invent them.
+4. Use a fresh output directory for every run. Pass the target project's
+   interpreter in `language.python`, not ReproAgent's tool interpreter.
+5. Inspect the output after the process completes, including nonzero exits.
+   Report status, evidence level, stop reason and the artifact directory.
+
+## Boundaries
+
+- Do not read, print, copy or ask for credentials. The launcher selects the
+  configured environment variable or an existing local credential source.
+- Do not install target dependencies, start services, edit target business code,
+  or expose fixed patches/tests to generation input.
+- Do not rerun a failed task to hide a failure. ReproAgent applies its own finite
+  corrections and budgets.
+- `DONE` alone does not prove a fixed-version validation. Only
+  `DIFFERENTIAL_VALIDATED` proves the supplied fixed version passed.
+- Generated tests and target code run with the current user's permissions. This
+  is file-copy isolation, not a security sandbox.
