@@ -88,8 +88,8 @@ def test_exhausted_view_never_invites_an_impossible_read(exhausted):
 
 def test_hint_cannot_skip_an_undeliverable_first_catalog_entry():
     a, b = sorted((card('first'), card('second')), key=lambda c: c.id)
-    first = replace(a, name='名' * 64, description='述' * 160)
-    second = replace(b, name='short', description='short')
+    first = replace(a, description='述' * 160)
+    second = replace(b, description='short')
     view = ExperienceCatalogView(ExperienceSnapshot('ready', 'hash', (first, second)))
     state = ExperienceHintState(True)
     state.observe({'kind': 'tool_error'})

@@ -141,7 +141,7 @@ def test_fallback_synthesizes_a_draft_after_a_rejected_task(tmp_path, projects, 
     from reproagent.experience import load_experience_snapshot
     snapshot = load_experience_snapshot(library)
     assert snapshot.state == "ready"
-    assert [card.name for card in snapshot.cards] == ["fallback draft lesson"]
+    assert [card.description for card in snapshot.cards] == ["when setup rejects a path"]
     events, errors = store.read_events()
     assert not errors
     review_event = next(event for event in events if event.kind == "experience.review")
@@ -223,7 +223,7 @@ def test_draft_review_writes_a_card_after_the_result_is_saved(tmp_path, projects
     view = ExperienceCatalogView(snapshot)
     page = view.list("framework")
     assert page["code"] == "ready"
-    assert [item["name"] for item in page["items"]] == ["check path type"]
+    assert [item["description"] for item in page["items"]] == ["when a fixture rejects a path object"]
     card_id = page["items"][0]["id"]
     detail = view.read(card_id)
     assert detail["description"] == "when a fixture rejects a path object"
@@ -356,7 +356,7 @@ def test_rejected_candidate_draft_is_still_reviewed_and_written(tmp_path, projec
     from reproagent.experience import load_experience_snapshot
     snapshot = load_experience_snapshot(library)
     assert snapshot.state == "ready" and snapshot.cards
-    card = next(card for card in snapshot.cards if card.name == "unknown fixture is not a reproduction")
+    card = next(card for card in snapshot.cards if card.description == "when a candidate test errors on an unknown fixture before the target")
     assert card.category == "framework" and card.tags == ("pytest",)
     assert card.summary == "候选测试在目标前因未知 fixture 报错，不能证明问题已复现；该教训仍可复用"
     assert card.detail == "先核对 fixture 是否存在；候选被判定无效不等于问题已复现"

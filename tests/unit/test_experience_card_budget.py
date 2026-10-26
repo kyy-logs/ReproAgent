@@ -10,7 +10,7 @@ from tests.unit.test_learning_validation_errors import capsule, proposal
 
 
 def sized_card(size):
-    base = replace(card(), name='检索入口', description='定位入口困难时使用。', detail='事实：读取范围被拒。')
+    base = replace(card(), description='定位入口困难时使用。', detail='事实：读取范围被拒。')
     overhead = len(canonical_bytes(exp._card_record(base)))
     return replace(base, detail=base.detail + 'x' * (size - overhead))
 
@@ -41,7 +41,7 @@ def test_learning_size_error_has_exact_safe_numbers(capsule):
     response['experience']['detail'] = '敏感原文不可回显' * 700
     expected = {
         'id': exp._identifier('workflow', response['experience']['tags'], response['experience']['summary']),
-        **{k: v for k, v in response['experience'].items() if k != 'evidence_ids'},
+        **{k: v for k, v in response['experience'].items() if k not in ('evidence_ids', 'name')},
         'source_task_id': material.source_task_id,
         'evidence_refs': [{'path':ref.path,'content_hash':ref.content_hash,'start_line':ref.start_line,'end_line':ref.end_line}
                           for ref in material.evidence_map.values()]}

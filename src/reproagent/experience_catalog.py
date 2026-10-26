@@ -19,7 +19,6 @@ DETAIL_READS = 2
 @dataclass(frozen=True, slots=True)
 class CatalogEntry:
     id: str
-    name: str
     description: str
 
 
@@ -28,8 +27,7 @@ def _short(text: str, limit: int) -> str:
 
 
 def entry_from_card(card) -> CatalogEntry:
-    return CatalogEntry(card.id, card.name or _short(card.summary, 64),
-                        card.description or _short(card.summary, 160))
+    return CatalogEntry(card.id, card.description or _short(card.summary, 160))
 
 
 class ExperienceCatalogView:
@@ -88,8 +86,7 @@ class ExperienceCatalogView:
         code = 'ready' if cards[start:] else 'empty'
         for position, card in enumerate(cards[start:start + PAGE_ITEMS], start=start):
             entry = asdict(entry_from_card(card))
-            entry.update(name=self._safe(entry['name']), description=self._safe(entry['description']),
-                         category=card.category)
+            entry.update(description=self._safe(entry['description']), category=card.category)
             proposed_cursor = '0' * 32 if position + 1 < len(cards) else None
             draft = result(code, (*items, entry), proposed_cursor)
             if len(canonical_bytes(draft)) > cap: break
@@ -128,7 +125,7 @@ class ExperienceCatalogView:
 
     def _detail(self, card):
         entry = entry_from_card(card)
-        return {'id': card.id, 'name': self._safe(entry.name), 'description': self._safe(entry.description),
+        return {'id': card.id, 'description': self._safe(entry.description),
                 'summary': self._safe(card.summary), 'detail': self._safe(card.detail)}
 
     def read(self, identifier: str, *, max_bytes: int = DETAIL_BYTES) -> dict:

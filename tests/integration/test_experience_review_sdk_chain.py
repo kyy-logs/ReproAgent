@@ -55,10 +55,9 @@ def test_sdk_same_message_error_becomes_a_reviewed_stored_card(tmp_path, project
     assert result.status.value == 'DONE'
     assert controller.learning_result.code == 'written'
     assert len(reviews) == 1
-    assert 'name <=64 characters' in prompts[0]
     assert 'description <=160 characters' in prompts[0]
-    assert 'Prefer name <=32 characters' in prompts[0]
     assert 'description 80-120 characters' in prompts[0]
+    assert 'name <=' not in prompts[0]
     assert reviews[0]['draft']['source_ids'][0].startswith('L')
     assert load_experience_snapshot(request.experience_file).cards[0].category == 'workflow'
     captured = controller.experience_service.exploration
@@ -179,4 +178,4 @@ def test_completion_draft_enters_review_and_writes_readable_index(tmp_path, proj
     page = view.list('workflow')
     assert page['code'] == 'ready' and page['items']
     card_id = page['items'][0]['id']
-    assert view.read(card_id)['name'] == 'Check the frozen path'
+    assert view.read(card_id)['description'] == 'when Read rejects a relative path before the target runs'

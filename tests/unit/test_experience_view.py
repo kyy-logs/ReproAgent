@@ -49,7 +49,7 @@ def test_two_successful_details_per_task():
 
 def test_utf8_visible_budget_is_shared():
     from reproagent.core.serialization import canonical_bytes
-    large = card(summary="pytest " + "x" * 700, detail="y" * 500)
+    large = card(summary="pytest " + "x" * 1500, detail="y" * 1500)
     fixed = view(large)
     summaries = fixed.select("pytest", ())
     assert summaries

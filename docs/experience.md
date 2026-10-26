@@ -52,7 +52,7 @@
 
 ## 什么时候读
 
-准备阶段只读取并冻结库，不把所有正文送入模型。有非空可用库时，探索 Agent 必须先根据当前输入选择分类并调用一次 `list_experiences(category)`；完整结果交付后，自主决定是否翻页、换分类或读取正文。短索引的 description 说明什么时候需要加载；无需先出现错误码，无关键词硬过滤。模型从目录选择适用 ID，再调用 `read_experience(id)` 读取 name/description/summary/detail。不新增后续探索阶段约束，不自动匹配注入摘要。
+准备阶段只读取并冻结库，不把所有正文送入模型。有非空可用库时，探索 Agent 必须先根据当前输入选择分类并调用一次 `list_experiences(category)`；完整结果交付后，自主决定是否翻页、换分类或读取正文。短索引的 description 说明什么时候需要加载；无需先出现错误码，无关键词硬过滤。模型从目录选择适用 ID，再调用 `read_experience(id)` 读取 description/summary/detail。不新增后续探索阶段约束，不自动匹配注入摘要。
 
 三个分类是 framework（框架/环境条件）、model（断言或生成错误）、workflow（探索与操作教训）。沿用本次已有基线：每页最多 24 条、完整 UTF-8 JSON 最多 8192 字节；更多条目通过 next_cursor 分页。每任务最多成功浏览 12 页，目录响应累计最多 16384 字节；正文最多成功读取两次，单次完整响应最多 8192 字节。重复浏览同页也计入配额，契约修订不重置。目录完整成功返回过的 ID 才有正文读取权限；超限明确返回原因，不静默截断或授权不可见 ID。
 
@@ -68,7 +68,7 @@
 
 主探索和模型资源关闭 → 导出成功或失败 → 最终 TaskResult 落盘 → ExperienceService 独立提炼 → 程序验证并追加 → 返回原结果。
 
-模型仅提炼 category/tags/name/description/summary/detail 和 1–3 个材料 EID；程序生成经验 ID、来源任务标识及哈希/行号引用，自动写库。新卡只给下一任务使用，不改当前任务判定、耗时或已发布包。DONE、BLOCKED、NEEDS_INFORMATION、EXHAUSTED、FAILED 只有存在可信完整材料才学习。取消、只读、库损坏、无可用材料均不发学习请求；模型也可返回空经验。
+模型仅提炼 category/tags/description/summary/detail 和 1–3 个材料 EID；程序生成经验 ID、来源任务标识及哈希/行号引用，自动写库。新卡只给下一任务使用，不改当前任务判定、耗时或已发布包。DONE、BLOCKED、NEEDS_INFORMATION、EXHAUSTED、FAILED 只有存在可信完整材料才学习。取消、只读、库损坏、无可用材料均不发学习请求；模型也可返回空经验。
 
 学习使用相同模型配置、全新的 SDK 客户端和独立上下文，无完整探索聊天记录、无工具。工作预算最多 30 秒，一次逻辑请求、最多 3 次 HTTP 尝试，不做格式纠正；资源关闭另允许最多 1 秒。共享取消信号；主预算耗尽不会自动耗尽学习预算。有限本地文件操作采用协作式期限检查。
 
@@ -97,13 +97,13 @@ experiences/
 experiences.lock
 ```
 
-每分类正文是一个 JSON 对象 `{"schema_version":2,"category":"workflow","items":[...]}`，合并存储多条卡，不为每坑创建文件。每卡保留 id/category/tags/summary/detail/source_task_id/evidence_refs 和可选 triggers，新卡增加 name（1–64 字符）/description（1–160 字符）。完整卡最多 4096 字节，三个正文总计最多 1 MiB。
+每分类正文是一个 JSON 对象 `{"schema_version":2,"category":"workflow","items":[...]}`，合并存储多条卡，不为每坑创建文件。每卡保留 id/category/tags/summary/detail/source_task_id/evidence_refs 和可选 triggers，新卡增加 description（1–160 字符）。完整卡最多 4096 字节，三个正文总计最多 1 MiB。
 
-index.json 为可丢弃缓存，包含 schema_version=1/category/source_hash/items，items 只有 id/name/description。正文是唯一事实源，索引由程序生成，不由模型独立维护。缺失、过期、损坏或与正文投影不符时在内存重建，记录 experience.index；只读任务不修写缓存。正文已写入但缓存失败仍返回 written，同时记录 index_update_failed；后续任务从正文恢复。缓存总上限 1 MiB。
+index.json 为可丢弃缓存，包含 schema_version=1/category/source_hash/items，items 只有 id/description。正文是唯一事实源，索引由程序生成，不由模型独立维护。缺失、过期、损坏或与正文投影不符时在内存重建，记录 experience.index；只读任务不修写缓存。正文已写入但缓存失败仍返回 written，同时记录 index_update_failed；后续任务从正文恢复。缓存总上限 1 MiB。
 
-根旁路锁保护快照读取和追加，锁内重读、校验、去重、限额测量后原子替换分类正文。任务中的库视图固定，新卡给下一任务使用。损坏正文关闭该任务经验功能，不覆盖旧数据、不影响主复现。只追加和同 ID 精确去重，不合并、衰减、删除或更新旧卡；name/description 不改变现有 ID 算法。triggers 仍从引用的实际受控事实生成，作为来源元数据保留，不控制目录可见性。程序验证来源，不保证建议语义或效果。
+根旁路锁保护快照读取和追加，锁内重读、校验、去重、限额测量后原子替换分类正文。任务中的库视图固定，新卡给下一任务使用。损坏正文关闭该任务经验功能，不覆盖旧数据、不影响主复现。只追加和同 ID 精确去重，不合并、衰减、删除或更新旧卡；description 不改变现有 ID 算法。triggers 仍从引用的实际受控事实生成，作为来源元数据保留，不控制目录可见性。程序验证来源，不保证建议语义或效果。
 
-experience_file 配置兼容旧 `.json` 单文件和新目录。旧 schema=1 可读；旧卡无 name/description 时从 summary 派生简短目录文字，保留原卡和 ID。只读不升级；第一次有效追加时文件模式在锁内升级为 schema=2，旧二进制不保证能读新版格式。两种路径同时存在时默认使用新目录，显式指定旧路径仍使用旧库。
+experience_file 配置兼容旧 `.json` 单文件和新目录。旧 schema=1 可读；旧卡无 description 时从 summary 派生简短目录文字，保留原卡和 ID。只读不升级；第一次有效追加时文件模式在锁内升级为 schema=2，旧二进制不保证能读新版格式。两种路径同时存在时默认使用新目录，显式指定旧路径仍使用旧库。
 
 可一次性迁移到尚不存在的目录，源文件保持不变：
 
@@ -129,9 +129,9 @@ reproagent experience migrate path/to/old.json path/to/experiences
 
 用户继续审查原 report.md；限制部分只列实际成功读取的经验 ID，不复制库或新增审查文档。report.json 有 experience_read_ids，CLI 的 learning 字段单独说明 code、duration、HTTP、usage、已知费用小计与未知费用次数。学习失败不改主退出码；诊断不一定代表经验写入。
 
-学习请求明确要求一个 JSON 对象，兼容 `response_format=json_object` 的提示词约束。非空 experience 必须有 category、tags、name、description、summary、detail、evidence_ids 七个字段；正文提到 EID 不能替代 evidence_ids 数组，程序不从正文猜引用或自动补字段。HTTP 拒绝或三次网络尝试耗尽返回 `provider_error`。每个 `model.attempt` 在收到 HTTP 响应时记录 `http_status_code`，没收到响应则不虚构状态码。
+学习请求明确要求一个 JSON 对象，兼容 `response_format=json_object` 的提示词约束。非空 experience 必须有 category、tags、description、summary、detail、evidence_ids 六个字段；正文提到 EID 不能替代 evidence_ids 数组，程序不从正文猜引用或自动补字段。HTTP 拒绝或三次网络尝试耗尽返回 `provider_error`。每个 `model.attempt` 在收到 HTTP 响应时记录 `http_status_code`，没收到响应则不虚构状态码。
 
-校验失败单独诊断，保留主任务结果，不写入坏卡、不追加纠错请求。字段级长度错误只返回受控的 `field_errors`（field、actual_length、limit），它同时出现在 `experience.learning` 的 `LearningResult` 中；不会把 165 字符的旧输出截短后入库，也不会用第二次请求替换第一次审查。`name`/`description` 的硬上限仍是 64/160 个 Python 字符，提示词另外建议 `name <=32`、`description 80-120` 留出余量，但软目标不构成新的拒绝条件：
+校验失败单独诊断，保留主任务结果，不写入坏卡、不追加纠错请求。字段级长度错误只返回受控的 `field_errors`（field、actual_length、limit），它同时出现在 `experience.learning` 的 `LearningResult` 中；不会把 165 字符的旧输出截短后入库，也不会用第二次请求替换第一次审查。`description` 的硬上限仍是 160 个 Python 字符，提示词另外建议 `description 80-120` 留出余量，但软目标不构成新的拒绝条件：
 
 | learning.code | 含义 |
 | --- | --- |
@@ -139,8 +139,8 @@ reproagent experience migrate path/to/old.json path/to/experiences
 | invalid_extra_fields | 多出未允许的字段，不把任意额外字段名写进日志 |
 | invalid_structure | 顶层/experience 对象结构错误 |
 | invalid_json | 无法解析为严格 JSON 对象 |
-| invalid_fields | 分类、标签、摘要或详情类型/取值无效；name/description 长度错误不再折叠到这里 |
-| invalid_field_length | `name` 超过 64 字符或 `description` 超过 160 字符；field_errors 最多两项，每项只有 field/actual_length/limit，不携带字段值或模型原文。按脱敏后的 Python 字符数计算，中文不按 UTF-8 字节计算 |
+| invalid_fields | 分类、标签、摘要或详情类型/取值无效；description 长度错误不再折叠到这里 |
+| invalid_field_length | `description` 超过 160 字符；field_errors 最多一项，只有 field/actual_length/limit，不携带字段值或模型原文。按脱敏后的 Python 字符数计算，中文不按 UTF-8 字节计算 |
 | invalid_evidence_ids | 引用 ID 不存在、重复、数量或类型不合法 |
 | invalid_evidence_changed | 冻结证据文件、哈希、行号或 ID 无法再验证 |
 | invalid_card_size | 最终卡片超过 4096 字节；needed_bytes/limit_bytes/exceeded_bytes 给出实际大小、上限和超出量 |

@@ -54,7 +54,6 @@ class ExperienceCard:
     source_task_id: str
     evidence_refs: tuple[EvidenceRef, ...]
     triggers: tuple[ExperienceTrigger, ...] = ()
-    name: str = ''
     description: str = ''
 
 
@@ -63,8 +62,7 @@ def _card_record(card):
     data = asdict(card)
     if not card.triggers:
         data.pop("triggers")
-    if not card.name and not card.description:
-        data.pop('name')
+    if not card.description:
         data.pop('description')
     return data
 
@@ -97,8 +95,8 @@ class LearningResult:
     field_errors: tuple[dict, ...] = ()
 
 
-PROPOSAL_FIELDS = frozenset({'category', 'tags', 'name', 'description', 'summary', 'detail', 'evidence_ids'})
-CATALOG_FIELD_LIMITS = {'name': 64, 'description': 160}
+PROPOSAL_FIELDS = frozenset({'category', 'tags', 'description', 'summary', 'detail', 'evidence_ids'})
+CATALOG_FIELD_LIMITS = {'description': 160}
 LEARNING_VALIDATION_CODES = frozenset({'invalid_json', 'invalid_structure', 'invalid_missing_fields',
     'invalid_extra_fields', 'invalid_evidence_ids', 'invalid_evidence_changed', 'invalid_fields',
     'invalid_field_length', 'invalid_card_size'})
@@ -150,7 +148,20 @@ def _normalized(text):
     return " ".join(text.casefold().split())
 
 
+#: 64-bit identity suffix.  The full SHA-256 remains the legacy compatibility
+#: form only; new cards stay short enough to read in a catalog page.
+EXPERIENCE_ID_HEX = 16
+
+
 def _identifier(category, tags, summary, triggers=()):
+    data = {"category": category, "tags": sorted(set(_normalized(tag) for tag in tags)),
+        "summary": _normalized(summary)}
+    if triggers:
+        data["triggers"] = [asdict(t) for t in checked_triggers(triggers)]
+    return "exp_" + canonical_hash(data)[:EXPERIENCE_ID_HEX]
+
+
+def _legacy_identifier(category, tags, summary, triggers=()):
     data = {"category": category, "tags": sorted(set(_normalized(tag) for tag in tags)),
         "summary": _normalized(summary)}
     if triggers:
@@ -160,15 +171,17 @@ def _identifier(category, tags, summary, triggers=()):
 
 def _card(data, *, check_size=True):
     fields = {"id", "category", "tags", "summary", "detail", "source_task_id", "evidence_refs"}
-    if not isinstance(data, dict) or set(data) not in (fields, fields | {"triggers"}, fields | {'name', 'description'}, fields | {'triggers', 'name', 'description'}):
+    allowed = fields | {"triggers", "description", "name"}
+    if not isinstance(data, dict) or not fields <= set(data) <= allowed:
         raise ValueError("invalid experience fields")
-    catalog_name, description = data.get('name', ''), data.get('description', '')
-    if 'name' in data and (catalog_name, description) != ('', '') and any(type(value) is not str or not value.strip() or len(value) > limit
-                             for value, limit in ((catalog_name, CATALOG_FIELD_LIMITS['name']),
-                                                  (description, CATALOG_FIELD_LIMITS['description']))):
+    # ``name`` is a legacy catalog field: old cards may still contain it, but it
+    # is no longer stored or exposed.
+    description = data.get('description', '')
+    if description and (type(description) is not str or not description.strip()
+                        or len(description) > CATALOG_FIELD_LIMITS['description']):
         raise ValueError('invalid catalog metadata')
-    for name in ("id", "category", "summary", "detail", "source_task_id"):
-        if type(data[name]) is not str or not data[name].strip():
+    for field in ("id", "category", "summary", "detail", "source_task_id"):
+        if type(data[field]) is not str or not data[field].strip():
             raise ValueError("invalid experience text")
     if data["category"] not in CATEGORIES:
         raise ValueError("unknown experience category")
@@ -191,10 +204,14 @@ def _card(data, *, check_size=True):
     if len(set(checked)) != len(checked):
         raise ValueError("duplicate experience references")
     triggers = checked_triggers(data.get("triggers", ()))
-    if data["id"] != _identifier(data["category"], tags, data["summary"], triggers):
+    valid_ids = {
+        _identifier(data["category"], tags, data["summary"], triggers),
+        _legacy_identifier(data["category"], tags, data["summary"], triggers),
+    }
+    if data["id"] not in valid_ids:
         raise ValueError("experience id does not match normalized content")
     card = ExperienceCard(data["id"], data["category"], tuple(sorted(set(_normalized(t) for t in tags))),
-        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers, catalog_name, description)
+        data["summary"], data["detail"], data["source_task_id"], tuple(checked), triggers, description)
     if check_size:
         needed_bytes = len(canonical_bytes(_card_record(card)))
         if needed_bytes > CARD_BYTES:
@@ -473,7 +490,9 @@ def validate_experience(response, material, store, *, secrets=()):
     missing = PROPOSAL_FIELDS - set(proposed)
     if missing:
         raise LearningValidationError('invalid_missing_fields', missing_fields=missing)
-    if set(proposed) - PROPOSAL_FIELDS:
+    # ``name`` is accepted from older learning prompts but no longer stored or
+    # exposed; new prompts do not request it.
+    if set(proposed) - (PROPOSAL_FIELDS | {'name'}):
         raise LearningValidationError('invalid_extra_fields')
     ids = proposed["evidence_ids"]
     if not isinstance(ids, list) or not 1 <= len(ids) <= 3 or any(
@@ -502,14 +521,12 @@ def validate_experience(response, material, store, *, secrets=()):
     summary, detail = _redact(summary, secrets), _redact(detail, secrets)
     tags = [_redact(tag, secrets) for tag in tags]
     category = proposed["category"]
-    if any(type(proposed[key]) is not str or not proposed[key].strip() for key in ('name', 'description')):
+    if type(proposed['description']) is not str or not proposed['description'].strip():
         raise LearningValidationError('invalid_fields')
-    catalog_name, description = (_redact(proposed['name'], secrets),
-                                 _redact(proposed['description'], secrets))
+    description = _redact(proposed['description'], secrets)
     field_errors = tuple({'field': field, 'actual_length': len(value),
                           'limit': CATALOG_FIELD_LIMITS[field]}
-                         for field, value in (('name', catalog_name),
-                                              ('description', description))
+                         for field, value in (('description', description),)
                          if len(value) > CATALOG_FIELD_LIMITS[field])
     if field_errors:
         # Redaction can lengthen a field; the limit applies to what would be written.
@@ -519,8 +536,7 @@ def validate_experience(response, material, store, *, secrets=()):
         # Validate the proposal before adding program metadata.
         data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
             "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
-            "evidence_refs": [asdict(ref) for ref in refs],
-            'name': catalog_name, 'description': description}
+            "evidence_refs": [asdict(ref) for ref in refs], 'description': description}
         _card(data, check_size=False)
         triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
         tags = normative_tags(tags, triggers)

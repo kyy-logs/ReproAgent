@@ -15,9 +15,9 @@ def exp():
 
 
 def card(summary="advice", detail="Observe this only in the documented situation."):
-    key = {"category": "model", "tags": ["pytest"], "summary": " ".join(summary.casefold().split())}
-    return exp().ExperienceCard("exp_" + canonical_hash(key), "model", ("pytest",),
-        summary, detail, "round-task@0123",
+    normalized = " ".join(summary.casefold().split())
+    return exp().ExperienceCard(exp()._identifier("model", ("pytest",), normalized), "model",
+        ("pytest",), summary, detail, "round-task@0123",
         (EvidenceRef("learning/evidence.jsonl", "a" * 64, 1, 1),))
 
 
@@ -219,8 +219,12 @@ def test_a_run_that_names_no_library_uses_the_default_one(tmp_path, monkeypatch)
     from reproagent import cli
     from reproagent.core.serialization import parse_json
 
+    legacy = tmp_path / "legacy-experiences.json"
+    legacy.write_text('{"schema_version":1,"items":[]}', encoding="utf-8")
+    monkeypatch.setattr(exp(), "DEFAULT_EXPERIENCE_PATH", tmp_path / "experiences")
+    monkeypatch.setattr(exp(), "LEGACY_EXPERIENCE_PATH", legacy)
     monkeypatch.delenv(exp().EXPERIENCE_ENV, raising=False)
-    assert exp().default_experience_path() == Path.home() / ".reproagent" / "experiences.json"
+    assert exp().default_experience_path() == legacy
 
     scratch = tmp_path / "scratch.json"
     monkeypatch.setenv(exp().EXPERIENCE_ENV, str(scratch))

@@ -17,7 +17,7 @@ def test_catalog_lists_without_error_or_keyword_and_read_requires_display():
     assert fixed.read(card().id)['code'] == 'not_displayed'
     page = fixed.list('model')
     assert page['code'] == 'ready'
-    assert set(page['items'][0]) == {'id', 'category', 'name', 'description'}
+    assert set(page['items'][0]) == {'id', 'category', 'description'}
     assert page['items'][0]['category'] == 'model'
     assert 'SECRET_DETAIL' not in str(page)
     assert fixed.read(card().id)['detail'] == 'SECRET_DETAIL'
@@ -52,7 +52,7 @@ def test_catalog_success_and_detail_limits_are_task_owned():
 
 
 def test_catalog_actual_utf8_byte_budget_and_whole_chinese_entries():
-    cards = [replace(card(str(i)), name='入口定位', description='读取实现仍不能定位入口时加载。' * 8) for i in range(25)]
+    cards = [replace(card(str(i)), description='读取实现仍不能定位入口时加载。' * 8) for i in range(25)]
     fixed = view(cards)
     consumed = 0
     cursor = None

@@ -14,7 +14,7 @@ def test_directory_write_and_category_index(tmp_path):
     body = json.loads((root / 'model/experiences.json').read_text())
     index = json.loads((root / 'model/index.json').read_text())
     assert body['schema_version'] == 2 and body['category'] == 'model'
-    assert set(index['items'][0]) == {'id', 'name', 'description'}
+    assert set(index['items'][0]) == {'id', 'description'}
     snapshot = exp.load_experience_snapshot(root)
     assert snapshot.state == 'ready' and snapshot.cards[0].id == card().id
     assert not (root / 'workflow/experiences.json').exists()

@@ -15,10 +15,10 @@ def test_directory_browse_load_publish_and_independent_learning(tmp_path, projec
     current = load_experience_snapshot(request.experience_file)
     assert len(old.cards) == 1 and len(current.cards) == 2
     added = next(c for c in current.cards if c.id not in {c.id for c in old.cards})
-    assert added.name and added.description and added.evidence_refs
+    assert added.description and added.evidence_refs
     assert controller.experience_service.view.read(added.id)['code'] in ('unknown_id', 'read_limit')
     index = json.loads((request.experience_file / 'model/index.json').read_text())
-    assert any(c['id'] == added.id and set(c) == {'id', 'name', 'description'} for c in index['items'])
+    assert any(c['id'] == added.id and set(c) == {'id', 'description'} for c in index['items'])
     exploration = [p for p in seen if p.get('tools')]
     assert 'HISTORICAL_HINT' not in json.dumps(exploration[0]['messages'])
     assert 'HISTORICAL_HINT' not in json.dumps(exploration[1]['messages'])

@@ -18,7 +18,7 @@ def material_setup(tmp_path, projects, facts):
 
 def proposed(ids):
     return {"experience": {"category": "model", "tags": ["pytest"],
-        "name": "Check assertion semantics", "description": "When choosing an assertion after observing an exception.",
+        "description": "When choosing an assertion after observing an exception.",
         "summary": "Confirm expected behaviour before an exception assertion.",
         "detail": "Condition: an exception is observed. Observation: the test failed. Read current evidence before choosing an assertion.",
         "evidence_ids": ids}}
@@ -85,7 +85,7 @@ def test_learning_ids_are_mapped_by_program(tmp_path, projects, facts):
     card = exp().validate_experience(proposed([identity]), material, store)
     assert card.source_task_id == material.source_task_id
     assert card.evidence_refs == (material.evidence_map[identity],)
-    assert card.id.startswith("exp_") and len(card.id) == 68
+    assert card.id.startswith("exp_") and len(card.id) == 20
 
 
 @pytest.mark.parametrize("mutation", ["unknown_id", "duplicate_id", "category", "extra", "oversize", "changed_source"])
