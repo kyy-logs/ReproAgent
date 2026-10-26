@@ -37,11 +37,11 @@ Generating a test is easy. Proving that it calls the target code, asserts the ta
 ## News
 
 <!-- BEGIN NEWS -->
+- **2026-10-25 · `CHANGE`** — Trim redundant top navigation [fe8360c](https://github.com/kyy-logs/ReproAgent/commit/fe8360cb77ea44522ae06a8915f317a6b1f59e1a)
+- **2026-10-25 · `FIX`** — Repair Python fallback installer and cover setup in CI [6a40d02](https://github.com/kyy-logs/ReproAgent/commit/6a40d027c521f9152b1546166a90cd23c2b5789b)
 - **2026-10-25 · `FEAT`** — Windows one-click setup for Claude Code / Codex: finds or installs Python 3.11+, creates a private tool environment, writes user-level entries, runs setup checks, and adds a read-only target-project check. [Install guide](docs/windows-install.md)
 - **2026-10-25 · `DOCS`** — New product page and user-facing READMEs in English and Chinese. [Product page source](site/index.html)
 - **2026-10-15 · `FEAT`** — Verifier feedback now carries the cited evidence text and structured evidence gaps, making failures easier to locate. [Output notes](docs/technical-highlights-and-output.md)
-- **2026-10-13 · `FEAT`** — The experience library supports task-scoped catalog browsing and on-demand loading. [Experience library](docs/experience.md)
-- **2026-10-10 · `FEAT`** — Local trace viewer with a step tree, timeline and tool-call inspection; nothing is uploaded. [Observability](docs/observability.md)
 <!-- END NEWS -->
 
 [Full changelog →](docs/NEWS.md)
