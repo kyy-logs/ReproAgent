@@ -53,4 +53,35 @@ exit 0。回执为 `ci-and-path-tests.log/xml/exit`。没有再跑第二遍整�
 `ci-and-path-tests.log/xml/exit` 和 `final-validation.json`。
 指纹排除测试生成的 `*.egg-info` 元数据和字节码。
 
-尚未执行托管CI；未调用模型、未执行真实Python安装、未提交、合并或push。
+以上为首轮验证记录；该阶段尚未执行托管CI、提交、合并或push。未调用模型，未执行真实Python安装。
+## 2026-10-26 合并 main 后的完整验证
+
+合入 `origin/main@bb7177a`，保留其 CI 权限、并发与超时设置，以及环境测试修复。
+最终代码快照为 `d226a61`。README 标题在 main 中变更，原打包测试因此误报；
+改为解析 wheel 的 METADATA 正文，与实际 README 按行完整比较，兼容换行符差异。
+该打包测试单例验证通过，随后纳入下述整仓回归。
+
+早期合并复测遇到共享环境的 AgentScope 依赖缺失，已停止，结果不计入验收。
+最终使用新建的独立虚拟环境，完整安装项目 `[dev]` 依赖，不引用共享环境的依赖目录。
+导入来源已核验：产品来自本修复 worktree，AgentScope 2.0.9 来自独立环境。
+测试 TEMP、TMP 和 basetemp 位于 E 盘仓库外；子进程使用同一依赖环境。
+
+最终命令：
+
+```powershell
+& 'E:\ReproAgent\.local\installer-merge-validation-20261025\Scripts\python.exe' -m pytest -q `
+  --basetemp 'E:\ReproAgent-test-temp\installer-merge-20261025\final-full' `
+  --junitxml 'E:\ReproAgent\repro-results\installer-fallback-ci-merge-20261025\final-full\tests.xml'
+```
+
+测试进程设置 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`，隔离已知 PowerShell 模块路径冲突，
+并清除模型 API key 环境变量。未调用真实模型、未执行真实 Python 安装器。
+
+结果：**1429 passed / 9 skipped / 0 failed / 0 errors**，1205.48秒，**exit 0**。
+9项跳过的原因均为 Windows 下的符号链接权限或 POSIX shell 可用性。
+396份已跟踪文件在执行前后逐一核对 SHA-256，无变化。
+
+回执：`E:/ReproAgent/repro-results/installer-fallback-ci-merge-20261025/final-full/`，
+包含 `tests.log/xml/exit`、`source-commit.txt`、`source-status.txt`、`dependencies.json`、
+`provenance.json` 和 `tracked-hashes.json`。早期中断记录分目录保留，不与完整成功运行混算。
+托管 CI 由推送触发，其结果应另行核对。
