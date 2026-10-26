@@ -1,5 +1,6 @@
 import asyncio
 import json
+from email.parser import Parser
 import os
 import subprocess
 import sys
@@ -68,7 +69,9 @@ print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':e
     assert str(checkout / 'src') not in json.dumps(spec)
     with zipfile.ZipFile(wheel) as archive:
         metadata = archive.read(next(n for n in archive.namelist() if n.endswith('/METADATA'))).decode()
-    assert 'Known limitations' in metadata
+    description = Parser().parsestr(metadata).get_payload()
+    readme = (checkout / 'README.md').read_text(encoding='utf-8')
+    assert description.strip().splitlines() == readme.strip().splitlines()
 
 
 def target_python(checkout, tmp_path):
