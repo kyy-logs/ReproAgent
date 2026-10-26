@@ -5,6 +5,8 @@
   "issue_file": "../demo-project/issue.md",
   "experience_file": "../.local/experiences",
   "learn_experience": true,
+  "experience_mode": "draft_review",
+  "experience_draft_fallback": false,
   "language": {
     "python": "C:/path/to/project/.venv/Scripts/python.exe",
     "target_modules": [

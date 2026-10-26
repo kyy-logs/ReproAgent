@@ -1,57 +1,24 @@
 # ReproAgent：问题与挑战详解
 
-修订日期：2026-10-14。保留此前筛选的 10 项，新增本轮讨论的预算软收敛挑战，按文档顺序编号为 P01–P11。
+修订日期：2026-10-24。按本轮筛选删除项目启动与环境前置问题，保留其余 11 项，按文档顺序编号为 P01–P11。
 
 本文结合聊天记录与当前仓库实现，展开说明问题为什么出现、我们怎么处理、具体机制和仍需验证的边界。用于解释机制的例子会明确标注；已有验收数据不视为本次重新运行的结果。
 
 | 编号 | 保留主题 |
 | --- | --- |
-| P01 | 仓库运行条件与环境阻塞 |
-| P02 | 探索决策和业务状态的控制权 |
-| P03 | 防止修改源码制造假复现 |
-| P04 | 修复版受阻与验证失败的区分 |
-| P05 | 独立上下文提炼、验证和写入经验 |
-| P06 | 写入词汇与检索情境不一致 |
-| P07 | 触发发生却找不到可用经验 |
-| P08 | 自愿浏览失效与首次目录浏览门禁 |
-| P09 | 分类、索引和正文的渐进式加载 |
-| P10 | 工具返回与实际模型输入交付之间的差距 |
-| P11 | 预算软阈值后的探索收敛与逐轮提醒 |
+| P01 | 探索决策和业务状态的控制权 |
+| P02 | 防止修改源码制造假复现 |
+| P03 | 修复版受阻与验证失败的区分 |
+| P04 | 独立上下文提炼、验证和写入经验 |
+| P05 | 写入词汇与检索情境不一致 |
+| P06 | 触发发生却找不到可用经验 |
+| P07 | 自愿浏览失效与首次目录浏览门禁 |
+| P08 | 分类、索引和正文的渐进式加载 |
+| P09 | 工具返回与实际模型输入交付之间的差距 |
+| P10 | 预算软阈值后的探索收敛与逐轮提醒 |
+| P11 | 完成由证据决定，验收失败必须提供可行动的缺口 |
 
-## P01：不是每个仓库都能启动，环境问题会掩盖 Agent 能力
-
-### 为什么这是一个前置挑战
-
-Bug 复现依赖的不只是仓库代码，还包括解释器、pytest、依赖、插件、构建产物、fixture，以及可能存在的数据库或外部服务。即便 Bug 描述和候选测试都正确，环境不满足条件也可能导致整个过程停在导入、收集或 setup 阶段。
-
-如果这些情况都被算作“Agent 没复现出来”，就无法判断是找错代码、生成错测试，还是目标环境根本不具备执行条件。因此，第一版明确支持 Python + pytest，并要求提供兼容、预先准备好的环境。
-
-### 需要把哪些事实固定下来
-
-| 事实 | 为什么需要 |
-| --- | --- |
-| 原版仓库及对应版本 | 确保运行的是出现问题的那一版，而非当前已修复版本 |
-| 目标 Python 解释器 | 工具自身 Python 与被复现项目的 Python 可以不同 |
-| pytest 和依赖集合 | 避免错误解释器、旧插件或依赖升级改变运行行为 |
-| source_roots、target_modules | 说明源码从哪里导入，核对目标来源 |
-| 候选安装目录与测试参数 | 兼容项目自身 fixture 和测试组织方式 |
-| 外部服务、构建或运行前提 | 明确当前环境是否具备真实触发条件 |
-
-准备阶段可以检查解释器是否启动、pytest 是否存在、目标模块是否能从指定源码导入；但这只证明基本准备就绪。某个测试需要特殊 fixture、编译扩展或服务连接时，仍可能在后续运行失败。
-
-### 一个具体例子
-
-以“旧版 Sphinx 配上不兼容的新版扩展”为例：pytest 可能在导入扩展时就报错，尚未运行候选要覆盖的功能。此时反复改断言没有意义，应先核对扩展版本与目标解释器。这是机制示例，不是本次新跑的一条实验。
-
-### 我们采取的边界
-
-当前优先把项目环境固定、错误来源说清楚。不能通过修改原版业务代码来迎合错误依赖，也不能把“预检 ready”解释成所有测试必然能跑。
-
-自动安装或修复依赖、启动中间件、生成完整容器环境可以继续演进，但目前不能按已实现能力描述。运行副本与进程管理同样不能被当作完整的敌对代码沙箱。
-
-依据：[环境准备与绑定](../swt-bench.md)、[兼容性说明](../compatibility.md)。
-
-## P02：探索由模型决定，任务是否完成由谁决定
+## P01：探索由模型决定，任务是否完成由谁决定
 
 ### 原先容易混在一起的两种控制权
 
@@ -92,9 +59,9 @@ Bug 复现依赖的不只是仓库代码，还包括解释器、pytest、依赖�
 
 这个分工让探索保持灵活，同时使“为什么接受”落到真实记录上。当前没有额外实现一套持续限制探索路径的阶段规则，不能把这种设想写成已上线能力。
 
-依据：[Controller](../../src/reproagent/core/controller.py)、[AgentContext 和 TaskResult](../../src/reproagent/core/models.py)、[架构设计](../superpowers/specs/2026-10-05-reproagent-architecture-design.md)。
+依据：[Controller](../../src/reproagent/core/controller.py)、[AgentContext 和 TaskResult](../../src/reproagent/core/models.py)、[架构设计](../archive/specs/2026-10-05-reproagent-architecture-design.md)。
 
-## P03：防止“修改源码，把测试改红”制造复现
+## P02：防止“修改源码，把测试改红”制造复现
 
 ### 需要防的并不只有直接编辑源文件
 
@@ -136,7 +103,7 @@ def test_empty_input():
 
 依据：[Workspace 发布与保护](../../src/reproagent/workspace.py)、[Runner](../../src/reproagent/runner.py)、[技术边界说明](../technical-highlights-and-output.md)。
 
-## P04：修复版执行受阻，与完整执行后的验证失败不是一回事
+## P03：修复版执行受阻，与完整执行后的验证失败不是一回事
 
 ### 为什么要单独记录修复版结果
 
@@ -174,9 +141,9 @@ fix_validation_status：blocked
 
 这不表示修复版通过了；DONE 表示当前主任务流程与交付完成，证据范围仍以等级和 fixed 状态为准。只有对照满足要求，才能提升到 DIFFERENTIAL_VALIDATED。
 
-依据：[修复版验证实现](../../src/reproagent/core/controller.py)、[对应回归](../../tests/unit/test_controller_execution_recovery.py)、[执行恢复验收](../reviews/2026-10-14-execution-diagnosis-recovery-acceptance.md)。
+依据：[修复版验证实现](../../src/reproagent/core/controller.py)、[对应回归](../../tests/unit/test_controller_execution_recovery.py)、[执行恢复验收](../archive/reviews/2026-10-14-execution-diagnosis-recovery-acceptance.md)。
 
-## P05：复用探索聊天总结，还是独立总结上下文
+## P04：复用探索聊天总结，还是独立总结上下文
 
 ### 当时争论的核心
 
@@ -228,7 +195,7 @@ fix_validation_status：blocked
 
 依据：[经验生命周期与材料](../experience.md)、[ExperienceService](../../src/reproagent/experience.py)、[学习材料整理](../../src/reproagent/learning_material.py)。
 
-## P06：学的是工具与流程教训，检索却只看 Bug 文本
+## P05：学的是工具与流程教训，检索却只看 Bug 文本
 
 ### 为什么同一个用例学出的卡也可能找不到
 
@@ -269,7 +236,7 @@ description：准备引用仓库源码修订契约，或收到引用范围未展
 
 依据：[当前读取流程](../experience.md)、[目录视图实现](../../src/reproagent/experience_catalog.py)。
 
-## P07：工具触发了，仍可能没有经验可以匹配
+## P06：工具触发了，仍可能没有经验可以匹配
 
 ### 当时看到的表面矛盾
 
@@ -301,9 +268,9 @@ description：准备引用仓库源码修订契约，或收到引用范围未展
 
 因此这一问题主要沉淀为两条经验：不能伪造错误条件提高命中率；不能把事件发生、内容交付和最终收益计成同一个成功指标。
 
-依据：[历史拒绝触发验收](../reviews/2026-10-12-experience-rejection-triggers-acceptance.md)、[候选受控错误](../../src/reproagent/core/candidate_service.py)、[当前经验流程](../experience.md)。
+依据：[历史拒绝触发验收](../archive/reviews/2026-10-12-experience-rejection-triggers-acceptance.md)、[候选受控错误](../../src/reproagent/core/candidate_service.py)、[当前经验流程](../experience.md)。
 
-## P08：自愿浏览在小预算下没有发生
+## P07：自愿浏览在小预算下没有发生
 
 ### 为什么仅加一句提醒不够
 
@@ -344,9 +311,9 @@ description：准备引用仓库源码修订契约，或收到引用范围未展
 
 它不保证模型随后读取正文，更不保证采用建议；这些需要单独记录。目录工具本身不调用模型，但选择工具的轮次与送入模型的目录文字仍使用已有动作和 token。
 
-依据：[首次浏览实现](../../src/reproagent/adapters/agentscope/experience_browse.py)、[首次浏览验收](../reviews/2026-10-13-experience-first-browse-acceptance.md)、[当前读取规则](../experience.md)。
+依据：[首次浏览实现](../../src/reproagent/adapters/agentscope/experience_browse.py)、[首次浏览验收](../archive/reviews/2026-10-13-experience-first-browse-acceptance.md)、[当前读取规则](../experience.md)。
 
-## P09：索引太长吃上下文，只给前 3–5 条又可能漏掉所需经验
+## P08：索引太长吃上下文，只给前 3–5 条又可能漏掉所需经验
 
 ### 最初的几个矛盾
 
@@ -401,9 +368,9 @@ index.json 由程序从正文派生，是可丢弃缓存。模型负责提出卡
 
 旧单文件库仍有兼容读取和显式迁移路径。需要注意，卡片引用的原任务证据并不会随库迁移一起复制；删掉原任务后，可读建议与可重新审计来源是两件事。
 
-依据：[存储与迁移说明](../experience.md)、[目录实现](../../src/reproagent/experience_catalog.py)、[存储实现](../../src/reproagent/experience_storage.py)、[分类目录验收](../reviews/2026-10-12-experience-catalog-acceptance.md)。
+依据：[存储与迁移说明](../experience.md)、[目录实现](../../src/reproagent/experience_catalog.py)、[存储实现](../../src/reproagent/experience_storage.py)、[分类目录验收](../archive/reviews/2026-10-12-experience-catalog-acceptance.md)。
 
-## P10：工具调用成功，不代表内容已经交给模型
+## P09：工具调用成功，不代表内容已经交给模型
 
 ### 原来容易提前认定成功的位置
 
@@ -447,9 +414,9 @@ index.json 由程序从正文派生，是可丢弃缓存。模型负责提出卡
 
 历史经验仍然是建议，不能因为已经交付就升级为本次原版源码引用，也不能改变本次需要满足的验收标准。
 
-依据：[首次浏览交付验收](../reviews/2026-10-13-experience-first-browse-acceptance.md)、[门禁状态实现](../../src/reproagent/adapters/agentscope/experience_browse.py)、[AgentScope 运行时](../../src/reproagent/adapters/agentscope/runtime.py)。
+依据：[首次浏览交付验收](../archive/reviews/2026-10-13-experience-first-browse-acceptance.md)、[门禁状态实现](../../src/reproagent/adapters/agentscope/experience_browse.py)、[AgentScope 运行时](../../src/reproagent/adapters/agentscope/runtime.py)。
 
-## P11：达到预算阈值后，应收窄探索，还是立即停止
+## P10：达到预算阈值后，应收窄探索，还是立即停止
 
 ### 最初的概念误区
 
@@ -495,7 +462,87 @@ index.json 由程序从正文派生，是可丢弃缓存。模型负责提出卡
 
 本次离线验收覆盖第 15/16/20/21 轮边界、同阶段刷新、跨阶段不归零、网络重试不多扣步、经验门禁共存、观测故障与历史不膨胀，集中回归 175 项通过。生成了离线 trace；浏览器 file: 安全策略阻止了点击验收，页面视觉/交互未验收。不能把这些结果写成模型实际更高效或四种资源阈值均已实现。
 
-依据：[软收敛设计](../superpowers/specs/2026-10-14-exploration-budget-convergence-design.md)、[实现计划](../superpowers/plans/2026-10-14-exploration-budget-convergence.md)、[本次验收](../reviews/2026-10-14-exploration-budget-convergence-acceptance.md)、[现有步骤预算](../../src/reproagent/core/budget.py)、[探索 middleware](../../src/reproagent/adapters/agentscope/middleware.py)、[阶段输入](../../src/reproagent/adapters/agentscope/runtime.py)。
+依据：[软收敛设计](../archive/specs/2026-10-14-exploration-budget-convergence-design.md)、[实现计划](../archive/plans/2026-10-14-exploration-budget-convergence.md)、[本次验收](../archive/reviews/2026-10-14-exploration-budget-convergence-acceptance.md)、[现有步骤预算](../../src/reproagent/core/budget.py)、[探索 middleware](../../src/reproagent/adapters/agentscope/middleware.py)、[阶段输入](../../src/reproagent/adapters/agentscope/runtime.py)。
+
+## P11：验收失败不能只给结论，还要说明原因和下一步
+
+### 这次讨论的问题
+
+讨论从“模型只能提出完成申请，Harness 才能提交完成状态”开始。用户进一步问：验收失败到底由谁决定，失败原因又由谁判断？
+
+这里有两个相互关联的挑战。第一，要防止模型把“测试变红”或“我认为已经复现”直接变成任务完成。第二，即使程序正确拒绝了候选，如果只返回“候选无效”“语义检查未通过”这样的结论，探索模型也可能不知道该改哪里，继续反复换假设、写测试，最终耗尽预算。
+
+P01 已说明探索决策与任务状态的控制权。本条进一步记录验收内部的分工，以及失败结果如何成为下一轮可用的 Observation。
+
+### 谁决定验收失败，谁解释失败原因
+
+Verifier 是验收组件，其中既有程序检查，也有独立上下文的模型审阅；它不是一个只靠模型投票的 Agent。
+
+| 角色 | 决定什么 | 结论边界 |
+| --- | --- | --- |
+| Verifier 中的程序检查 | 执行绑定、源码保护、进程清理、完整退出、探针、框架有效性、容量和引用等是否满足条件 | 可以确定对应检查是否满足；不能仅凭测试变红确定 Bug 语义正确 |
+| Verifier 调用的审阅模型 | 断言是否有来源依据、是否触发目标行为、失败是否对应 Issue | 提供语义判断、理由和引用；判断仍可能错误或不确定 |
+| Verifier 中的程序校验 | 模型回答格式是否合法、引用是否可用、成功声明是否满足要求 | 能约束和拒绝无效声明，但不能据此保证模型语义判断绝对正确 |
+| Controller | 根据 Verdict 和实际预算/状态，决定继续探索、独立重跑、请求信息或停止，并在完成条件满足后提交 DONE | 模型的修复建议不能覆盖程序门禁、预算和终止条件 |
+
+例如，命令超时由实际运行结果决定。程序可以返回 COMMAND_TIMEOUT，表示没有完整执行证据，不需要额外调用模型猜原因。只有程序前置条件满足，才进入独立语义审阅，判断失败是否属于本次 Issue。
+
+“独立上下文”意味着审阅请求只看程序整理的契约、候选和执行证据，不继承探索聊天；不要求一定使用另一种模型。历史踩坑建议也不能作为这次原版验收证据。
+
+### 现有完成门禁已经做了什么
+
+模型发布候选后，Controller 验证发布记录，安排实际执行和验收。第一次被认可只能支持 SINGLE_OBSERVATION；同一候选再次运行、再次验收，并由程序确认失败一致后，才能支持 REPEATED_OBSERVATION。提供兼容修复版且相同候选通过时，才能进一步支持 DIFFERENTIAL_VALIDATED。
+
+成功导出后由 Controller 提交 DONE；没有通过验收的模型文本不能直接提交该状态。DONE 不等于差分验证通过，证据等级与修复版状态仍应分开解释。
+
+因此，此次问题不是“缺少完成门禁”，而是“已有门禁拒绝后，部分反馈不够具体”。也不要求每条任务机械叠加五种验证：当前任务采用结构、环境、确定性检查和独立语义审阅，没有强制人工签署。
+
+### 为什么一句拒绝理由不够
+
+不同失败需要不同处理。候选语法错误应该改测试；预期行为缺少来源应该查原版依据；执行超时需要检查执行障碍或缩小候选；语义判断不确定则需要检查证据，不能直接当作已经证明 Bug 不存在。
+
+现有 Verdict 已有 reason、evidence_refs、unmet_checks、next_action、候选/契约/run 绑定和 execution_diagnostic。执行类诊断已经能保留具体事实，连续命令超时和证据超限去重也已有程序处理。
+
+修复前，部分其他失败分支主要返回自由文本，未提供结构化检查缺口。next_action 只有少数值被 Controller 特殊处理，不能把现状描述成已经实现通用的修复、重新规划和转交调度器。
+
+实施前，候选验收反馈经 Controller.feedback 按 8192 UTF-8 字节直接切片。即使完整 Verdict 保存得正确，送给下一轮的文本仍可能被截断，损失关键原因、建议或 JSON 完整性。这是记录存在与模型实际获得信息之间的又一个差距，与 P09 的交付问题相关。
+
+### 本轮提出的修复设计：一张具体的返工通知
+
+以下是设计中的说明示例，不是本轮新跑的真实案例：
+
+```text
+问题：尚未确认目标行为被触发。
+依据：审阅模型根据本次已提供的候选与运行证据，未确认目标触发。
+下一步：检查候选的实际调用路径及证据，必要时修改后重新提交。
+边界：这是审阅判断，不是程序证明目标行为绝对没有执行。
+```
+
+方案沿用 Verdict，增加可选的结构化 issues，提供程序预定义的错误码、实际检查、结论来源、说明、有效引用、程序测量和恢复建议。程序事实标记 program_check，语义判断标记 provider_claim。未知原因保持未知，不能为每次拒绝强行编造根因。
+
+模型不自由生成错误码：程序从已校验的回答和实际检查生成诊断。现有语义字段允许 false 表达不确定，因此映射为“未确认”比“已经证明不匹配”更准确。格式无效的回答也不能被包装成可信语义结论。
+
+Controller 保留现有终止与接受优先级，依据受控字段组织下一步反馈，不通过英文理由关键词猜测策略。恢复建议只说明值得尝试的方向，不保证一定可修复，也不自动放宽权限或增加重试。
+
+完整诊断仍保存到本次 Verdict；面向下一轮的反馈则使用有界投影，在 8 KiB 内优先保留主错误、失败检查、关联身份和建议。多余细节有序省略并明确标记，不直接截断 JSON。最小反馈或整个阶段输入仍装不下时，需要明确停止，而不是让模型在缺少关键材料的情况下继续。
+
+### 如何证明修复有效
+
+第一层检查每个实际拒绝分支是否产生有依据的结构化缺口，未执行的检查是否保持未执行，模型不确定性是否被保留。原版保护、来源、重复一致性和完成门禁仍需保持原拒绝效果。
+
+第二层验证旧记录兼容、新记录往返、中文多字节和大量引用的容量边界，并确认完整 Verdict 不会因反馈缩减而被改写。现有单次超时后继续、连续超时停止、证据超限去重和取消/清理优先级应继续生效。
+
+第三层使用真实 AgentScope SDK 加离线 MockTransport 捕获下一轮序列化请求，检查主错误、失败检查、建议和省略标记确实到达模型。仅在 trace 或内部字段看到它们不算完成交付验证。
+
+这些离线验证只证明机制和送达。是否减少盲目重试、提高真实 Bug 的复现率，仍需真实案例的重复对照，不能用一份设计或单次成功宣称解决。
+
+### 当前状态与文档用途
+
+2026-10-15 更新：结构化失败反馈已实现并合入本地 main；完整离线回归 1138 passed、6 skipped，合并后关键链路 22 passed in 44.11s。增加受控 issues、有界完整 JSON 反馈、Trace 和报告关联，原验收门禁保留。未运行真实模型或成功率 A/B，没有修改学习输入或自动经验库。详见[实施与验收记录](../archive/reviews/2026-10-14-verifier-failure-feedback-acceptance.md)。
+
+本文件记录我们设计 ReproAgent 时遇到的挑战，与运行后自动提炼的 framework/model/workflow 分类经验库用途不同。写入本文件不代表 Agent 下一任务会自动读取，也不代表该条经验已经通过程序验证写入经验库。
+
+依据：[Verifier](../../src/reproagent/core/verifier.py)、[Controller](../../src/reproagent/core/controller.py)、[Verdict](../../src/reproagent/core/models.py)、[失败反馈设计](../archive/specs/2026-10-14-verifier-failure-feedback-design.md)、[已有执行诊断设计](../archive/specs/2026-10-14-execution-diagnosis-recovery-design.md)。
 
 ---
 

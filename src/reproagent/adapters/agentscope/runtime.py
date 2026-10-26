@@ -76,7 +76,8 @@ class AgentScopeRuntime:
         store: the task store events are appended to, or None to record nothing.
     """
 
-    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None, secrets=(), experience_view=None) -> None:
+    def __init__(self, model, toolkit, gate: PhaseGate, context, *, system_prompt: str, store=None,
+                 secrets=(), experience_view=None, draft_session=None) -> None:
         require_agentscope()
         if not isinstance(system_prompt, str) or not system_prompt.strip():
             raise ValueError("an exploration phase needs the product's system prompt")
@@ -91,9 +92,13 @@ class AgentScopeRuntime:
         self.allowed_tools = tuple(tool.name for group in toolkit.tool_groups for tool in group.tools)
         if self.allowed_tools not in (TOOL_NAMES, TOOL_NAMES + EXPERIENCE_TOOL_NAMES):
             raise ValueError("unexpected exploration toolkit")
+        from .experience_hint import ExperienceHintState
+        hint_state = ExperienceHintState(draft_session is not None,
+            record=lambda payload: self._experience_record('experience.hint', payload))
         self.middleware = ExplorationMiddleware(context, gate, store, allowed_tools=self.allowed_tools,
             experience_event=self._experience_event if experience_view is not None else None,
-            browse_gate=self.browse_gate)
+            browse_gate=self.browse_gate, draft_session=draft_session, hint_state=hint_state,
+            experience_view=experience_view)
         self.middleware.record_browse()
         self._task: asyncio.Task | None = None
         # The trace is registered in front of the phase's own middleware, and only when
@@ -228,6 +233,10 @@ class AgentScopeRuntime:
             attributes = {"result_code":payload.get("code", "OBSERVED"), "experience_ids":payload.get("ids", [])}
             if "trigger" in payload:
                 attributes["experience_trigger"] = payload["trigger"]
+            if kind == 'experience.hint':
+                attributes['budget'] = {'next_call_index': payload.get('next_call_index')}
+                if payload.get('stop_reason'):
+                    attributes['stop_reason'] = payload['stop_reason']
             mark(kind, attributes=attributes)
         except Exception:
             pass  # No diagnostic write may alter the task's outcome.
@@ -324,6 +333,10 @@ class AgentScopeRuntime:
                 'state': self.browse_gate.state, 'reason': self.browse_gate.reason,
                 'required_first_action': 'list_experiences(category)' if self.browse_gate.state == 'pending' else '',
             }
+        if self.middleware.draft_session is not None:
+            notices = self.middleware.draft_session.sources.original_run_notices()
+            if notices:
+                data['learning_sources'] = notices
         # Redact before JSON encoding so keys containing quotes/newlines cannot corrupt
         # the message. Keep the original hash as the reference to frozen local evidence.
         def redact(value):
@@ -351,6 +364,8 @@ class AgentScopeRuntime:
         else:
             data['feedback'] = canonical_bytes(redact(feedback_object)).decode('utf-8')
         text = canonical_bytes(data).decode("utf-8")
+        if len(text.encode('utf-8')) > cap and data.pop('learning_sources', None) is not None:
+            text = canonical_bytes(data).decode('utf-8')
         while len(text.encode("utf-8")) > cap and data["history"]:
             data["history"].pop(0)
             text = canonical_bytes(data).decode("utf-8")
@@ -362,11 +377,17 @@ class AgentScopeRuntime:
 
     def _correction(self, failure: PhaseProtocolError) -> Msg:
         """The one hint a rejected response is answered with; the response itself is gone."""
+        notice = ''
+        if self.middleware.draft_session is not None:
+            from ...experience_sources import source_notice
+            identity = self.middleware.draft_session.register_source({'kind': 'protocol_error', 'code': failure.code})
+            if identity:
+                notice = source_notice(identity)
         return UserMsg(name="user", content=(
             "<system-reminder>Your previous response was rejected before any of it ran: "
             f"{failure.code}. Answer again with at most one tool call, its arguments a single complete "
             f"JSON object, and its name one of: {', '.join(self.allowed_tools)}. "
-            f"Diagnostic: {canonical_bytes(failure.details()).decode('utf-8')}</system-reminder>"))
+            f"Diagnostic: {canonical_bytes(failure.details()).decode('utf-8')}</system-reminder>" + notice))
 
     def _steps_remaining(self) -> int:
         return self.context.budget.limits.agent_steps - self.context.budget.steps_used

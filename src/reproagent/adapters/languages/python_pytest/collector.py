@@ -4,6 +4,27 @@ from reproagent.core.models import EvidenceRef, TestObservation
 from reproagent.core.serialization import bytes_hash, parse_json
 
 
+def _valid_assertion_display(payload):
+    """Return the optional display proof only in its exact bounded shape.
+
+    A probe is an untrusted file on disk like every other artifact.  An invalid
+    optional field is ignored, not allowed to make the whole observation unusable.
+    """
+    display = payload.get('assertion_display')
+    if display is None:
+        return None
+    if not isinstance(display, dict) or set(display) != {'provenance', 'object_ids'}:
+        return None
+    if display.get('provenance') != 'pytest_rewrite':
+        return None
+    ids = display.get('object_ids')
+    if not isinstance(ids, list) or not 1 <= len(ids) <= 64:
+        return None
+    if any(type(value) is not int or value <= 0 for value in ids) or len(set(ids)) != len(ids):
+        return None
+    return {'provenance': 'pytest_rewrite', 'object_ids': list(ids)}
+
+
 def read_probe(path: Path, expected_run_id: str, max_bytes: int = 33554432) -> TestObservation:
     if not path.exists():
         return TestObservation(framework_details={'errors': ['probe missing']})
@@ -31,8 +52,17 @@ def read_probe(path: Path, expected_run_id: str, max_bytes: int = 33554432) -> T
                 raise ValueError('unknown probe event')
             if event in ('collected', 'deselected') and (not isinstance(payload.get('nodeids'), list) or any(type(n) is not str for n in payload['nodeids'])):
                 raise ValueError('invalid collected node list')
-            if event == 'test_phase' and (type(payload.get('nodeid')) is not str or payload.get('when') not in ('setup','call','teardown') or payload.get('outcome') not in ('passed','failed','skipped')):
-                raise ValueError('invalid test phase')
+            if event == 'test_phase':
+                if (type(payload.get('nodeid')) is not str or payload.get('when') not in ('setup','call','teardown')
+                        or payload.get('outcome') not in ('passed','failed','skipped')):
+                    raise ValueError('invalid test phase')
+                display = _valid_assertion_display(payload)
+                if display is None:
+                    payload = {key: value for key, value in payload.items()
+                               if key != 'assertion_display'}
+                else:
+                    payload = {**payload, 'assertion_display': display}
+                item = {**item, 'payload': payload}
             if event == 'session_finish' and type(payload.get('exitstatus')) is not int:
                 raise ValueError('invalid session exit status')
             events.append(item)

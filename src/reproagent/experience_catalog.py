@@ -66,6 +66,22 @@ class ExperienceCatalogView:
         if self.catalog_calls >= CATALOG_CALLS: return result('catalog_limit')
         remaining = CATALOG_BYTES - self.catalog_bytes
         cap = min(PAGE_BYTES, max_bytes, remaining)
+        page = self._page(category, start, cap)
+        if page is None:
+            return result('catalog_budget' if remaining < min(PAGE_BYTES, max_bytes) else 'response_capacity')
+        if page['next_cursor'] is not None:
+            cursor = token_hex(16)
+            page['next_cursor'] = cursor
+            self._cursors[cursor] = (category, start + len(page['items']))
+        self._shown.update(item['id'] for item in page['items'])
+        self.catalog_calls += 1
+        self.catalog_bytes += len(canonical_bytes(page))
+        return page
+
+    def _page(self, category, start, cap):
+        """Pure page projection shared by actual listing and hint availability."""
+        def result(code, items=(), next_cursor=None):
+            return {'code': code, 'category': category or '', 'items': list(items), 'next_cursor': next_cursor}
         cards = sorted((c for c in self._cards.values() if category is None or c.category == category),
                        key=lambda c: c.id)
         items, next_cursor = [], None
@@ -74,18 +90,14 @@ class ExperienceCatalogView:
             entry = asdict(entry_from_card(card))
             entry.update(name=self._safe(entry['name']), description=self._safe(entry['description']),
                          category=card.category)
-            proposed_cursor = token_hex(16) if position + 1 < len(cards) else None
+            proposed_cursor = '0' * 32 if position + 1 < len(cards) else None
             draft = result(code, (*items, entry), proposed_cursor)
             if len(canonical_bytes(draft)) > cap: break
             items.append(entry)
             next_cursor = proposed_cursor
         page = result(code, items, next_cursor)
         if (cards[start:] and not items) or len(canonical_bytes(page)) > cap:
-            return result('catalog_budget' if remaining < min(PAGE_BYTES, max_bytes) else 'response_capacity')
-        if next_cursor is not None: self._cursors[next_cursor] = (category, start + len(items))
-        self._shown.update(item['id'] for item in items)
-        self.catalog_calls += 1
-        self.catalog_bytes += len(canonical_bytes(page))
+            return None
         return page
 
     def notice(self) -> ExperienceCatalogNotice | None:
@@ -97,14 +109,34 @@ class ExperienceCatalogView:
             tuple((category, sum(c.category == category for c in self._cards.values()))
                   for category in ('framework', 'model', 'workflow')))
 
+    def hint_unavailable_reason(self, *, max_bytes: int = PAGE_BYTES) -> str | None:
+        """Inspect remaining capacity without authorizing IDs or spending a read."""
+        if self.catalog_calls >= CATALOG_CALLS:
+            return 'catalog_limit'
+        if len(self._read_ids) >= DETAIL_READS:
+            return 'read_limit'
+        remaining = CATALOG_BYTES - self.catalog_bytes
+        cap = min(PAGE_BYTES, max_bytes, remaining)
+        # Do not skip an undeliverable leading entry to find a later short card.
+        # Only IDs reachable through a real first page can support this hint.
+        for category in sorted({card.category for card in self._cards.values()}):
+            page = self._page(category, 0, cap)
+            if page is not None and any(len(canonical_bytes(self._detail(self._cards[item['id']])))
+                    <= min(DETAIL_BYTES, max_bytes) for item in page['items']):
+                return None
+        return 'catalog_budget' if remaining < min(PAGE_BYTES, max_bytes) else 'response_capacity'
+
+    def _detail(self, card):
+        entry = entry_from_card(card)
+        return {'id': card.id, 'name': self._safe(entry.name), 'description': self._safe(entry.description),
+                'summary': self._safe(card.summary), 'detail': self._safe(card.detail)}
+
     def read(self, identifier: str, *, max_bytes: int = DETAIL_BYTES) -> dict:
         if len(self._read_ids) >= DETAIL_READS: return {'code': 'read_limit'}
         card = self._cards.get(identifier)
         if card is None: return {'code': 'unknown_id'}
         if identifier not in self._shown: return {'code': 'not_displayed'}
-        entry = entry_from_card(card)
-        data = {'id': card.id, 'name': self._safe(entry.name), 'description': self._safe(entry.description),
-                'summary': self._safe(card.summary), 'detail': self._safe(card.detail)}
+        data = self._detail(card)
         if len(canonical_bytes(data)) > min(DETAIL_BYTES, max_bytes): return {'code': 'response_capacity'}
         self._read_ids = (*self._read_ids, identifier)
         return data

@@ -24,6 +24,35 @@ def proposed(ids):
         "evidence_ids": ids}}
 
 
+def test_fallback_failure_predicate_uses_only_the_result_and_controlled_events():
+    from types import SimpleNamespace
+    from reproagent.experience import _has_controlled_failure
+
+    class Store:
+        def __init__(self, *events):
+            self.events = list(events)
+        def read_events(self):
+            return self.events, []
+
+    done = SimpleNamespace(status=TaskState.DONE)
+    assert _has_controlled_failure(Store(), done) is False
+    assert _has_controlled_failure(Store(), SimpleNamespace(status=TaskState.NEEDS_INFORMATION)) is True
+    for kind, payload in [
+        ("action.rejected", {"result_code": "INVALID_CANDIDATE"}),
+        ("exploration.tool_error", {"result_code": "SOURCE_HASH_MISMATCH"}),
+        ("phase.error", {"result_code": "MODEL_PROTOCOL_ERROR"}),
+        ("verification.feedback", {"decision": "continue", "result_code": "NOT_REPRODUCED"}),
+        ("verification.feedback", {"decision": "stop", "result_code": "ENVIRONMENT_BLOCKED"}),
+    ]:
+        event = SimpleNamespace(kind=kind, payload=payload)
+        assert _has_controlled_failure(Store(event), done) is True
+    # A successful code or unrelated prose event is not a failure.
+    assert _has_controlled_failure(Store(SimpleNamespace(
+        kind="verification.feedback", payload={"decision": "continue", "result_code": "OK"})), done) is False
+    assert _has_controlled_failure(Store(SimpleNamespace(
+        kind="phase.result", payload={"result_code": "ERROR"})), done) is False
+
+
 def test_learning_input_excludes_fixed_and_answers(tmp_path, projects, facts):
     _, result, store, candidate, execution, snapshot, request = export_setup(tmp_path, projects, facts)
     atomic_write(store.root / "input/issue.md", (snapshot.root / "issue.md").read_bytes())

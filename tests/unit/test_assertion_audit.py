@@ -12,7 +12,7 @@ from tests.unit.test_verifier import EvidenceModel, prepare
 def checks(data):
     sources = [{key: source[key] for key in ('path', 'content_hash', 'start_line', 'end_line')}
                for source in data['expectation_sources']]
-    return [{'assertion_id': site['id'], 'supported': True,
+    return [{'assertion_id': site['id'], 'supported': True, 'basis': 'current_requirement',
              'reason': 'The source states this expectation.', 'evidence_refs': sources}
             for site in data.get('assertion_sites', [])]
 

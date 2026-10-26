@@ -45,6 +45,21 @@ def test_default_limits_survive_request_round_trip(tmp_path):
     assert decoded.limits.model_cost_limit is None
 
 
+def test_experience_mode_is_opt_in_and_round_trips(tmp_path):
+    models = importlib.import_module("reproagent.core.models")
+    serial = importlib.import_module("reproagent.core.serialization")
+    request = models.TaskRequest(repo=tmp_path, output_dir=tmp_path / "out", issue_file=tmp_path / "issue.md")
+    assert request.experience_mode == "legacy"
+    encoded = serial.encode_record(request)
+    encoded.pop("experience_mode")
+    assert serial.decode_record("request", encoded).experience_mode == "legacy"
+    explicit = replace(request, experience_mode="draft_review")
+    assert serial.decode_record("request", serial.encode_record(explicit)) == explicit
+    for invalid in ("", "draft", None, True, 1):
+        with pytest.raises(ValueError, match="experience_mode"):
+            replace(request, experience_mode=invalid)
+
+
 def test_runtime_context_cannot_be_persisted():
     models = importlib.import_module("reproagent.core.models")
     serial = importlib.import_module("reproagent.core.serialization")

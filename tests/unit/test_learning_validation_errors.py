@@ -64,6 +64,78 @@ def test_successful_learning_requires_explicit_ids_and_null_needs_no_ids(capsule
     assert card.evidence_refs == (material.evidence_map['E1'],)
 
 
+@pytest.mark.parametrize(('field', 'length', 'valid'), [
+    ('name', 64, True),
+    ('name', 65, False),
+    ('description', 160, True),
+    ('description', 161, False),
+    ('description', 165, False),
+])
+def test_catalog_field_lengths_are_exact_python_character_counts(capsule, field, length, valid):
+    material, store = capsule
+    response = proposal()
+    response['experience'][field] = 'x' * length
+    if valid:
+        assert validate_experience(response, material, store) is not None
+        return
+    with pytest.raises(ValueError) as raised:
+        validate_experience(response, material, store)
+    assert raised.value.code == 'invalid_field_length'
+    assert raised.value.field_errors == (
+        {'field': field, 'actual_length': length, 'limit': 64 if field == 'name' else 160},)
+
+
+def test_chinese_text_is_measured_in_characters_not_utf8_bytes(capsule):
+    material, store = capsule
+    response = proposal()
+    response['experience']['description'] = '汉' * 160
+    assert validate_experience(response, material, store) is not None
+    response['experience']['description'] = '汉' * 161
+    with pytest.raises(ValueError) as raised:
+        validate_experience(response, material, store)
+    assert raised.value.code == 'invalid_field_length'
+    assert raised.value.field_errors[0]['actual_length'] == 161
+
+
+def test_both_overlong_catalog_fields_are_reported_once_each(capsule):
+    material, store = capsule
+    response = proposal()
+    response['experience']['name'] = 'n' * 70
+    response['experience']['description'] = 'd' * 170
+    with pytest.raises(ValueError) as raised:
+        validate_experience(response, material, store)
+    assert raised.value.code == 'invalid_field_length'
+    assert raised.value.field_errors == (
+        {'field': 'name', 'actual_length': 70, 'limit': 64},
+        {'field': 'description', 'actual_length': 170, 'limit': 160},
+    )
+
+
+def test_redaction_expansion_is_measured_before_the_length_decision(capsule):
+    material, store = capsule
+    response = proposal()
+    secret = 'top-secret'
+    response['experience']['description'] = 'x' * 155 + secret
+    with pytest.raises(ValueError) as raised:
+        validate_experience(response, material, store, secrets=(secret,))
+    assert raised.value.code == 'invalid_field_length'
+    assert raised.value.field_errors == (
+        {'field': 'description', 'actual_length': 165, 'limit': 160},)
+    assert secret not in str(raised.value)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('name', 123), ('name', '   '), ('description', None), ('description', '')])
+def test_type_and_blank_errors_stay_invalid_fields(capsule, field, value):
+    material, store = capsule
+    response = proposal()
+    response['experience'][field] = value
+    with pytest.raises(ValueError) as raised:
+        validate_experience(response, material, store)
+    assert raised.value.code == 'invalid_fields'
+    assert getattr(raised.value, 'field_errors', ()) == ()
+
+
 @pytest.mark.parametrize('field', ['category', 'tags', 'summary', 'detail'])
 def test_unpaired_unicode_is_invalid_model_fields_not_internal_error(capsule, field):
     material, store = capsule

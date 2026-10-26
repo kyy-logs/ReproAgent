@@ -63,6 +63,12 @@ Claude Code 自身处理命令可能产生其已有模型服务的用量，与 R
 
 ## 安装与凭据
 
+推荐使用 `reproagent setup` 一次安装 Claude Code 与 Codex 的用户级入口（默认
+`~/.claude/skills/reproagent` 与 `~/.agents/skills/reproagent`）。`--check` 只检查，
+`--dry-run` 只输出计划，`--uninstall` 只删除本工具拥有的文件。安装不读取宿主登录态，
+也不复制或打印凭据。详见 [一键接入说明](ai-tool-integration.md)。
+项目内 `.claude/skills/reproagent/` 仍是本仓库的历史接入参考；安装器不会修改或迁移它。
+
 Skill 位于 `.claude/skills/reproagent/SKILL.md`，Windows 启动器位于同目录的 `scripts/reproagent.ps1`。
 启动器从项目根 `.venv/Scripts/python.exe` 运行已安装的 ReproAgent，可用 `-ToolPython` 指定其他工具解释器。
 新机器应先按 README 安装本项目。目标环境依赖不会由接入脚本安装。

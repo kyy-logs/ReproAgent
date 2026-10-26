@@ -157,6 +157,14 @@ class TaskRequest:
     language: PythonPytestConfig = field(default_factory=PythonPytestConfig)
     experience_file: Path | None = None
     learn_experience: bool = True
+    experience_mode: str = "legacy"
+    experience_draft_fallback: bool = False
+
+    def __post_init__(self):
+        if self.experience_mode not in ("legacy", "draft_review"):
+            raise ValueError("experience_mode must be legacy or draft_review")
+        if type(self.experience_draft_fallback) is not bool:
+            raise ValueError("experience_draft_fallback must be a boolean")
 
 
 @dataclass(frozen=True, slots=True)

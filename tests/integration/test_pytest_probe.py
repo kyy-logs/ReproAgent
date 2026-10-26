@@ -4,6 +4,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from reproagent.adapters.runtimes.local import LocalBackend
 from reproagent.core.budget import Budget
 from reproagent.core.models import BudgetLimits, ExecutionSpec, RunContext
@@ -123,6 +125,85 @@ def test_import_bug_is_observed_without_probe_importing_target(tmp_path):
     assert marker.exists() and observation.probe_complete
     assert any('ValueError' in t.get('longrepr', '') for t in observation.tests)
     assert 'broken' in observation.target_origins
+
+
+def test_probe_records_rewritten_display_identity_for_a_plain_assertion(tmp_path):
+    observation, _ = run_probe(tmp_path, '''
+def test_startswith():
+    out = "utils.py 114 DEBUG hello"
+    assert out.startswith("DEBUG")
+''')
+    failure = next(t for t in observation.tests if t['outcome'] == 'failed' and t['when'] == 'call')
+    display = failure.get('assertion_display')
+    assert display['provenance'] == 'pytest_rewrite'
+    assert display['object_ids']
+    import re
+    addresses = {int(value, 16) for value in re.findall(r'0x[0-9a-fA-F]+', failure['crash']['message'])}
+    assert set(display['object_ids']) <= addresses
+
+
+def test_probe_withholds_display_identity_for_custom_messages_and_literals(tmp_path):
+    observation, _ = run_probe(tmp_path, '''
+def test_custom_message():
+    out = "utils.py 114 DEBUG hello"
+    assert out.startswith("DEBUG"), "custom explanation"
+
+def test_literal_address():
+    value = "<Tag at 0x1234>"
+    assert not value
+''')
+    failures = [t for t in observation.tests if t['outcome'] == 'failed' and t['when'] == 'call']
+    assert len(failures) == 2
+    assert all(t.get('assertion_display') is None for t in failures)
+
+
+@pytest.mark.parametrize('assertion', ['assert Obj()', 'assert [Obj()] == []'])
+def test_identity_observation_never_calls_user_metaclass_equality(tmp_path, assertion):
+    observation, _ = run_probe(tmp_path, '''import sys
+class Meta(type):
+    def __eq__(cls, other):
+        if sys._getframe(1).f_code.co_name in ("assertion_display_identities", "object_identities"):
+            raise RuntimeError("identity observation called user equality")
+        return type.__eq__(cls, other)
+class Obj(metaclass=Meta):
+    def __bool__(self): return False
+def test_failure():
+    ''' + assertion + '\n')
+    assert observation.probe_complete
+    failures = [t for t in observation.tests if t['outcome'] == 'failed' and t['when'] == 'call']
+    assert len(failures) == 1
+    assert failures[0]['exception_type'] == 'builtins.AssertionError'
+    assert observation.framework_details['exitstatus'] == 1
+
+
+def test_collector_preserves_valid_display_proof_and_drops_malformed_proof(tmp_path):
+    observation, path = run_probe(tmp_path, '''
+def test_startswith():
+    out = "utils.py 114 DEBUG hello"
+    assert out.startswith("DEBUG")
+''')
+    failure = next(t for t in observation.tests if t['outcome'] == 'failed' and t['when'] == 'call')
+    assert failure['assertion_display']['provenance'] == 'pytest_rewrite'
+
+    collector = importlib.import_module('reproagent.adapters.languages.python_pytest.collector')
+    records = [json.loads(line) for line in path.read_text().splitlines()]
+    invalid = [
+        {'provenance': 'pytest_rewrite', 'object_ids': [True, -1, 'not-an-int']},
+        {'provenance': 'not-pytest', 'object_ids': [1]},
+        {'provenance': 'pytest_rewrite', 'object_ids': []},
+        {'provenance': 'pytest_rewrite', 'object_ids': [1, 1]},
+        {'provenance': 'pytest_rewrite', 'object_ids': list(range(1, 66))},
+        {'provenance': 'pytest_rewrite', 'object_ids': [1], 'extra': True},
+    ]
+    for display in invalid:
+        variant = json.loads(json.dumps(records))
+        for record in variant:
+            if record['event'] == 'test_phase' and record['payload'].get('outcome') == 'failed':
+                record['payload']['assertion_display'] = display
+        path.write_text('\n'.join(json.dumps(record) for record in variant) + '\n')
+        sanitized = collector.read_probe(path, 'run-1')
+        failed = next(t for t in sanitized.tests if t['outcome'] == 'failed' and t['when'] == 'call')
+        assert 'assertion_display' not in failed
 
 
 def test_incomplete_probe_never_becomes_complete(tmp_path):

@@ -82,9 +82,15 @@ class PythonPytestAdapter:
             invalid.append('target source origin is outside run snapshot')
         if not observation.collected:
             invalid.append('no collected tests')
+        # A skipped/xfailed auxiliary test is not evidence of reproduction, but it
+        # must not invalidate a different test that actually failed.  Only the
+        # case where every reported test is skipped/xfailed leaves no executable
+        # evidence and remains a rejection.
+        if observation.tests and all(
+                phase.get('wasxfail') or phase.get('outcome') == 'skipped'
+                for phase in observation.tests):
+            invalid.append('skip/xfail cannot establish reproduction')
         for phase in observation.tests:
-            if phase.get('wasxfail') or phase.get('outcome') == 'skipped':
-                invalid.append('skip/xfail cannot establish reproduction')
             text = phase.get('longrepr', '')
             exception_type = phase.get('exception_type', '')
             syntax_error = exception_type in ('builtins.SyntaxError', 'builtins.IndentationError', 'builtins.TabError') or (not exception_type and 'SyntaxError' in text)

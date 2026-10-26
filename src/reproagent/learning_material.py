@@ -17,6 +17,10 @@ from .experience_triggers import ERROR_METADATA, trigger_from_fact, TOOLS
 ATOM_BYTES = 2048
 MAX_ENTRIES = 24
 MAX_OMISSIONS = 16
+MAX_VERDICT_DIAGNOSTICS = 3
+PROTOCOL_DIAGNOSTICS = frozenset({'invalid_negative_response', 'MODEL_PROTOCOL_ERROR',
+    'SEMANTIC_CITATIONS_INCOMPLETE', 'ObjectRootError', 'DuplicateJSONFieldError',
+    'NonFiniteJSONValueError', 'JSONDecodeError', 'ValueError'})
 CONTROLLED = frozenset(('UNKNOWN_TOOL', 'MULTIPLE_TOOL_CALLS', 'INVALID_TOOL_INPUT',
     'OUTPUT_TRUNCATED', 'OUTPUT_FILTERED', 'EMPTY_OUTPUT', 'RESPONSE_TOO_LARGE', 'INVALID_PROTOCOL',
     'MODEL_OUTPUT_ERROR', 'MODEL_PROTOCOL_ERROR', 'EXHAUSTED', 'DENIED', 'RESERVED_FOR_PUBLISHING',
@@ -63,7 +67,7 @@ def _candidate_fragment(data, failed_names):
     return None
 
 
-def capture_exploration(messages, source_refs, *, secrets=()):
+def capture_exploration(messages, source_refs, *, secrets=(), draft=None):
     """Copy a few complete SDK tool failures; never copy chat or memory content.
 
     Association is chronological: a repeated tool-call ID cannot attach a later
@@ -71,9 +75,11 @@ def capture_exploration(messages, source_refs, *, secrets=()):
     This capture is independent of diagnostic tracing.
     """
     import json
+    from .core.serialization import canonical_hash
     from agentscope.message import ToolCallBlock, ToolResultBlock, TextBlock
     allowed = frozenset(('Read','Grep','Glob','write_candidate','revise_contract','request_information'))
-    errors, issues, pending = deque(maxlen=8), [], OrderedDict()
+    errors, issues, pending, calls = deque(maxlen=8), [], OrderedDict(), []
+    call_counts = Counter()
     def issue(code):
         if code not in issues and len(issues) < 8:
             issues.append(code)
@@ -87,8 +93,10 @@ def capture_exploration(messages, source_refs, *, secrets=()):
             issue('MESSAGE_BLOCK_LIMIT')
         for block_index, block in enumerate(blocks[:64]):
             if isinstance(block, ToolCallBlock):
+                call_counts[block.id] += 1
                 if block.name in allowed:
                     pending[block.id] = block
+                    calls.append((max(0, len(messages) - 512) + message_index, block_index, block))
                     if len(pending) > 64:
                         pending.popitem(last=False)
                         issue('TOOL_LINK_WINDOW_LIMIT')
@@ -134,7 +142,31 @@ def capture_exploration(messages, source_refs, *, secrets=()):
             errors.append(record)
     refs = tuple(ref for ref in source_refs[-16:] if isinstance(ref, EvidenceRef)
         and not any(secret and secret in ref.path for secret in secrets))
-    return {'source_refs':refs, 'tool_errors':tuple(errors), 'capture_issues':tuple(issues)}
+    normalized_counts = Counter()
+    for key, count in call_counts.items():
+        normalized_counts[_redact(key, secrets)] += count
+    result = {'source_refs':refs, 'tool_errors':tuple(errors),
+              'ambiguous_call_ids': tuple(key for key, count in normalized_counts.items() if count > 1)}
+    if draft is not None:
+        matches = [item for item in calls if item[2].id == draft.call_id]
+        if len(matches) != 1 or call_counts[draft.call_id] != 1:
+            issue('DRAFT_CALL_AMBIGUOUS' if matches or call_counts[draft.call_id] else 'DRAFT_CALL_NOT_FOUND')
+        else:
+            offset, block_index, call = matches[0]
+            try:
+                arguments = json.loads(call.input)
+                if not isinstance(arguments, dict):
+                    raise ValueError
+                if canonical_hash(arguments) != draft.arguments_hash:
+                    issue('DRAFT_ARGUMENTS_MISMATCH')
+                else:
+                    result['draft_origin'] = {'call_id': draft.call_id, 'message_offset': offset,
+                                              'block_index': block_index,
+                                              'arguments_hash': draft.arguments_hash}
+            except (ValueError, TypeError):
+                issue('DRAFT_ARGUMENTS_MISMATCH')
+    result['capture_issues'] = tuple(issues)
+    return result
 
 
 def prepare_learning_input(store, result, context, *, secrets=(), exploration=None):
@@ -145,13 +177,118 @@ def prepare_learning_input(store, result, context, *, secrets=(), exploration=No
         return LearningBuildResult(None, 'skipped_invalid_evidence')
 
 
-def _prepare(store, result, context, *, secrets, exploration):
+def prepare_review_input(store, result, context, *, draft, exploration, secrets=()):
+    """Reserve the review envelope and required sources before optional context."""
+    origin = (exploration or {}).get('draft_origin')
+    if (not isinstance(origin, dict) or origin.get('call_id') != draft.call_id
+            or origin.get('arguments_hash') != draft.arguments_hash or _position(origin) is None):
+        return LearningBuildResult(None, 'skipped_draft_evidence_unavailable')
+    try:
+        return _prepare(store, result, context, secrets=secrets, exploration=exploration or {}, review=draft)
+    except (OSError, ValueError, TypeError, UnicodeError):
+        return LearningBuildResult(None, 'skipped_invalid_evidence')
+
+
+def _position(record):
+    values = (record.get('message_offset'), record.get('block_index'))
+    return values if all(type(value) is int and value >= 0 for value in values) else None
+
+
+def _review_selection(payload, entries, draft, exploration, original_seqs, registered=None):
+    """Select whole atoms; never freeze unrelated atoms at the expense of a draft source."""
+    import copy
+    import json
+    origin = _position(exploration['draft_origin'])
+    mapping = {}
+    registered = registered or {}
+    records = [(entry, json.loads(entry['text'])) for entry in entries if entry['kind'] in ('tool_error', 'attempt')]
+    for source_id in draft.draft.source_ids:
+        if source_id in registered:
+            fact = registered[source_id]
+            if fact['kind'] == 'original_run':
+                run_id = fact['run_id']
+                if run_id not in original_seqs or original_seqs[run_id] >= draft.event_seq:
+                    return None
+                matches = [entry['id'] for entry, record in records if entry['kind'] == 'attempt'
+                    and (record.get('run_id') == run_id or run_id in record.get('run_ids', ()))]
+            else:
+                matches = [entry['id'] for entry, record in records if entry['kind'] == 'tool_error'
+                    and record.get('source_id') == source_id]
+            if len(matches) != 1:
+                return None
+            mapping[source_id] = matches[0]
+            continue
+        if source_id == draft.call_id or source_id in exploration.get('ambiguous_call_ids', ()):
+            return None
+        # Check ambiguity before selection, not only among atoms that happened to fit.
+        raw_errors = [e for e in exploration.get('tool_errors', ()) if e.get('tool_call_id') == source_id]
+        if raw_errors:
+            if len(raw_errors) != 1 or raw_errors[0].get('link_state') != 'matched':
+                return None
+            position = _position(raw_errors[0])
+            if position is None or position >= origin:
+                return None
+        elif source_id not in original_seqs or original_seqs[source_id] >= draft.event_seq:
+            return None
+        matches = []
+        for entry, record in records:
+            if entry.get('kind') == 'tool_error':
+                if record.get('tool_call_id') == source_id and raw_errors:
+                    matches.append(entry['id'])
+            elif entry.get('kind') == 'attempt' and (source_id in record.get('run_ids', ())
+                    or record.get('run_id') == source_id):
+                matches.append(entry['id'])
+        if len(matches) != 1:
+            return None
+        mapping[source_id] = matches[0]
+    payload['draft_evidence_ids'] = list(mapping.values())
+    original = copy.deepcopy(payload)
+    def project(selected):
+        ids = {entry['id'] for entry in selected}
+        payload['evidence'] = [{k: v for k, v in entry.items() if k != 'origin_refs'} for entry in selected]
+        payload['category_materials'] = {category: [i for i in values if i in ids]
+            for category, values in original['category_materials'].items()}
+        payload['attempts'] = [{**attempt, 'evidence_ids': [i for i in attempt['evidence_ids'] if i in ids]}
+            for attempt in original['attempts'] if ids.intersection(attempt['evidence_ids'])]
+
+    mandatory_ids = set(mapping.values()) | {e['id'] for e in entries if e['kind'] == 'issue'}
+    selected = [e for e in entries if e['id'] in mandatory_ids]
+    payload['omissions'] = []
+    project(selected)
+    if len(canonical_bytes(payload)) > INPUT_BYTES:
+        return None
+    omitted = list(original['omissions'])
+    for entry in entries:
+        if entry['id'] in mandatory_ids:
+            continue
+        proposed = [*selected, entry]
+        project(proposed)
+        if len(proposed) > MAX_ENTRIES or len(canonical_bytes(payload)) > INPUT_BYTES - 256:
+            omitted.append({'kind': entry['kind'], 'code': 'INPUT_BUDGET'})
+            project(selected)
+        else:
+            selected = proposed
+    for item in omitted:
+        if len(payload['omissions']) >= MAX_OMISSIONS:
+            break
+        payload['omissions'].append(item)
+        if len(canonical_bytes(payload)) > INPUT_BYTES:
+            payload['omissions'].pop()
+            break
+    return selected
+
+
+def _prepare(store, result, context, *, secrets, exploration, review=None):
     _check(context)
     if result.status == TaskState.CANCELLED:
         return LearningBuildResult(None, 'skipped_no_evidence')
     events, errors = store.read_events()
     if errors:
         return LearningBuildResult(None, 'skipped_invalid_evidence')
+    learning_refs = {}
+    if review is not None:
+        from .experience_sources import learning_sources
+        learning_refs = learning_sources(events, before=review.event_seq)
     capsule = safe_child(store.root, 'learning/evidence.jsonl')
     if capsule.exists():
         return LearningBuildResult(None, 'skipped_existing_evidence')
@@ -159,6 +296,10 @@ def _prepare(store, result, context, *, secrets, exploration):
     payload = {'task_status': result.status.value, 'evidence': [], 'attempts': [],
         'category_materials': {name: [] for name in CATEGORIES}, 'omissions': [],
         'response_schema': learning_schema()}
+    if review is not None:
+        from .experience_review import review_schema
+        payload.update(draft={**asdict(review.draft), 'source_ids': list(review.draft.source_ids)},
+                       draft_evidence_ids=[], response_schema=review_schema())
 
     def omit(kind, code, needed_bytes=0):
         if len(payload['omissions']) < MAX_OMISSIONS:
@@ -179,13 +320,13 @@ def _prepare(store, result, context, *, secrets, exploration):
             return None
         entry = {'id':'E' + str(len(entries) + 1), 'kind':kind, 'text':text}
         size = len(canonical_bytes(entry))
-        if not mandatory and (size > ATOM_BYTES or len(entries) >= MAX_ENTRIES):
+        if not mandatory and (size > ATOM_BYTES or review is None and len(entries) >= MAX_ENTRIES):
             omit(kind, 'ATOM_TOO_LARGE' if size > ATOM_BYTES else 'ENTRY_LIMIT', size)
             return None
         payload['evidence'].append(entry)
         for category in categories:
             payload['category_materials'][category].append(entry['id'])
-        if len(canonical_bytes(payload)) > (INPUT_BYTES if mandatory else INPUT_BYTES - 256):
+        if review is None and len(canonical_bytes(payload)) > (INPUT_BYTES if mandatory else INPUT_BYTES - 256):
             payload['evidence'].pop()
             for category in categories:
                 payload['category_materials'][category].pop()
@@ -200,7 +341,7 @@ def _prepare(store, result, context, *, secrets, exploration):
         if len(data) > INPUT_BYTES or add('issue', data.decode('utf-8'), (_ref(store, issue),), mandatory=True) is None:
             return LearningBuildResult(None, 'skipped_input_too_large')
 
-    originals = []
+    originals, original_seqs = [], {}
     seen = set()
     for event in events:
         if event.kind != 'run.completed':
@@ -213,6 +354,7 @@ def _prepare(store, result, context, *, secrets, exploration):
             run = store.load_record('runs', parts[1])
             if run.execution_role == 'original':
                 originals.append(run)
+                original_seqs[run.run_id] = event.seq
     notes = [{'seq':event.seq, 'kind':event.kind, 'code':event.payload.get('result_code'),
         'tool':event.payload.get('action') if event.payload.get('action') in TOOLS else '',
         **({'action':'run_candidate'} if event.kind == 'action.rejected'
@@ -250,6 +392,12 @@ def _prepare(store, result, context, *, secrets, exploration):
             previous = list(groups)[-2]
         if previous is not None:
             selected.insert(0, previous)
+    if review is not None:
+        required_runs = {learning_refs[s]['run_id'] for s in review.draft.source_ids
+                         if s in learning_refs and learning_refs[s]['kind'] == 'original_run'}
+        required_candidates = [run.candidate_id for run in originals
+                              if run.run_id in review.draft.source_ids or run.run_id in required_runs]
+        selected = list(dict.fromkeys([*required_candidates, *selected]))
     registered = {}
     # Reading source may precede the first candidate; the freeze event is the
     # original registration boundary even when no test could be published.
@@ -306,6 +454,7 @@ def _prepare(store, result, context, *, secrets, exploration):
                 for phase in run.observation.tests if phase.get('outcome') == 'failed'}
             files.append((candidate_id, file, path, data, failed_names))
         verdicts = []
+        latest_verdict = latest_verdict_ref = None
         for execution in runs:
             path = store.record_path('verdicts', 'verdict-' + execution.run_id)
             if path.exists():
@@ -315,6 +464,8 @@ def _prepare(store, result, context, *, secrets, exploration):
                     or execution.run_id not in verdict.run_ids):
                     raise ValueError('verdict binding invalid')
                 verdicts.append(verdict)
+                if execution.run_id == run.run_id:
+                    latest_verdict, latest_verdict_ref = verdict, _ref(store, path)
         classification = verdicts[-1].classification.value if verdicts and verdicts[-1].classification else None
         confirmed = (result.status == TaskState.DONE and result.accepted_candidate_id == candidate_id
             and len(runs) >= 2 and len(verdicts) >= 2
@@ -330,7 +481,27 @@ def _prepare(store, result, context, *, secrets, exploration):
             'phase_outcomes':dict(Counter(str(p.get('outcome')) for p in phases)),
             'failed_nodes':[p.get('nodeid','') for p in failed[:3]], 'classification':classification,
             'confirmed':bool(confirmed)}
-        identity = add('attempt', summary, (_ref(store, store.record_path('runs', run.run_id)),))
+        if review is not None:
+            summary['run_ids'] = [r.run_id for r in runs]
+        origins = tuple(_ref(store, store.record_path('runs', r.run_id))
+                        for r in (runs if review is not None else [run]))
+        if latest_verdict is not None and latest_verdict.issues:
+            # Keep program/provider diagnostic identities, not arbitrary reason text,
+            # traces or measurements. The saved verdict remains the source of truth.
+            diagnostics = []
+            for issue in latest_verdict.issues[:MAX_VERDICT_DIAGNOSTICS]:
+                diagnostic = {'code': issue.code, 'origin': issue.origin}
+                if issue.code == 'MODEL_PROTOCOL_ERROR' and 'protocol_error' in issue.measurements:
+                    protocol_error = issue.measurements['protocol_error']
+                    diagnostic['protocol_error'] = (protocol_error if protocol_error in PROTOCOL_DIAGNOSTICS
+                                                     else 'unrecognized')
+                diagnostics.append(diagnostic)
+            summary['verdict_diagnostics'] = diagnostics
+            omitted = len(latest_verdict.issues) - len(diagnostics)
+            if omitted:
+                summary['verdict_diagnostics_omitted'] = omitted
+            origins += (latest_verdict_ref,)
+        identity = add('attempt', summary, origins)
         if identity:
             attempt['evidence_ids'].append(identity)
         else:
@@ -344,6 +515,16 @@ def _prepare(store, result, context, *, secrets, exploration):
         add('tool_error', note, categories=('model','workflow'))
     for error in tool_errors[-8:]:
         add('tool_error', error, categories=('model','workflow'))
+    if review is not None:
+        for identity in review.draft.source_ids:
+            fact = learning_refs.get(identity)
+            if fact is not None and fact['kind'] in ('tool_error', 'protocol_error'):
+                atom = {'source_id': identity, **fact}
+                if fact['kind'] == 'protocol_error':
+                    atom['kind'] = 'exploration.protocol_error'
+                else:
+                    atom.update(state='error', link_state='matched')
+                add('tool_error', atom, categories=('model', 'workflow'))
     for issue_code in exploration.get('capture_issues', ())[:4]:
         omit('exploration', str(issue_code))
 
@@ -409,6 +590,10 @@ def _prepare(store, result, context, *, secrets, exploration):
 
     for hypothesis in hypotheses:
         add('agent_hypothesis', hypothesis, categories=('model','workflow'))
+    if review is not None:
+        entries = _review_selection(payload, entries, review, exploration, original_seqs, learning_refs)
+        if entries is None:
+            return LearningBuildResult(None, 'skipped_draft_evidence_unavailable')
     # References appended to attempts have a cost too.
     while len(canonical_bytes(payload)) > INPUT_BYTES and payload['omissions']:
         payload['omissions'].pop()

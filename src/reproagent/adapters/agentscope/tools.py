@@ -28,7 +28,7 @@ from typing import Any, Literal
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.permission import PermissionBehavior, PermissionDecision
 from agentscope.tool import Glob, Grep, ParamsBase, Read, ToolBase, ToolChunk, ToolMiddlewareBase, Toolkit
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, ValidationError
 
 from .citation_feedback import render_citation_feedback
 from .dependency import require_agentscope
@@ -48,6 +48,7 @@ FILE_TOOL_NAMES = ("Read", "Grep", "Glob")
 DOMAIN_TOOL_NAMES = ("write_candidate", "revise_contract", "request_information")
 TOOL_NAMES = FILE_TOOL_NAMES + DOMAIN_TOOL_NAMES
 EXPERIENCE_TOOL_NAMES = ('list_experiences', 'read_experience')
+DRAFT_ELIGIBLE_METADATA = "reproagent_draft_eligible"
 
 #: Appended when a response had to be cut to fit the tool budget.  Marked in the response
 #: itself, because a response that looks complete is read as complete.
@@ -394,6 +395,45 @@ class _WriteCandidateParams(ParamsBase):
     hypothesis: str = Field(min_length=1, description="What the candidate tests and which contract fact it reproduces.")
 
 
+class _WriteCandidateWithLessonParams(ParamsBase):
+    """The opt-in schema; lesson_draft is validated by the product, not by the SDK."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    files: list[_CandidateFileParams] = Field(min_length=1, description="The complete candidate files, at least one test module.")
+    hypothesis: str = Field(min_length=1, description="What the candidate tests and which contract fact it reproduces.")
+    lesson_status: Literal["draft", "none"] | None = Field(
+        default=None,
+        description=('Use "draft" for a supported reusable pitfall, including tool/protocol or workflow errors; '
+                     'source-code facts and a verified workaround are not required. Use "none" for missing '
+                     'support, speculation, a redundant rule without useful observed conditions, or no concrete next check.'))
+    lesson_draft: Any | None = Field(default=None, description=(
+        'Optional object with exactly four fields: situation (when this pitfall applies), '
+        'observation (what actually happened), lesson (bounded advice, marking untested suggestions), '
+        'source_ids (1-3 learning_source_id strings copied from <learning_source> notices or '
+        'learning_sources). Never use file paths, content hashes or SDK tool-call IDs. '
+        'Tool/protocol, path, permission, citation, exploration-order and budget pitfalls are eligible '
+        'when a displayed source supports the condition, operation and result; a known root cause is not required. '
+        'An error alone does not require a draft. Malformed drafts never block the candidate.'))
+
+
+def _write_candidate_with_lesson_schema() -> dict:
+    """Advertise the decision as required without changing the tolerant parser.
+
+    The Pydantic model keeps the historical optional default so a direct tool call
+    with a legacy payload can still publish; the model-facing JSON schema is the
+    protocol and makes ``lesson_status`` required. Missing fields are completed or
+    recorded as omitted by the middleware, never fabricated as a model decision.
+    """
+    schema = _WriteCandidateWithLessonParams.model_json_schema()
+    status = dict(schema["properties"]["lesson_status"])
+    status.pop("anyOf", None)
+    status.update({"type": "string", "enum": ["draft", "none"], "default": None})
+    schema["properties"] = {**schema["properties"], "lesson_status": status}
+    schema["required"] = [*schema.get("required", ()), "lesson_status"]
+    return schema
+
+
 class _SourceRefParams(ParamsBase):
     """One line range a revision cites."""
 
@@ -466,9 +506,10 @@ class _DomainTool(ToolBase):
         return PermissionDecision(behavior=PermissionBehavior.ALLOW,
                                   message=f"{self.name} is a phase tool; the phase's own checks already gate it")
 
-    def _result(self, payload: dict) -> ToolChunk:
+    def _result(self, payload: dict, *, metadata: dict | None = None) -> ToolChunk:
+        options = {"metadata": metadata} if metadata else {}
         return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],
-                         state=ToolResultState.SUCCESS, is_last=True)
+                         state=ToolResultState.SUCCESS, is_last=True, **options)
 
 
 class WriteCandidate(_DomainTool):
@@ -478,14 +519,32 @@ class WriteCandidate(_DomainTool):
     description: str = WRITE_CANDIDATE_DESCRIPTION
     input_schema: dict = _WriteCandidateParams.model_json_schema()
 
-    def __init__(self, candidates: CandidateService, gate: PhaseGate, context) -> None:
+    def __init__(self, candidates: CandidateService, gate: PhaseGate, context, *,
+                 experience_mode: str = "legacy", draft_session=None) -> None:
         super().__init__(gate, context)
+        if experience_mode not in ("legacy", "draft_review"):
+            raise ValueError("experience_mode must be legacy or draft_review")
         self.candidates = candidates
+        self.experience_mode = experience_mode
+        self.draft_session = draft_session
+        if experience_mode == "draft_review":
+            self.input_schema = _write_candidate_with_lesson_schema()
 
     async def call(self, **kwargs) -> ToolChunk:
         """Publish the draft the contract and snapshot of this phase imply."""
         self._open()
-        params = _WriteCandidateParams(**kwargs)
+        if self.experience_mode == "draft_review":
+            try:
+                params = _WriteCandidateWithLessonParams(**kwargs)
+            except ValidationError:
+                # A bad optional decision must never block publication: drop the lesson
+                # fields, validate the legacy candidate shape, and let the middleware
+                # record the invalid decision from the raw arguments.
+                params = _WriteCandidateParams(**{
+                    key: value for key, value in kwargs.items()
+                    if key not in ("lesson_status", "lesson_draft")})
+        else:
+            params = _WriteCandidateParams(**kwargs)
         contract = self.candidates.contract
         if contract is None:
             raise ValueError("no contract is bound to this phase, so no candidate can be published")
@@ -505,14 +564,19 @@ class WriteCandidate(_DomainTool):
                     "call revise_contract with its exact issued ranges. Do not clear blockers or retry unchanged. "
                     "Use request_information only for essential facts that remain unavailable."}
             return ToolChunk(content=[TextBlock(text=_capped(self.context, _dump(payload)))],
-                state=ToolResultState.ERROR, is_last=True, metadata={ERROR_METADATA: exc.code})
+                state=ToolResultState.ERROR, is_last=True,
+                metadata={ERROR_METADATA: exc.code, **self._draft_metadata()})
         self.gate.finish(PhaseResult("candidate", candidate_id=candidate.candidate_id))
         return self._result({"status": "candidate_published", "candidate_id": candidate.candidate_id,
                              "contract_id": candidate.contract_id, "contract_version": candidate.contract_version,
                              "snapshot_id": candidate.snapshot_id, "manifest_hash": candidate.manifest_hash,
                              "files": [{"path": entry.path, "content_hash": entry.content_hash, "role": entry.role}
                                        for entry in candidate.files],
-                             "note": "The candidate is registered immutably and the controller executes it next. This is not a verdict: no test has run."})
+                             "note": "The candidate is registered immutably and the controller executes it next. This is not a verdict: no test has run."},
+                            metadata=self._draft_metadata() or None)
+
+    def _draft_metadata(self) -> dict:
+        return {DRAFT_ELIGIBLE_METADATA: True} if self.experience_mode == "draft_review" else {}
 
 
 class _CitationRefusal(UnverifiedContent):
@@ -719,7 +783,8 @@ class ListExperiences(ToolBase):
             state=ToolResultState.SUCCESS if success else ToolResultState.ERROR, is_last=True)
 
 
-def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *, experience_view=None, evidence_views=None) -> Toolkit:
+def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService, gate: PhaseGate, context, *,
+                  experience_view=None, evidence_views=None, experience_mode="legacy", draft_session=None) -> Toolkit:
     """The toolkit one exploration phase runs with: exactly :data:`TOOL_NAMES`.
 
     Args:
@@ -739,7 +804,7 @@ def build_toolkit(backend, ledger: EvidenceLedger, candidates: CandidateService,
                      middlewares=[SnapshotResponseMiddleware(backend, views.read, context, view="read")]),
         SnapshotGrep(backend=backend, middlewares=[SnapshotResponseMiddleware(backend, views.search, context, view="search")]),
         SnapshotGlob(backend=backend, middlewares=[SnapshotResponseMiddleware(backend, views.search, context, view="none")]),
-        WriteCandidate(candidates, gate, context),
+        WriteCandidate(candidates, gate, context, experience_mode=experience_mode, draft_session=draft_session),
         ReviseContract(views, gate, context),
         RequestInformation(gate, context),
     ]

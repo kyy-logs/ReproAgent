@@ -1,7 +1,11 @@
 """Standalone plugin: only pytest and Python's standard library are required."""
+import ast
 import json
 import os
+import re
 import sys
+import tokenize
+import types
 from functools import lru_cache
 from pathlib import Path
 
@@ -113,19 +117,127 @@ def object_identities(value):
         if identity in seen:
             continue
         seen.add(identity)
-        if type(current) in (str, bytes, int, float, complex, bool, type(None)):
+        kind = type(current)
+        # Class equality may be user-defined by a metaclass; exact-type dispatch
+        # must not execute that code while observing a failed assertion.
+        if any(kind is builtin for builtin in (str, bytes, int, float, complex, bool, type(None))):
             continue
         identities.append(identity)
-        if type(current) in (list, tuple):
+        if kind is list or kind is tuple:
             pending.extend(current[:64])
-        elif type(current) is dict:
+        elif kind is dict:
             from itertools import islice
             for key, child in islice(current.items(), 64):
                 pending.extend((key, child))
-        elif type(current) in (set, frozenset):
+        elif kind is set or kind is frozenset:
             from itertools import islice
             pending.extend(islice(current, 64))
     return identities
+
+
+_HEX_ADDRESS = re.compile(r'0x[0-9a-fA-F]+')
+_QUOTED = re.compile(r'''"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*' ''', re.VERBOSE)
+_MAX_SOURCE_BYTES = 4 * 1024 * 1024
+_MAX_DISPLAY_BYTES = 1024 * 1024
+
+
+@lru_cache(maxsize=256)
+def _plain_assert_at(filename, lineno):
+    """Whether this exact line is an ``assert`` without a custom message.
+
+    A rewritten temporary is only evidence for the assertion pytest rewrote.  A
+    custom message means the displayed text is not solely pytest's explanation, and
+    an unparseable, oversized or missing source gets no proof at all.
+    """
+    try:
+        with tokenize.open(filename) as stream:
+            source = stream.read(_MAX_SOURCE_BYTES + 1)
+    except (OSError, SyntaxError, UnicodeError, LookupError):
+        return False
+    if len(source) > _MAX_SOURCE_BYTES:
+        return False
+    try:
+        tree = ast.parse(source, filename=filename)
+    except (SyntaxError, UnicodeError, ValueError):
+        return False
+    assertions = [node for node in ast.walk(tree)
+                  if isinstance(node, ast.Assert) and node.lineno == lineno]
+    # Older supported Python versions give us a traceback line, not an exact
+    # expression position. With multiple asserts there, no assertion can vouch
+    # for another's display (especially a custom error message).
+    return len(assertions) == 1 and assertions[0].msg is None
+
+
+def _unquoted_addresses(text):
+    quoted = [(match.start(), match.end()) for match in _QUOTED.finditer(text)]
+    addresses = []
+    for match in _HEX_ADDRESS.finditer(text):
+        if any(start <= match.start() < end for start, end in quoted):
+            continue
+        try:
+            address = int(match.group(0), 16)
+        except ValueError:                         # pragma: no cover - regex guarantees hex
+            continue
+        if address > 0:
+            addresses.append(address)
+    return addresses
+
+
+def assertion_display_identities(item, call, limit=64):
+    """Return the rewritten temporaries that produced this failure display, or None.
+
+    Pytest's rewritten ``assert`` keeps its intermediate values in ``@py_assert*``
+    locals.  We record only identities that are actually present in the failure
+    message, so an unrelated earlier assert cannot lend proof to this one.  Values
+    are never repr'd, iterated, or otherwise executed; only ``id`` and the
+    ``__self__`` of exact bound-method types are read.
+    """
+    excinfo = getattr(call, 'excinfo', None)
+    value = getattr(excinfo, 'value', None)
+    if value is None or type(value).__module__ + '.' + type(value).__qualname__ != 'builtins.AssertionError':
+        return None
+    traceback, frame, lineno = value.__traceback__, None, 0
+    while traceback is not None:
+        frame, lineno = traceback.tb_frame, traceback.tb_lineno
+        traceback = traceback.tb_next
+    if frame is None:
+        return None
+    module = frame.f_globals.get('__name__', '')
+    if module.startswith(('_pytest.', 'pluggy.')):
+        return None
+    if not _plain_assert_at(frame.f_code.co_filename, lineno):
+        return None
+    values = []
+    for key, temporary in frame.f_locals.items():
+        if type(key) is str and key.startswith('@py_assert'):
+            values.append(temporary)
+            if len(values) >= 256:
+                break
+    if not values:
+        return None
+    candidates = set()
+    for temporary in values:
+        candidates.add(id(temporary))
+        kind = type(temporary)
+        if kind is types.MethodType or kind is types.BuiltinMethodType:
+            bound = temporary.__self__
+            if bound is not None:
+                candidates.add(id(bound))
+        elif any(kind is builtin for builtin in (list, tuple, dict, set, frozenset)):
+            candidates.update(object_identities(temporary))
+    display = str(value)
+    if len(display) > _MAX_DISPLAY_BYTES:
+        display = display[:_MAX_DISPLAY_BYTES]     # bounded; a proof past the cap is withheld
+    addresses = _unquoted_addresses(display)
+    observed = []
+    for address in addresses:
+        if address in candidates and address not in observed:
+            observed.append(address)
+    if not observed:
+        return None
+    if type(limit) is not int or limit <= 0:
+        limit = 64
+    return {'provenance': 'pytest_rewrite', 'object_ids': observed[:min(limit, 64)]}
 
 
 def pytest_assertrepr_compare(config, op, left, right):
@@ -178,6 +290,7 @@ def pytest_runtest_makereport(item, call):
         path, lineno, operands = _comparison
         if frames[-1]['path'] == path and frames[-1]['lineno'] == lineno:
             report._reproagent_assertion_comparison = operands
+    report._reproagent_assertion_display = assertion_display_identities(item, call)
     _comparison = None
 
 
@@ -190,6 +303,7 @@ def pytest_runtest_logreport(report):
         'exception_type': getattr(report, '_reproagent_exception_type', ''),
         'exception_frames': getattr(report, '_reproagent_exception_frames', []),
         'assertion_comparison': getattr(report, '_reproagent_assertion_comparison', None),
+        'assertion_display': getattr(report, '_reproagent_assertion_display', None),
         'crash': {'path': str(location.path), 'lineno': location.lineno, 'message': location.message} if location else {},
     })
 

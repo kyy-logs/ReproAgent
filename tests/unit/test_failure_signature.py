@@ -16,3 +16,29 @@ def test_only_an_observed_object_identity_can_be_normalized():
     assert stable_failure_message('<Tag @ 123>', (123,)) == '<Tag <address>>'
     assert stable_failure_message('<Quote @ 456>', (123,)) == '<Quote @ 456>'
     assert stable_failure_message('"<Tag @ 123>"', (123,)) == '"<Tag @ 123>"'
+
+
+def test_generator_repr_address_is_normalized_without_display_object_ids():
+    one = (
+        'AssertionError: any(<generator object test.<locals>.<genexpr> '
+        'at 0x000001A1CAD5EB30>)'
+    )
+    two = (
+        'AssertionError: any(<generator object test.<locals>.<genexpr> '
+        'at 0x00000149EA5DEB30>)'
+    )
+    normalized = stable_failure_message(one)
+    assert normalized == stable_failure_message(two)
+    assert normalized == (
+        'AssertionError: any(<generator object test.<locals>.<genexpr> <address>>)'
+    )
+
+
+def test_quoted_generator_like_text_is_preserved():
+    message = '"<generator object test.<locals>.<genexpr> at 0x1234>"'
+    assert stable_failure_message(message) == message
+
+
+def test_non_generator_nested_repr_is_not_normalized():
+    message = '<Thing <locals> at 0x1234>'
+    assert stable_failure_message(message) == message

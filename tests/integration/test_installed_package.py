@@ -65,7 +65,10 @@ print(json.dumps({'complete':execution.observation.probe_complete, 'exit_code':e
     assert str(checkout / 'src') not in json.dumps(spec)
     with zipfile.ZipFile(wheel) as archive:
         metadata = archive.read(next(n for n in archive.namelist() if n.endswith('/METADATA'))).decode()
-    assert 'Known limitations' in metadata
+    # Test the packaged README, not a section heading that editors may rename.
+    _, separator, packaged_readme = metadata.replace('\r\n', '\n').partition('\n\n')
+    assert separator
+    assert packaged_readme.strip() == (checkout / 'README.md').read_text(encoding='utf-8').strip()
 
 
 def target_python(checkout, tmp_path):

@@ -16,8 +16,7 @@
 - 新增/修改测试：`tests/unit/test_windows_project_check.py`、
   `tests/unit/test_windows_bootstrap.py`、`tests/integration/test_windows_bootstrap_entry.py`、
   `tests/integration/test_windows_bootstrap_offline.py`
-- 设计/计划：`docs/superpowers/specs/2026-10-25-windows-installer-python-project-check-design.md`、
-  `docs/superpowers/plans/2026-10-25-windows-installer-python-project-check.md`
+- 设计/计划：已随 2026-10-25 文档清理移出；本验收只保留实现与测试记录。
 
 `src/reproagent/integration/render.py` 只改生成 PowerShell wrapper 的编码，不涉及
 `core/`、`adapters/`、`runner.py`、`verifier.py`、`workspace.py`、`exporter.py`、
@@ -131,6 +130,16 @@ ReproAgent tool Python is missing: re-run reproagent setup or pass -ToolPython.
 影响：旧的真实宿主 wrapper 是修复前生成的；下次执行
 `.\install.cmd -Force` 时会先备份再更新为 BOM 版本。当前 `E:\ReproAgent` 是 ASCII
 路径，旧 wrapper 仍可工作。没有为这个修复再次运行真实宿主安装。
+
+## 前一版一键安装验收（合并）
+
+以下是 2026-10-25 早先“一次性双击入口”验收中独有、且本文件没有重跑的记录。它早于本文件的 Python 获取、项目检查与 BOM 修复，不能当作当前完整回归或当前状态。
+
+- **隔离与来源**：早先验收在 `C:/Users/Dell/.codex/worktrees/windows-one-click-install/ReproAgent` 进行，基线 `cef94f1`；将 23 个既有依赖文件原样复制到隔离工作区，SHA256 回执为 `repro-results/windows-one-click-install-20261025/integration-dependency-baseline.json`。这些既有文件不宣称是本次安装入口的实现成果，后续集成保留原作者改动。
+- **安装器行为**：双击入口调用 PowerShell 查找 Python 3.11+，由仅依赖标准库的 Python 引导程序创建私有 `.local/install-env`，使用普通包安装（非 editable），校验 `direct_url.json` 的来源匹配当前源码；不修改开发 `.venv`、全局 Python 或目标项目依赖。安装锁、`-NoPause` 和非零退出码均已验证。缺少模型配置或凭据时安装可以完成，但不会显示 Ready。
+- **三个审查修复**：清除 pip 目的地变量、禁用 pip 配置文件并使用 `--no-user`，避免把包写到专用环境之外；用 ASCII-safe JSON 传递解释器路径，覆盖控制台代码页无法编码路径的情况；Python 3.12/CP936 下把 editable `.pth` 改为普通包安装，避免中文路径导入失败。
+- **早先整仓离线回归（历史记录）**：1311 passed / 1 failed / 9 skipped，1333.54 秒，exit 1。唯一失败为既有 `tests/unit/test_integration_credentials.py::test_dpapi_file_round_trip`，原因是测试子进程继承了 PowerShell 7 的 `PSModulePath`；只修正测试进程的 `PSModulePath` 后，凭据测试 26 passed、1.46 秒。本文件后来的 26 项凭据测试计时取代这次计时；这份整仓结果仍是当时唯一的完整套件记录，不能拼成一次全绿。
+- **交付状态**：该轮未运行付费模型案例、未执行真实用户级安装、未提交或合并；交付回执为 `final-validation.json`，23 个既有依赖文件逐一核对未变。
 
 ## 未覆盖 / 未验证
 

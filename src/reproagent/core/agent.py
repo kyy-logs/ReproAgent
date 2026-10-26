@@ -55,7 +55,7 @@ def require_correctable_output(error):
         raise ModelProtocolError(f'{error.code}: repeating the same request cannot correct it') from None
 
 
-def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=False):
+def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=False, experience_mode='legacy'):
     """The strategy the SDK exploration phase of *context* runs under.
 
     The prompt is product policy, not a description of the phase's current state: the
@@ -90,6 +90,35 @@ def exploration_prompt(context, candidate_parent='tests', *, experience_enabled=
         EXPERIENCE_CATALOG_TOKEN, sentence)
     if not experience_enabled:
         text = text.partition('Optional historical experience tools')[0].rstrip() + '\n'
+    if experience_enabled and experience_mode == 'draft_review':
+        text += (
+            '\nWhen you submit write_candidate, you may include one optional lesson_draft '
+            'with exactly situation, observation, lesson and source_ids. situation must say '
+            'when a future task should load it, including the observed operation/error and '
+            'supported version or input conditions; observation states what was tried and '
+            'what happened; lesson separates known blockers, checks and untested mitigation; '
+            'source_ids must copy 1-3 learning_source_id values from <learning_source> notices '
+            'or this phase\'s learning_sources list. File paths, content hashes and SDK tool-call IDs '
+            'are not learning source IDs. Summarize an actually observed pitfall, not the issue '
+            'itself or a guessed root cause. Tool/protocol refusals, path or permission errors, '
+            'citation failures, exploration order and budget waste can support a workflow lesson; '
+            'source-code knowledge is not required. Describe the observed condition, attempted '
+            'operation, actual result and a concrete next check, citing a displayed learning source. '
+            'For example, a Read refusal requiring an absolute path supports checking the frozen '
+            'source path before reading, not a claim that any absolute path is permitted. Copy the '
+            'source ID from that actual refusal. A known root cause or successful workaround is '
+            'not required; mark untested advice as unverified. Use lesson_status="none" when '
+            'support is missing, the lesson is only speculation, it merely repeats an existing '
+            'rule without useful observed conditions, or no concrete next check follows. '
+            'An error alone does not require a draft; lack of source-code facts alone does not '
+            'justify none. A new '
+            'candidate has not run yet, so do not claim its recovery is verified. The draft '
+            'is optional and never blocks candidate publication. '
+            'Keep single REPRODUCED observations separate from confirmed replay. '
+            'A null classification is unresolved, not NOT_REPRODUCED; MODEL_PROTOCOL_ERROR '
+            'alone does not establish that the candidate test is wrong. Call edits equivalent only after '
+            'comparing the code, not merely identical failed test names; otherwise mark '
+            'equivalence as unverified.\n')
     return text
 
 
@@ -100,8 +129,21 @@ class ReproAgent:
         self.gateway, self.context, self.candidate_parent = gateway, context, candidate_parent
 
     async def analyze(self, description, evidence):
+        previous = evidence.previous_contract
         data = {'description':description.text, 'sources':[asdict(s) for s in evidence.sources], 'texts':list(evidence.texts),
                 'response_schema':contract_schema(len(evidence.sources))}
+        if previous is not None:
+            # A revision must see the constraints it is revising. Keep this
+            # derived interpretation separate from the indexed original sources:
+            # it neither adds a citable source nor changes source_indices.
+            data['previous_contract'] = {
+                'contract_id': previous.contract_id, 'version': previous.version,
+                'trigger': previous.trigger, 'expected': previous.expected,
+                'reported_actual': previous.reported_actual,
+                'observable_checks': list(previous.observable_checks),
+                'assumptions': list(previous.assumptions),
+                'missing_information': list(previous.missing_information),
+            }
         for attempt in range(3):
             self.context.budget.check()
             if self.context.cancel_event.is_set():
@@ -130,7 +172,6 @@ class ReproAgent:
         if not sources or not expected:
             expected = ''
             missing = (*missing, 'Provide a source defining expected correct behavior.')
-        previous = evidence.previous_contract
         material_change = previous and (expected != previous.expected or result.get('trigger', '') != previous.trigger or result.get('reported_actual', '') != previous.reported_actual or tuple(result.get('observable_checks', [])) != previous.observable_checks)
         if material_change and not any(s not in previous.sources for s in sources):
             raise ValueError('contract revision requires new evidence')

@@ -82,6 +82,46 @@ def test_replay_compares_target_failure_not_entire_stdout(tmp_path, projects, fa
     assert not verifier.confirm(contract, candidate, first, changed, verdicts)
 
 
+@pytest.mark.parametrize('auxiliary', [
+    'pytest.mark.skip(reason="auxiliary control")',
+    'pytest.mark.xfail(reason="known auxiliary failure")',
+])
+def test_skipped_or_xfailed_auxiliary_does_not_invalidate_a_failed_target(
+        tmp_path, projects, facts, auxiliary):
+    text = (
+        'import pytest\n'
+        'from example.parser import parse\n'
+        'def test_target():\n'
+        '    assert parse([]) == []\n'
+        f'@{auxiliary}\n'
+        'def test_aux():\n'
+        '    assert False\n')
+    contract, candidate, execution, verifier, model, *_ = prepare(
+        tmp_path, projects, facts, text)
+    verdict = asyncio.run(verifier.evaluate(
+        contract, candidate, (execution,), facts.context()))
+    assert verdict.classification == CandidateClass.REPRODUCED
+    assert verdict.issues == ()
+    assert model.calls
+
+
+def test_all_skipped_tests_still_invalidate_the_candidate(tmp_path, projects, facts):
+    text = (
+        'import pytest\n'
+        '@pytest.mark.skip(reason="first")\n'
+        'def test_one():\n'
+        '    assert False\n'
+        '@pytest.mark.skip(reason="second")\n'
+        'def test_two():\n'
+        '    assert False\n')
+    contract, candidate, execution, verifier, model, *_ = prepare(
+        tmp_path, projects, facts, text)
+    verdict = asyncio.run(verifier.evaluate(
+        contract, candidate, (execution,), facts.context()))
+    assert verdict.classification == CandidateClass.INVALID_CANDIDATE
+    assert not model.calls
+
+
 def test_replay_ignores_the_run_beside_the_code_copy_too(tmp_path, projects, facts):
     """A failure naming the run's own workspace must still compare equal.
 

@@ -574,6 +574,10 @@ class Controller:
             explorer_options = {"project": project, "workspace": self.workspace}
             if self.experience_service is not None and self.experience_service.view is not None:
                 explorer_options["experience_view"] = self.experience_service.view
+            if (self.experience_service is not None and self.experience_service.mode == "draft_review"
+                    and self.experience_service.draft_session is not None):
+                explorer_options["experience_mode"] = "draft_review"
+                explorer_options["draft_session"] = self.experience_service.draft_session
             self.explorer = self.explorer_factory(self.gateway, context, request.language.candidate_parent, **explorer_options)
             with span("analyze"):
                 contract = await self.explorer.analyze(IssueDescription(issue_text, issue_hash),

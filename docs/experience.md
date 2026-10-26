@@ -11,9 +11,42 @@
 ```json
 {
   "experience_file": "../.local/experiences",
-  "learn_experience": true
+  "learn_experience": true,
+  "experience_mode": "legacy"
 }
 ```
+
+`experience_mode` 默认 `legacy`，行为与旧版相同：探索结束时从程序材料独立提炼。实验模式 `draft_review` 会在 `write_candidate` 的可选 `lesson_draft` 中接收探索者的踩坑草稿，并在任务结果落盘后由现有的一次 learning 调用审查、整理和写库；没有可审查草稿且未开启兜底时返回 `skipped_no_draft`，不会额外调用模型补总结。`draft_review` 还接受显式决定字段 `lesson_status`，组合规则如下：
+
+| lesson_status | lesson_draft | 记录 |
+| --- | --- | --- |
+| 缺失 | 完整四字段 | received |
+| 缺失 | 缺失 | omitted |
+| `draft` | 完整四字段 | received |
+| `draft` | 缺失或无效 | invalid_decision |
+| `none` | 缺失或 null | none |
+| `none` | 有草稿 | invalid_decision |
+| 其他坏值 | 任意 | invalid_decision |
+
+坏值只记录受控 code 和有限元数据，不保存模型原始状态文本；所有坏决定都不阻止候选按原规则发布。legacy 模式不增加这两个字段，工具 schema 保持原样。新卡仍只在下一任务可见，历史经验仍不能作为源码证据或进入 Verifier。
+
+配置 `experience_draft_fallback` 默认 `false`。显式设为 `true` 时，仅在 `draft_review` 下同时满足以下条件才用一次独立的 30 秒 learning 请求生成草稿候选，再交给现有 review：没有合法草稿且没有显式 `lesson_status="none"`（即 omitted 或 invalid_decision）；保存的任务结果不是 `DONE`，或任务事件中存在受控/验收失败（`action.rejected`、`exploration.tool_error`、`phase.error`，或 `verification.feedback` 的受控 decision/code）。成功且没有受控失败的 DONE 任务不会发起兜底请求；没有可用受控材料时也不会发起。兜底不读取完整聊天、fixed 代码或参考补丁，不直接写卡，失败只返回受控 code，不改变主任务结果。已有合法草稿、显式 none、legacy 模式、未启用学习或取消/坏库等既有跳过条件都不会触发兜底。
+
+候选被 Verifier 打回不等于草稿无效：草稿仍保存在 `learning/draft.json` 并进入任务结束后的审查材料。审查可以接受或修订一条框架/流程教训，但不得声称候选已成功或恢复已验证；只有 accept/revise 才写卡，reject 不写卡。
+
+流程踩坑不要求包含源码知识：工具/协议拒绝、路径、权限、引用、探索顺序和预算问题，只要有独立来源支持“具体条件 → 尝试的操作 → 实际结果 → 下次检查”，都可以形成草稿。无需先查清根因或验证解法；尚未执行的建议必须标为未验证。例如 Read 明确拒绝相对路径，可以支持“读取前核对冻结源码的绝对路径”，但不能推出“任意绝对路径都可读”。模型必须复制该次实际拒绝提供的来源 ID。
+
+`none` 仍是有效选择：无来源、只有猜测、仅重复既有规则而没有有用的适用条件或观察，或无法提出具体后续检查时，不应为了写卡凑经验。报错本身不保证经验有价值；也不能仅因缺少源码事实而排除有依据的流程经验。这个口径只调整探索、工具说明、单次提醒、兜底和审查提示，不增加模型调用、不自动生成草稿、不改变来源资格或严格写库校验。
+
+`draft_review` 的 `write_candidate` 对模型声明 `lesson_status` 必填（`draft`/`none`）；`lesson_draft` 仍可选。若模型同时漏填两者，且本任务已有实际可见、可引用的学习来源，程序最多发起一次补全逻辑请求：复用当次探索模型和上下文，最多 10 秒、768 输出 token（不超过模型配置上限），正常计入探索步骤、Token 和费用。补全开始前要求剩余步骤仍大于发布预留 3 步，且剩余任务时间至少为补全 10 秒加现有 finalize 预留（默认 5 秒）；容量、取消、时间不足、没有来源或已经补过时跳过。补全只返回 `lesson_status`/`lesson_draft`，不能改变候选 files、hypothesis 或 call ID；超时、模型错误、非法 JSON、未知来源或非法结构都保留原候选并记录为 omitted，不编造 none。补全请求与响应仍走现有观测和用量统计；`experience.lesson_completion` 只记录受控 code、call ID、原始/合并参数哈希和实际调用序号，不保存模型正文。补出的草稿继续经过既有大小、来源成员资格、时间顺序和 review 校验。
+
+这里的上下文来自最近一次选中该候选的完整探索输入快照，保留当时的目标、契约、反馈与已配对的历史工具调用/结果，再追加补全指令和来源说明。构造补全请求时排除该轮临时的经验决定提醒、经验浏览提醒和探索预算通知，避免重复交付单次提醒或沿用过时的动作指令。不会直接读取已插入当前待执行 `write_candidate` 的实时历史，避免把尚无结果的工具调用带进补全。无法取得快照时记 `skipped_context`，不退回凭登记表猜测。来源登记表读取失败按 `skipped_no_source` 跳过补全并继续发布原候选。输入估算完成后、发请求前再次检查取消、步骤和“10 秒加 finalize 预留”的时间余量；跳过不消耗唯一一次补全资格，全局取消和硬预算停止仍按原规则传播。
+
+草稿审查材料总共最多 8192 字节，包含草稿、输出 schema 和程序证据。先保留草稿引用的必需来源与冻结 Issue，再补可选背景；装不下的背景明确记录省略，不截断必需来源。工具来源按消息与消息内块的先后关联，重复调用 ID、自引用、未来来源以及未完整采集的必需来源均不猜测绑定；原版执行来源还必须早于草稿记录。最终选定的材料才冻结为 `learning/evidence.jsonl`。
+
+执行材料中的 `verdict_diagnostics` 保留同一次原版运行最终判定的受控 `code`、`origin`，以及已识别的 `protocol_error`；最多三项，更多项通过 `verdict_diagnostics_omitted` 标明。未知协议码显示为 `unrecognized`，不回传任意错误文本。证据胶囊同时保留对应 verdict 的路径与哈希。`classification=null` 表示判定未成立，不等于 `NOT_REPRODUCED`；单次 `REPRODUCED` 与重放确认分开。草稿不得只凭相同失败名称就断言修改等价；缺少源码对照时，应保留“不确定”。这些信息不改变原验收结论或学习材料上限。
+
+历史归档的审查请求不会自动补齐新字段。评估这项修复时，应由当前程序重新生成材料；直接重放旧的 `prepared-input.json` 仍会缺少原先丢失的诊断。
 
 配置中的相对路径以 task.json 所在目录解析。库和稳定旁路锁 根目录旁的 `experiences.lock`（文件模式为 `experiences.json.lock`） 必须在目标仓库、修复仓库和任务输出之外。这里指被复现项目，不是安装 ReproAgent 的目录。多个任务可以使用同一路径。缺文件按空库读取，首次有效学习才创建库。`learn_experience: false` 可以读取已有经验，但不会提炼或写入；它不等于完全关闭经验功能。默认启用提炼可能产生额外模型调用及费用。
 
@@ -26,6 +59,10 @@
 目录码 ready/empty 表示成功；invalid_category/invalid_cursor/catalog_limit/catalog_budget/response_capacity/catalog_unavailable 表示未成功加载。正文拒绝码 unknown_id/not_displayed/read_limit/response_capacity。首次浏览要求未满足时返回 EXPERIENCE_BROWSE_REQUIRED，不执行该工具。两个工具仍遵守原动作预算、取消、SDK 权限和保留发布步骤；没有额外模型预算。本地浏览和读取不发模型请求，但 Agent 选择工具的轮次和返回文本消耗模型步骤与 token。
 
 经验为历史建议，不是原版源码证据，不能作为 revise_contract 引用；分析和 Verifier 不直接加载经验。事件 experience.catalog 记录分类、实际返回的 ID、字节和分页；experience.read 记录实际成功读正文的 ID。真实错误仍可见于 experience.triggered，但不会自动召回或注入卡片；本版不产生自动匹配的 retrieved/injected/omitted 事件。完整 trace 的工具输入、输出和下一模型请求用于核实加载链，关闭 trace 不影响加载。
+
+`draft_review` 且启用学习时，已解除首次浏览门禁的探索在可恢复阻塞后可收到一次简短查阅提醒。生成提醒前检查调用前剩余步骤（当前至少 6 步）、实际可交付的目录页、正文额度及 SDK 权限规则；这项检查不扣配额、不授权 ID，也不自动读卡。有 deny/ask 规则时保守地省略提醒，实际工具调用仍走原权限判定。`experience.hint` 记录送达或具体抑制原因、原阻塞调用 ID 和下一模型调用序号；记录失败不改变主任务结果。
+
+同一 `draft_review` 任务在受控失败后还会收到一次短暂、非持久的 `lesson-decision` reminder：verification feedback 的 `decision=continue`，或实际工具错误、权限拒绝、协议拒绝，都会在下一模型调用前提示模型在下次 `write_candidate` 显式提供 `lesson_draft` 或声明 `lesson_status="none"`。准备提醒不等于交付：只有最终输入仍含提醒且模型正常返回时才记为 `delivered`，此后本任务不再准备；发送前因容量移除记为 `not_delivered/context_capacity`，资格仍保留，下一调用可以重新准备；预算守卫在发送前终止记为 `not_delivered/budget_stopped` 并保留真实 `stop_reason`；模型调用抛异常且无法证明请求未发送时记为 `delivery_unconfirmed/model_call_failed`，既不虚报 delivered，也不重新准备另一份。`prepared`、`delivered`、`not_delivered`、`delivery_unconfirmed` 都写入 `experience.lesson_decision`，事件只含 phase、受控 code/reason、冻结的 `next_call_index`（需要时加 `stop_reason`），不保存提醒正文。提醒只附加到单次输入、不写入对话历史，也不改变候选发布条件；`decision=stop` 或任意反馈文本本身不会触发提醒。trace/正文采集被截断或日志写失败时，“没有看到提醒”不能反推“没有发送”；应以实际 wire 正文和该事件为准。
 
 ## 什么时候写，谁写
 
@@ -94,7 +131,7 @@ reproagent experience migrate path/to/old.json path/to/experiences
 
 学习请求明确要求一个 JSON 对象，兼容 `response_format=json_object` 的提示词约束。非空 experience 必须有 category、tags、name、description、summary、detail、evidence_ids 七个字段；正文提到 EID 不能替代 evidence_ids 数组，程序不从正文猜引用或自动补字段。HTTP 拒绝或三次网络尝试耗尽返回 `provider_error`。每个 `model.attempt` 在收到 HTTP 响应时记录 `http_status_code`，没收到响应则不虚构状态码。
 
-校验失败单独诊断，保留主任务结果，不写入坏卡、不追加纠错请求：
+校验失败单独诊断，保留主任务结果，不写入坏卡、不追加纠错请求。字段级长度错误只返回受控的 `field_errors`（field、actual_length、limit），它同时出现在 `experience.learning` 的 `LearningResult` 中；不会把 165 字符的旧输出截短后入库，也不会用第二次请求替换第一次审查。`name`/`description` 的硬上限仍是 64/160 个 Python 字符，提示词另外建议 `name <=32`、`description 80-120` 留出余量，但软目标不构成新的拒绝条件：
 
 | learning.code | 含义 |
 | --- | --- |
@@ -102,7 +139,8 @@ reproagent experience migrate path/to/old.json path/to/experiences
 | invalid_extra_fields | 多出未允许的字段，不把任意额外字段名写进日志 |
 | invalid_structure | 顶层/experience 对象结构错误 |
 | invalid_json | 无法解析为严格 JSON 对象 |
-| invalid_fields | 分类、标签、摘要或详情类型/取值无效 |
+| invalid_fields | 分类、标签、摘要或详情类型/取值无效；name/description 长度错误不再折叠到这里 |
+| invalid_field_length | `name` 超过 64 字符或 `description` 超过 160 字符；field_errors 最多两项，每项只有 field/actual_length/limit，不携带字段值或模型原文。按脱敏后的 Python 字符数计算，中文不按 UTF-8 字节计算 |
 | invalid_evidence_ids | 引用 ID 不存在、重复、数量或类型不合法 |
 | invalid_evidence_changed | 冻结证据文件、哈希、行号或 ID 无法再验证 |
 | invalid_card_size | 最终卡片超过 4096 字节；needed_bytes/limit_bytes/exceeded_bytes 给出实际大小、上限和超出量 |
@@ -110,7 +148,7 @@ reproagent experience migrate path/to/old.json path/to/experiences
 | provider_error | HTTP/网络请求失败，状态码见 model.attempt |
 | internal_error | 未归入上述校验原因的参数/运行时异常，不假称经验格式错误 |
 
-CLI learning、experience.learning 事件及 trace 学习汇总共享 code/missing_fields；learn span 也记录最终结果码。只记录受控诊断，不保存原始异常文本或任意模型字段。
+CLI learning、experience.learning 事件及 trace 学习汇总共享 code/missing_fields；长度错误另带 field_errors。learn span 也记录最终结果码。只记录受控诊断，不保存原始异常文本或任意模型字段。
 
 启用 trace 时，HTTP span 附带状态码，并关联 `provider_error` 错误摘要：只选择 code/type/message，已知模型密钥先脱敏，每字段最多 512 字符，省略时标记 truncated。不复制响应头或额外 debug 字段；非 JSON 错误正文仅保存有限脱敏预览。关闭 trace 不保留错误正文，事件中始终只有受控元数据，不把这些错误预览喂回学习模型。此采集不增加模型请求。
 

@@ -1,6 +1,7 @@
 .venv/
 .local/
 .tmp/
+.tmp-*/
 .superpowers/
 .pytest_cache/
 __pycache__/
@@ -14,3 +15,6 @@ work/
 .env
 .env.*
 *.key
+artifacts/
+experiences.lock
+.claude/settings.json

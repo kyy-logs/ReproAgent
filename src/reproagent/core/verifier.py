@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from dataclasses import asdict
 from importlib.resources import files
 from pathlib import Path
@@ -20,7 +21,7 @@ from reproagent.store import safe_child
 from reproagent.workspace import candidate_hash
 from .verification_issues import ISSUE_SPECS
 from .budget import BudgetStopped
-from .protocol import ModelOutputError, validate_verdict
+from .protocol import ModelOutputError, negative_assertion_support, validate_verdict
 from .execution_diagnostics import diagnose_execution, execution_bound, diagnostic_reason, INVALID_INTEGRITY_CODES
 
 
@@ -36,6 +37,11 @@ def _overflow_reason(needed_bytes: int, budget_bytes: int) -> str:
     """
     return (f'semantic evidence exceeds bounded context (review evidence needs {needed_bytes} bytes; '
             f'budget is {budget_bytes} bytes); narrow candidate')
+
+
+def _same_node_report(first, second):
+    """Compare node reports as multisets: report order is not a trigger condition."""
+    return Counter(first or ()) == Counter(second or ())
 
 
 class Verifier:
@@ -215,19 +221,31 @@ class Verifier:
                             raise ValueError('assertion_reviews may cite only supplied expectation sources, not observed failures')
                 except (ValueError, TypeError, KeyError, OSError) as exc:
                     rows = result.get('assertion_reviews', [])
-                    negative_audit = isinstance(rows, list) and any(isinstance(row, dict) and row.get('supported') is False for row in rows)
+                    negative_audit = isinstance(rows, list) and any(negative_assertion_support(row) for row in rows)
                     if negative_audit or any(result.get(key) is False for key in ('expected_assertion','target_triggered','failure_matches_issue')):
                         return verdict(None, 'negative semantic check in an invalid verdict; correction cannot promote it to success',
                             code='MODEL_PROTOCOL_ERROR', measurements={'attempts':attempt + 1, 'protocol_error':'invalid_negative_response'})
                     error = str(exc)
                     protocol_code = 'MODEL_PROTOCOL_ERROR'
                 else:
-                    unsupported = [row for row in result['assertion_reviews'] if not row['supported']]
+                    # A positive boolean cannot override a provider's own claim
+                    # that the only basis is changed old behavior or is unknown.
+                    unsupported = [row for row in result['assertion_reviews'] if negative_assertion_support(row)]
                     if not record_check('candidate_assertions_supported', not unsupported, source='provider_claim'):
                         notes = []
                         for row in unsupported:
                             site = sites[row['assertion_id']]
-                            notes.append(f"{site['path']}:{site['start_line']}: {row['reason']}")
+                            if row['basis'] == 'target_old_behavior':
+                                explanation = ('该断言仅以本次要修改的旧行为为依据，尚不能要求修复后继续保留。'
+                                    '请删除这一额外约束，或补充明确要求保留它的独立原始依据。')
+                            elif row['basis'] == 'unknown':
+                                explanation = ('该断言的正确行为依据尚未确立。请补充已核对的原始依据，'
+                                    '或移除无依据的额外约束；不能仅因原版表现如此就认定必须保留。')
+                            else:
+                                explanation = row['reason']
+                            if row['supported']:
+                                explanation += ' 模型 supported=true 与依据类型冲突，程序已拒绝；模型原始意见不作为执行建议。'
+                            notes.append(f"{site['path']}:{site['start_line']}: [basis={row['basis']}] {explanation}")
                         return verdict(CandidateClass.INVALID_CANDIDATE,
                             'unsupported candidate assertion(s): ' + '; '.join(notes), refs,
                             origin='provider', unmet=('candidate_assertions_supported',), code='CANDIDATE_ASSERTIONS_UNCONFIRMED',
@@ -287,15 +305,24 @@ class Verifier:
             code='MODEL_PROTOCOL_ERROR', measurements={'attempts':3, 'protocol_error':protocol_code}, issues=extra)
 
     def confirm(self, contract, candidate, first, second, verdicts):
+        """Confirm a replay and record why, without changing the bool interface."""
+        reason, differences = self._confirm_reason(contract, candidate, first, second, verdicts)
+        self._record_replay_compared(candidate, first, second, reason, differences)
+        return reason == 'CONFIRMED'
+
+    def _confirm_reason(self, contract, candidate, first, second, verdicts):
         if len(verdicts) != 2 or any(v.classification != CandidateClass.REPRODUCED or v.candidate_id != candidate.candidate_id or v.manifest_hash != candidate.manifest_hash or v.contract_id != contract.contract_id or v.contract_version != contract.version for v in verdicts):
-            return False
+            return 'VERDICT_MISMATCH', ()
         if first.run_id == second.run_id or any(not self._bound(contract, candidate, run) or not run.protection.ok or not run.raw.cleanup_ok or not run.observation.probe_complete for run in (first, second)):
-            return False
+            return 'BINDING_OR_INTEGRITY_MISMATCH', ()
         if first.observation.framework_details.get('preconditions') != second.observation.framework_details.get('preconditions') or candidate.preconditions:
             # External-state reset cannot yet be demonstrated by this local runner.
-            return False
-        if first.observation.framework_details.get('collected_nodeids') != second.observation.framework_details.get('collected_nodeids') or first.observation.framework_details.get('completed_nodeids') != second.observation.framework_details.get('completed_nodeids'):
-            return False
+            return 'PRECONDITIONS_UNSUPPORTED', ()
+        if not (_same_node_report(first.observation.framework_details.get('collected_nodeids'),
+                                  second.observation.framework_details.get('collected_nodeids'))
+                and _same_node_report(first.observation.framework_details.get('completed_nodeids'),
+                                      second.observation.framework_details.get('completed_nodeids'))):
+            return 'TEST_SET_MISMATCH', ()
         def _run_roots(run_root):
             """Every spelling of the directories one run's own paths may name, longest first.
 
@@ -326,12 +353,27 @@ class Verifier:
                 for spelling, replacement in roots:
                     text = text.replace(spelling, replacement)
                 return text
+            def display_object_ids(phase):
+                """Only the exact bounded proof the collector accepted, never a loose guess."""
+                display = phase.get('assertion_display')
+                if not isinstance(display, dict) or set(display) != {'provenance', 'object_ids'}:
+                    return ()
+                if display.get('provenance') != 'pytest_rewrite':
+                    return ()
+                ids = display.get('object_ids')
+                if not isinstance(ids, list) or not 1 <= len(ids) <= 64:
+                    return ()
+                if any(type(value) is not int or value <= 0 for value in ids) or len(set(ids)) != len(ids):
+                    return ()
+                return tuple(ids)
+
             result = []
             for phase in run.observation.tests:
                 if phase.get('outcome') == 'failed':
                     crash = dict(phase.get('crash', {}))
                     crash['path'] = normalized(str(crash.get('path', '')))
-                    crash['message'] = stable_failure_message(normalized(str(crash.get('message', ''))))
+                    crash['message'] = stable_failure_message(
+                        normalized(str(crash.get('message', ''))), display_object_ids(phase))
                     comparison = phase.get('assertion_comparison')
                     if phase.get('exception_type') == 'builtins.AssertionError' and comparison:
                         # Compare the observed complete values, not pytest's
@@ -343,4 +385,63 @@ class Verifier:
                     nodeid = nodeid.split(run.run_id + '/code/', 1)[-1]
                     result.append((nodeid, phase.get('when'), phase.get('exception_type', ''), json.dumps(crash, sort_keys=True)))
             return result
-        return bool(signatures(first)) and signatures(first) == signatures(second)
+        first_signatures, second_signatures = signatures(first), signatures(second)
+        if not first_signatures or not second_signatures:
+            return 'NO_FAILURE_SIGNATURE', ()
+        if Counter(first_signatures) == Counter(second_signatures):
+            return 'CONFIRMED', ()
+        return 'FAILURE_SIGNATURE_MISMATCH', _signature_differences(first_signatures, second_signatures)
+
+    def _record_replay_compared(self, candidate, first, second, reason, differences):
+        payload = {'candidate_id': candidate.candidate_id,
+                   'first_run_id': first.run_id, 'second_run_id': second.run_id,
+                   'confirmed': reason == 'CONFIRMED', 'reason': reason}
+        if differences:
+            payload['differences'] = list(differences)
+        if self.store is not None:
+            try:
+                self.store.append_event('replay.compared', (), payload)
+            except (OSError, ValueError, TypeError):
+                pass  # Diagnosis cannot change the replay decision.
+        try:
+            mark('replay.compared', attributes=payload)
+        except (OSError, ValueError, TypeError):
+            pass
+
+
+def _signature_differences(first, second):
+    """Name the differing fields only; never copy failure prose into diagnostics."""
+    def keyed(signatures):
+        return {(item[0], item[1]): item for item in signatures}
+    left, right = keyed(first), keyed(second)
+    differences = []
+    for key in sorted(set(left) | set(right)):
+        if key not in left or key not in right:
+            differences.append({'nodeid': key[0], 'when': key[1], 'fields': ['failure_signature']})
+        else:
+            one, two = left[key], right[key]
+            fields = []
+            if one[2] != two[2]:
+                fields.append('exception_type')
+            try:
+                crash_one, crash_two = json.loads(one[3]), json.loads(two[3])
+            except (ValueError, TypeError):
+                crash_one, crash_two = {}, {}
+            for field in ('path', 'lineno'):
+                if crash_one.get(field) != crash_two.get(field):
+                    fields.append(field)
+            if crash_one.get('message') != crash_two.get('message'):
+                message_one, message_two = crash_one.get('message'), crash_two.get('message')
+                message_fields = []
+                if isinstance(message_one, dict) and isinstance(message_two, dict):
+                    for field in ('operator', 'left', 'right'):
+                        if message_one.get(field) != message_two.get(field):
+                            message_fields.append(field)
+                if not message_fields:
+                    message_fields.append('message')
+                fields.extend(message_fields)
+            if fields:
+                differences.append({'nodeid': key[0], 'when': key[1], 'fields': fields})
+        if len(differences) >= 8:
+            break
+    return tuple(differences)

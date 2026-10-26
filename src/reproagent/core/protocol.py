@@ -121,6 +121,19 @@ def validate_keys(result, required):
         raise ValueError(f'response fields mismatch: missing {sorted(missing)}, unexpected {sorted(extra)}')
 
 
+ASSERTION_BASES = ('current_requirement', 'unaffected_contract', 'target_old_behavior', 'unknown')
+
+
+def negative_assertion_support(row):
+    """Keep explicit negative basis claims, even in an otherwise invalid reply.
+
+    This applies a policy to a provider claim; it cannot verify that the provider
+    correctly distinguished a requirement from the old behavior in the first place.
+    """
+    return isinstance(row, dict) and (row.get('supported') is False
+        or row.get('basis') in ('target_old_behavior', 'unknown'))
+
+
 def verdict_schema(assertion_ids=()):
     from .models import CandidateClass
     properties = {'classification':{'type':['string','null'],'enum':[c.value for c in CandidateClass] + [None]},
@@ -130,7 +143,10 @@ def verdict_schema(assertion_ids=()):
     properties.update({name:{'type':'boolean'} for name in ('expected_assertion','target_triggered','failure_matches_issue')})
     properties['assertion_reviews'] = {'type': 'array', 'minItems': len(assertion_ids), 'maxItems': len(assertion_ids),
         'items': object_schema({'assertion_id': {'type': 'string', **({'enum': list(assertion_ids)} if assertion_ids else {})},
-            'supported': {'type': 'boolean'}, 'reason': {'type': 'string'},
+            'supported': {'type': 'boolean', 'description':
+                'Whether cited normative evidence requires this assertion to hold after a correct fix; '
+                'not whether it passes now or helps locate the bug.'},
+            'basis': {'type': 'string', 'enum': list(ASSERTION_BASES)}, 'reason': {'type': 'string'},
             'evidence_refs': {'type': 'array', 'items': properties['evidence_refs']['items']}})}
     return object_schema(properties)
 
@@ -159,13 +175,15 @@ def validate_verdict(result, assertion_ids=()):
     for row in rows:
         if not isinstance(row, dict):
             raise ValueError('invalid assertion_reviews entry')
-        validate_keys(row, ('assertion_id', 'supported', 'reason', 'evidence_refs'))
+        validate_keys(row, ('assertion_id', 'supported', 'basis', 'reason', 'evidence_refs'))
         identifier = row['assertion_id']
         if type(identifier) is not str or identifier not in assertion_ids or identifier in seen:
             raise ValueError('assertion_reviews contains unknown or duplicate assertion_id')
         seen.add(identifier)
         if type(row['supported']) is not bool or type(row['reason']) is not str or not row['reason'].strip():
             raise ValueError('assertion_reviews requires supported boolean and nonempty reason')
+        if type(row['basis']) is not str or row['basis'] not in ASSERTION_BASES:
+            raise ValueError('assertion_reviews basis must be an allowed source-role classification')
         refs = row['evidence_refs']
         if not isinstance(refs, list) or (row['supported'] and not refs):
             raise ValueError('supported assertion_reviews require expectation source citations')

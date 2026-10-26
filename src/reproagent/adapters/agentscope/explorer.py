@@ -43,12 +43,15 @@ class AgentScopeExplorer(ReproAgent):
             runtime installs its own guard on the model it creates.
     """
 
-    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, model_factory, experience_view=None):
+    def __init__(self, gateway, context, candidate_parent='tests', *, project, workspace, model_factory,
+                 experience_view=None, experience_mode='legacy', draft_session=None):
         require_agentscope()
         super().__init__(gateway, context, candidate_parent)
         self.project, self.workspace, self.model_factory = project, workspace, model_factory
         self.store = workspace.store
         self.experience_view = experience_view
+        self.experience_mode = experience_mode
+        self.draft_session = draft_session
         self.gate = PhaseGate()
         self.candidates = CandidateService(project, workspace, context)
         self.backend = SnapshotBackend(project, self.store, context)
@@ -83,8 +86,10 @@ class AgentScopeExplorer(ReproAgent):
                 await runtime.aclose()
                 try:
                     from ...learning_material import capture_exploration
-                    self.learning_context = capture_exploration(runtime.messages, self.evidence_views.issued_refs,
-                        secrets=getattr(self.gateway, 'secrets', ()))
+                    self.learning_context = capture_exploration(
+                        runtime.messages, self.evidence_views.issued_refs,
+                        secrets=getattr(self.gateway, 'secrets', ()),
+                        draft=self.draft_session.latest if self.draft_session is not None else None)
                 except Exception:
                     # Advisory learning cannot replace retirement or business results.
                     self.learning_context = {'source_refs':(), 'tool_errors':(),
@@ -102,11 +107,14 @@ class AgentScopeExplorer(ReproAgent):
         """
         model = self.model_factory.create(self.context, 'exploration')
         toolkit = build_toolkit(self.backend, self.ledger, self.candidates, self.gate, self.context,
-            experience_view=self.experience_view, evidence_views=self.evidence_views)
+            experience_view=self.experience_view, evidence_views=self.evidence_views,
+            experience_mode=self.experience_mode, draft_session=self.draft_session)
         return AgentScopeRuntime(model, toolkit, self.gate, self.context,
                                  system_prompt=exploration_prompt(phase, self.candidate_parent,
-                                     experience_enabled=self.experience_view is not None),
-                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()), experience_view=self.experience_view)
+                                     experience_enabled=self.experience_view is not None,
+                                     experience_mode=self.experience_mode),
+                                 store=self.store, secrets=getattr(self.gateway, 'secrets', ()),
+                                 experience_view=self.experience_view, draft_session=self.draft_session)
 
 
 def agentscope_explorer_factory(config, store, *, transport=None):
@@ -119,9 +127,12 @@ def agentscope_explorer_factory(config, store, *, transport=None):
     """
     require_agentscope()
 
-    def factory(gateway, context, candidate_parent, *, project, workspace, experience_view=None):
+    def factory(gateway, context, candidate_parent, *, project, workspace, experience_view=None,
+                experience_mode='legacy', draft_session=None):
         return AgentScopeExplorer(gateway, context, candidate_parent, project=project, workspace=workspace,
-                                  model_factory=AgentScopeModelFactory(config, store, transport=transport), experience_view=experience_view)
+                                  model_factory=AgentScopeModelFactory(config, store, transport=transport),
+                                  experience_view=experience_view, experience_mode=experience_mode,
+                                  draft_session=draft_session)
     return factory
 
 

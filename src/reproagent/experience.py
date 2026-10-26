@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from .core.budget import BudgetStopped
-from .core.models import EvidenceRef
+from .core.models import EvidenceRef, TaskState
 from .core.serialization import canonical_bytes, canonical_hash, parse_json, bytes_hash, ObjectRootError
 from .observability import span
 from .paths import directory_path, workspace_path, is_within
@@ -91,16 +91,43 @@ class LearningResult:
     needed_bytes: int | None = None
     limit_bytes: int | None = None
     exceeded_bytes: int | None = None
+    review_decision: str = ""
+    review_reason_code: str = ""
+    fallback_used: bool = False
+    field_errors: tuple[dict, ...] = ()
 
 
 PROPOSAL_FIELDS = frozenset({'category', 'tags', 'name', 'description', 'summary', 'detail', 'evidence_ids'})
+CATALOG_FIELD_LIMITS = {'name': 64, 'description': 160}
 LEARNING_VALIDATION_CODES = frozenset({'invalid_json', 'invalid_structure', 'invalid_missing_fields',
-    'invalid_extra_fields', 'invalid_evidence_ids', 'invalid_evidence_changed', 'invalid_fields', 'invalid_card_size'})
+    'invalid_extra_fields', 'invalid_evidence_ids', 'invalid_evidence_changed', 'invalid_fields',
+    'invalid_field_length', 'invalid_card_size'})
+
+
+def _bounded_field_errors(items):
+    """Keep only the two catalog fields and their own fixed limits.
+
+    These diagnostics travel into task events, so they must never carry a provider
+    string, a field value or an attacker-chosen limit.  A malformed item is dropped
+    rather than echoed.
+    """
+    result = []
+    for item in items or ():
+        if type(item) is not dict or set(item) != {'field', 'actual_length', 'limit'}:
+            continue
+        field, actual, limit = item['field'], item['actual_length'], item['limit']
+        if field not in CATALOG_FIELD_LIMITS or limit != CATALOG_FIELD_LIMITS[field]:
+            continue
+        if type(actual) is not int or actual < 0:
+            continue
+        result.append({'field': field, 'actual_length': actual, 'limit': limit})
+    return tuple(result[:2])
 
 
 class LearningValidationError(ValueError):
     """A bounded validation reason; never carries raw model fields or text."""
-    def __init__(self, code, *, missing_fields=(), needed_bytes=None, limit_bytes=None):
+    def __init__(self, code, *, missing_fields=(), needed_bytes=None, limit_bytes=None,
+                 field_errors=()):
         if code not in LEARNING_VALIDATION_CODES:
             raise ValueError('unknown learning validation code')
         self.code = code
@@ -108,6 +135,7 @@ class LearningValidationError(ValueError):
         self.needed_bytes = needed_bytes
         self.limit_bytes = limit_bytes
         self.exceeded_bytes = needed_bytes - limit_bytes if needed_bytes is not None and limit_bytes is not None else None
+        self.field_errors = _bounded_field_errors(field_errors)
         super().__init__(code + (': ' + ', '.join(self.missing_fields) if self.missing_fields else ''))
 
 
@@ -136,7 +164,8 @@ def _card(data, *, check_size=True):
         raise ValueError("invalid experience fields")
     catalog_name, description = data.get('name', ''), data.get('description', '')
     if 'name' in data and (catalog_name, description) != ('', '') and any(type(value) is not str or not value.strip() or len(value) > limit
-                             for value, limit in ((catalog_name, 64), (description, 160))):
+                             for value, limit in ((catalog_name, CATALOG_FIELD_LIMITS['name']),
+                                                  (description, CATALOG_FIELD_LIMITS['description']))):
         raise ValueError('invalid catalog metadata')
     for name in ("id", "category", "summary", "detail", "source_task_id"):
         if type(data[name]) is not str or not data[name].strip():
@@ -475,13 +504,23 @@ def validate_experience(response, material, store, *, secrets=()):
     category = proposed["category"]
     if any(type(proposed[key]) is not str or not proposed[key].strip() for key in ('name', 'description')):
         raise LearningValidationError('invalid_fields')
+    catalog_name, description = (_redact(proposed['name'], secrets),
+                                 _redact(proposed['description'], secrets))
+    field_errors = tuple({'field': field, 'actual_length': len(value),
+                          'limit': CATALOG_FIELD_LIMITS[field]}
+                         for field, value in (('name', catalog_name),
+                                              ('description', description))
+                         if len(value) > CATALOG_FIELD_LIMITS[field])
+    if field_errors:
+        # Redaction can lengthen a field; the limit applies to what would be written.
+        # This is a typed refusal, not the generic invalid_fields collapse.
+        raise LearningValidationError('invalid_field_length', field_errors=field_errors)
     try:
         # Validate the proposal before adding program metadata.
         data = {"id": _identifier(category, tags, summary), "category": category, "tags": tags,
             "summary": summary, "detail": detail, "source_task_id": material.source_task_id,
             "evidence_refs": [asdict(ref) for ref in refs],
-            'name': _redact(proposed['name'], secrets) if type(proposed['name']) is str else proposed['name'],
-            'description': _redact(proposed['description'], secrets) if type(proposed['description']) is str else proposed['description']}
+            'name': catalog_name, 'description': description}
         _card(data, check_size=False)
         triggers = tuple(sorted({t for entry in entries for t in evidence_triggers(entry)}))[:3] if category in ("model", "workflow") else ()
         tags = normative_tags(tags, triggers)
@@ -492,6 +531,32 @@ def validate_experience(response, material, store, *, secrets=()):
         raise LearningValidationError('invalid_card_size', needed_bytes=exc.needed_bytes, limit_bytes=exc.limit_bytes) from None
     except (ValueError, TypeError):
         raise LearningValidationError('invalid_fields') from None
+
+
+#: The saved events whose controlled code or decision records a failure. A fallback is a
+#: paid request, so its gate reads only this closed vocabulary, never event prose.
+FAILURE_EVENTS = frozenset({'action.rejected', 'exploration.tool_error', 'phase.error',
+                            'verification.feedback'})
+
+
+def _has_controlled_failure(store, result) -> bool:
+    """Whether the saved result or task events record a failure the fallback may address."""
+    if getattr(result, 'status', None) != TaskState.DONE:
+        return True
+    try:
+        events, _ = store.read_events()
+    except (OSError, ValueError, TypeError):
+        return False
+    for event in events:
+        if event.kind not in FAILURE_EVENTS or not isinstance(event.payload, dict):
+            continue
+        code = event.payload.get('result_code')
+        if event.kind == 'verification.feedback':
+            if event.payload.get('decision') in ('continue', 'stop') and code != 'OK':
+                return True
+        elif type(code) is str and code and code != 'OK':
+            return True
+    return False
 
 
 async def extract_experience(material, gateway, context, store, *, secrets=()):
@@ -519,9 +584,11 @@ class ExperienceService:
         self.request, self.store = request, store
         self.learning_gateway_factory = learning_gateway_factory
         self.secrets = tuple(s for s in secrets if s)
+        self.mode = request.experience_mode
         self.path = None
         self.view = None
         self.snapshot = None
+        self.draft_session = None
         self._learning_started = False
         self._learning_result = None
         self.exploration = {}
@@ -539,6 +606,9 @@ class ExperienceService:
         if self.snapshot.state != "store_error":
             from .experience_catalog import ExperienceCatalogView
             self.view = ExperienceCatalogView(self.snapshot, secrets=self.secrets)
+            if self.mode == "draft_review" and self.request.learn_experience:
+                from .experience_drafts import ExperienceDraftSession
+                self.draft_session = ExperienceDraftSession(self.store, secrets=self.secrets)
         self.store.append_event("experience.loaded", (), {"state": self.snapshot.state,
             "content_hash": self.snapshot.content_hash, "count": len(self.snapshot.cards)})
 
@@ -548,6 +618,18 @@ class ExperienceService:
     def _index_diagnostic(self, category, code):
         try: self.store.append_event('experience.index', (), {'category': category, 'code': code})
         except (OSError, ValueError, RuntimeError): pass
+
+    def _record_material(self, code, material):
+        try:
+            diagnostics = {'code': code}
+            if material is not None:
+                diagnostics.update({'input_bytes': len(canonical_bytes(material.payload)),
+                    'evidence_count': len(material.evidence_map),
+                    'attempt_count': len(material.payload['attempts']),
+                    'omissions': material.payload['omissions']})
+            self.store.append_event('experience.material', (), diagnostics)
+        except (OSError, ValueError, TypeError):
+            pass
 
     async def learn(self, result, main_context):
         # Learning runs inside the task's own trace scope, on its own budget: the span
@@ -572,7 +654,10 @@ class ExperienceService:
         started = time.monotonic()
         gateway, card, code = None, None, "skipped_no_evidence"
         missing_fields = ()
+        field_errors = ()
         size_diagnostics = {}
+        review_decision = review_reason_code = ""
+        fallback_used = False
         context = CallContext(Budget(BudgetLimits(task_timeout_seconds=LEARNING_SECONDS)), cancel_event=main_context.cancel_event)
         try:
             if self.request.experience_file is None:
@@ -584,25 +669,89 @@ class ExperienceService:
             elif self.snapshot is not None and self.snapshot.state == "store_error":
                 code = "store_error"
             elif self.path is not None and self.learning_gateway_factory is not None:
-                from .learning_material import prepare_learning_input
-                built = prepare_learning_input(self.store, result, context,
-                    secrets=self.secrets, exploration=self.exploration)
-                material, code = built.material, built.code
-                try:
-                    diagnostics = {'code':code}
+                if self.mode == "draft_review":
+                    draft = self.draft_session.latest if self.draft_session is not None else None
+                    explicit_none = getattr(self.draft_session, "saw_none", False)
+                    # The optional fallback only replaces a missing draft. It never
+                    # overrides the explorer's explicit choice or a disabled request, and
+                    # it only spends a paid request on a task that recorded a failure.
+                    fallback_attempted = (draft is None and not explicit_none
+                                          and self.request.experience_draft_fallback
+                                          and _has_controlled_failure(self.store, result))
+                    material = None
+                    if fallback_attempted:
+                        from .learning_material import prepare_learning_input
+                        built = prepare_learning_input(self.store, result, context,
+                            secrets=self.secrets, exploration=self.exploration)
+                        material, code = built.material, built.code
+                        self._record_material(code, material)
+                        if material is not None:
+                            _check(context)
+                            gateway = self.learning_gateway_factory(self.store)
+                            from .experience_review import extract_fallback_draft
+                            # One bounded request on its own 30-second budget; the
+                            # review below gets a separate one.
+                            fallback_context = CallContext(
+                                Budget(BudgetLimits(task_timeout_seconds=LEARNING_SECONDS)),
+                                cancel_event=main_context.cancel_event)
+                            draft = await extract_fallback_draft(material, gateway, fallback_context,
+                                self.store, secrets=self.secrets)
+                            if draft is None:
+                                code = "skipped_no_draft"
+                            else:
+                                from .experience_review import prepare_fallback_review_input
+                                material = prepare_fallback_review_input(material, draft)
+                                code = "ready" if material is not None else "skipped_input_too_large"
+                                fallback_used = material is not None
+                    if draft is None:
+                        if not fallback_attempted:
+                            code = ('skipped_invalid_sources' if getattr(self.draft_session, 'last_invalid_code', '') == 'invalid_sources' else
+                                "skipped_invalid_draft" if self.draft_session is not None
+                                    and self.draft_session.saw_invalid else "skipped_no_draft")
+                    elif material is None and not fallback_attempted:
+                        from .learning_material import prepare_review_input
+                        built = prepare_review_input(self.store, result, context, draft=draft,
+                            exploration=self.exploration, secrets=self.secrets)
+                        material, code = built.material, built.code
+                        self._record_material(code, material)
+                    if draft is not None and material is not None:
+                        review_context = (CallContext(
+                            Budget(BudgetLimits(task_timeout_seconds=LEARNING_SECONDS)),
+                            cancel_event=main_context.cancel_event)
+                            if fallback_used else context)
+                        _check(review_context)
+                        if gateway is None:
+                            gateway = self.learning_gateway_factory(self.store)
+                        from .experience_review import review_experience
+                        decision = await review_experience(material, gateway, review_context, self.store,
+                                                           secrets=self.secrets)
+                        review_decision, review_reason_code = decision.decision, decision.reason_code
+                        card = decision.card
+                        if decision.decision == "reject":
+                            code = "review_rejected"
+                        else:
+                            code = (append_experience(self.path, card, review_context,
+                                                      diagnostic=self._index_diagnostic)
+                                    if card is not None else "empty")
+                        try:
+                            self.store.append_event("experience.review", (), {
+                                "decision": review_decision, "reason_code": review_reason_code,
+                                "written": code in ("written", "duplicate"),
+                                "card_id": card.id if card is not None else "",
+                                "fallback_used": fallback_used})
+                        except (OSError, ValueError, TypeError):
+                            pass
+                else:
+                    from .learning_material import prepare_learning_input
+                    built = prepare_learning_input(self.store, result, context,
+                        secrets=self.secrets, exploration=self.exploration)
+                    material, code = built.material, built.code
+                    self._record_material(code, material)
                     if material is not None:
-                        diagnostics.update({'input_bytes':len(canonical_bytes(material.payload)),
-                            'evidence_count':len(material.evidence_map),
-                            'attempt_count':len(material.payload['attempts']),
-                            'omissions':material.payload['omissions']})
-                    self.store.append_event('experience.material', (), diagnostics)
-                except (OSError, ValueError, TypeError):
-                    pass
-                if material is not None:
-                    _check(context)
-                    gateway = self.learning_gateway_factory(self.store)
-                    card = await extract_experience(material, gateway, context, self.store, secrets=self.secrets)
-                    code = append_experience(self.path, card, context, diagnostic=self._index_diagnostic) if card is not None else "empty"
+                        _check(context)
+                        gateway = self.learning_gateway_factory(self.store)
+                        card = await extract_experience(material, gateway, context, self.store, secrets=self.secrets)
+                        code = append_experience(self.path, card, context, diagnostic=self._index_diagnostic) if card is not None else "empty"
         except BudgetStopped as exc:
             code = "skipped_cancelled" if exc.reason == "CANCELLED" else "timeout"
         except asyncio.CancelledError:
@@ -612,6 +761,7 @@ class ExperienceService:
             code = "provider_error"
         except LearningValidationError as exc:
             code, missing_fields = exc.code, exc.missing_fields
+            field_errors = exc.field_errors
             size_diagnostics = {'needed_bytes':exc.needed_bytes,
                 'limit_bytes':exc.limit_bytes, 'exceeded_bytes':exc.exceeded_bytes}
         except ModelOutputError:
@@ -643,10 +793,14 @@ class ExperienceService:
                 sum(item.get("cost_value") is None for item in attempts),
                 unknown_usage_attempts=sum(any(key not in item.get("usage", {}) for key in
                     ("prompt_tokens", "completion_tokens", "total_tokens")) for item in attempts),
-                missing_fields=missing_fields, **size_diagnostics)
+                missing_fields=missing_fields, review_decision=review_decision,
+                review_reason_code=review_reason_code, fallback_used=fallback_used,
+                field_errors=field_errors, **size_diagnostics)
         except (OSError, ValueError, TypeError):
             outcome = LearningResult(code, card.id if card is not None and code in ("written", "duplicate") else "",
-                duration=time.monotonic() - started, missing_fields=missing_fields, **size_diagnostics)
+                duration=time.monotonic() - started, missing_fields=missing_fields,
+                review_decision=review_decision, review_reason_code=review_reason_code,
+                fallback_used=fallback_used, field_errors=field_errors, **size_diagnostics)
         try:
             self.store.append_event("experience.learning", (), asdict(outcome))
         except (OSError, ValueError, TypeError):
