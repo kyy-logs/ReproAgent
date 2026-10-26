@@ -16,3 +16,5 @@ Product updates. For commit-level history, see [main commits](https://github.com
   **中文**：经验库支持按任务浏览目录、按需加载经验。[经验库](experience.md)
 - **2026-10-10 · `FEAT`** — Local trace viewer with a step tree, timeline and tool-call inspection; nothing is uploaded. [Observability](observability.md)  
   **中文**：本地 trace 查看器提供步骤树、时间线和工具调用检查，不上传网络。[可观测性](observability.md)
+
+<!-- news-auto: 0c7480ae7f5c93e6f6ad782cda64e3f8c3e62299 -->

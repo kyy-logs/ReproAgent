@@ -219,8 +219,11 @@ def test_a_run_that_names_no_library_uses_the_default_one(tmp_path, monkeypatch)
     from reproagent import cli
     from reproagent.core.serialization import parse_json
 
-    monkeypatch.delenv(exp().EXPERIENCE_ENV, raising=False)
-    assert exp().default_experience_path() == Path.home() / ".reproagent" / "experiences.json"
+    module = exp()
+    monkeypatch.setattr(module, "DEFAULT_EXPERIENCE_PATH", tmp_path / "experiences")
+    monkeypatch.setattr(module, "LEGACY_EXPERIENCE_PATH", tmp_path / "experiences.json")
+    monkeypatch.delenv(module.EXPERIENCE_ENV, raising=False)
+    assert module.default_experience_path() == (tmp_path / "experiences").resolve()
 
     scratch = tmp_path / "scratch.json"
     monkeypatch.setenv(exp().EXPERIENCE_ENV, str(scratch))
