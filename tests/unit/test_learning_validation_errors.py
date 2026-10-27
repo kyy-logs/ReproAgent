@@ -17,7 +17,7 @@ def capsule(tmp_path):
 
 
 def proposal():
-    return {'experience': {'category': 'workflow', 'tags': ['pytest'], 'name':'Bounded evidence', 'description':'When evidence is incomplete or exceeds bounds.',
+    return {'experience': {'category': 'workflow', 'tags': ['pytest'], 'description':'When evidence is incomplete or exceeds bounds.',
         'summary': 'Use bounded source reads.', 'detail': 'Observed twenty steps before exhaustion; this does not prove cause.',
         'evidence_ids': ['E1']}}
 
@@ -65,8 +65,6 @@ def test_successful_learning_requires_explicit_ids_and_null_needs_no_ids(capsule
 
 
 @pytest.mark.parametrize(('field', 'length', 'valid'), [
-    ('name', 64, True),
-    ('name', 65, False),
     ('description', 160, True),
     ('description', 161, False),
     ('description', 165, False),
@@ -82,7 +80,7 @@ def test_catalog_field_lengths_are_exact_python_character_counts(capsule, field,
         validate_experience(response, material, store)
     assert raised.value.code == 'invalid_field_length'
     assert raised.value.field_errors == (
-        {'field': field, 'actual_length': length, 'limit': 64 if field == 'name' else 160},)
+        {'field': field, 'actual_length': length, 'limit': 160},)
 
 
 def test_chinese_text_is_measured_in_characters_not_utf8_bytes(capsule):
@@ -97,16 +95,14 @@ def test_chinese_text_is_measured_in_characters_not_utf8_bytes(capsule):
     assert raised.value.field_errors[0]['actual_length'] == 161
 
 
-def test_both_overlong_catalog_fields_are_reported_once_each(capsule):
+def test_overlong_catalog_description_is_reported_once(capsule):
     material, store = capsule
     response = proposal()
-    response['experience']['name'] = 'n' * 70
     response['experience']['description'] = 'd' * 170
     with pytest.raises(ValueError) as raised:
         validate_experience(response, material, store)
     assert raised.value.code == 'invalid_field_length'
     assert raised.value.field_errors == (
-        {'field': 'name', 'actual_length': 70, 'limit': 64},
         {'field': 'description', 'actual_length': 170, 'limit': 160},
     )
 
@@ -125,7 +121,7 @@ def test_redaction_expansion_is_measured_before_the_length_decision(capsule):
 
 
 @pytest.mark.parametrize('field,value', [
-    ('name', 123), ('name', '   '), ('description', None), ('description', '')])
+    ('description', None), ('description', '')])
 def test_type_and_blank_errors_stay_invalid_fields(capsule, field, value):
     material, store = capsule
     response = proposal()

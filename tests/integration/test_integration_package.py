@@ -108,7 +108,9 @@ def test_installed_wheel_works_outside_the_source_checkout(wheel, tmp_path):
                                          '-Check'], env=environment, cwd=str(tmp_path),
                                         capture_output=True, text=True)
     else:
-        wrapper_result = subprocess.run(['sh', str(wrapper), 'check'], env=environment,
+        import shutil
+        shell = shutil.which('sh') or '/bin/sh'
+        wrapper_result = subprocess.run([shell, str(wrapper), 'check'], env=environment,
                                         cwd=str(tmp_path), capture_output=True, text=True)
     assert wrapper_result.returncode == 0, wrapper_result.stderr
 
