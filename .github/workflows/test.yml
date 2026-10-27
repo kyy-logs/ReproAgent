@@ -51,6 +51,8 @@ jobs:
         env:
           REPRO_TEST_TARGET_PYTHON: ${{ steps.target.outputs.python-path }}
           REPRO_TEST_PYTEST_VERSION: ${{ matrix.target-pytest }}
+          TMP: ${{ runner.temp }}
+          TEMP: ${{ runner.temp }}
       - name: Check dependencies
         shell: bash
         run: |
