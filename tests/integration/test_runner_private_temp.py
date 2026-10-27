@@ -38,7 +38,20 @@ def test_pytester_long_named_file_uses_private_short_temp_and_cleans_it(tmp_path
     roots = []
     for result in runs:
         assert result.raw.exit_code == 0, result.observation.tests
-        assert result.raw.cleanup_ok and result.protection.ok
+        if not (result.raw.cleanup_ok and result.protection.ok):
+            spec = json.loads((store.root / 'runs' / result.run_id / 'spec.json').read_text(encoding='utf-8'))
+            temp = Path(spec['env_overrides']['TMP'])
+            children = []
+            try:
+                children = [(str(p), p.is_dir()) for p in temp.rglob('*')][:20]
+            except OSError as exc:
+                children = [('LIST_ERROR', repr(exc))]
+            raise AssertionError({
+                'cleanup_ok': result.raw.cleanup_ok, 'protection': result.protection,
+                'temp': str(temp), 'temp_exists': temp.exists(),
+                'temp_parent': str(temp.parent), 'children': children,
+                'temp_cleanup_ok': result.observation.framework_details.get('temp_cleanup_ok'),
+            })
         assert result.observation.probe_complete
         spec = json.loads((store.root / 'runs' / result.run_id / 'spec.json').read_text(encoding='utf-8'))
         temp = Path(spec['env_overrides']['TMP'])

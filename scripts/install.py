@@ -253,7 +253,8 @@ def install(root: Path, *, host: str = 'all', model_config: Path | None = None,
         elif isinstance(error, subprocess.TimeoutExpired):
             message = 'Installation timed out. Check the network and retry install.cmd.'
         else:
-            message = 'Could not read or write installation files. Check permissions, disk space and the source checkout.'
+            message = (f'Could not read or write installation files ({type(error).__name__}). '
+                       'Check permissions, disk space and the source checkout.')
         print('[ERROR] ' + message)
         return 2
     finally:
