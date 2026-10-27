@@ -62,8 +62,21 @@ async def _remove_private_temp(path, parent, context):
             info = child.lstat()
             if not permitted():
                 return False
-            if stat.S_ISLNK(info.st_mode) or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
-                return False
+            reparse = (stat.S_ISLNK(info.st_mode)
+                       or getattr(info, 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+            if reparse:
+                # pytest creates ``pytest-current`` as a junction/symlink inside its
+                # owned temp tree. Remove that directory entry itself; never descend
+                # into or resolve its target. A reparse point at the owned root is
+                # still refused above.
+                try:
+                    if stat.S_ISDIR(info.st_mode):
+                        child.rmdir()
+                    else:
+                        child.unlink()
+                except OSError:
+                    return False
+                continue
             if stat.S_ISDIR(info.st_mode):
                 stack.append((child, None))
             else:

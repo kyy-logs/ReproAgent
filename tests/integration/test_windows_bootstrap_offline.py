@@ -44,7 +44,7 @@ def model_endpoint():
 def test_offline_install(tmp_path, model_endpoint):
     import pip
 
-    root = tmp_path / '源码 install'
+    root = tmp_path / 'install-root'
     root.mkdir()
     for name in ('pyproject.toml', 'README.md', 'install.cmd'):
         shutil.copyfile(ROOT / name, root / name)
